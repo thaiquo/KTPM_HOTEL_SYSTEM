@@ -2,7 +2,6 @@ package iuh.fit.hotelsystem_room.entity;
 
 
 import jakarta.persistence.*;
-import lombok.*;
 
 @Entity
 @Table(name = "rooms")
@@ -12,11 +11,27 @@ public class Room {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false, unique = true)
     private String roomNumber;
+
+    @Column(nullable = false)
     private String type;
+
+    @Column(nullable = false)
     private Double price;
+
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private RoomStatus status; // AVAILABLE, HOLD, BOOKED
+
+    private Integer maxGuests;
+
+    private Integer bedCount;
+
+    @Column(length = 1000)
+    private String description;
+
+    private String imageUrl;
 
     public Room() {
     }
@@ -26,6 +41,24 @@ public class Room {
         this.type = type;
         this.price = price;
         this.status = status;
+    }
+
+    public Room(String roomNumber,
+                String type,
+                Double price,
+                RoomStatus status,
+                Integer maxGuests,
+                Integer bedCount,
+                String description,
+                String imageUrl) {
+        this.roomNumber = roomNumber;
+        this.type = type;
+        this.price = price;
+        this.status = status;
+        this.maxGuests = maxGuests;
+        this.bedCount = bedCount;
+        this.description = description;
+        this.imageUrl = imageUrl;
     }
 
     // getter setter
@@ -68,6 +101,38 @@ public class Room {
 
     public void setPrice(Double price) {
         this.price = price;
+    }
+
+    public Integer getMaxGuests() {
+        return maxGuests;
+    }
+
+    public void setMaxGuests(Integer maxGuests) {
+        this.maxGuests = maxGuests;
+    }
+
+    public Integer getBedCount() {
+        return bedCount;
+    }
+
+    public void setBedCount(Integer bedCount) {
+        this.bedCount = bedCount;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 }
 
