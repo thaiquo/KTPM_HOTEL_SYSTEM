@@ -1,0 +1,179 @@
+services:
+
+  # ========================
+  # RABBITMQ
+  # ========================
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: thaiquoc
+      RABBITMQ_DEFAULT_PASS: 123456
+
+  # ========================
+  # AUTH DB + SERVICE
+  # ========================
+  postgres-auth:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_auth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  auth-service:
+    build: ./HotelSystem_Backend/HotelSystem_AUTH
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres-auth
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # USER DB + SERVICE
+  # ========================
+  postgres-user:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  user-service:
+    build: ./HotelSystem_Backend/HotelSystem_USER
+    ports:
+      - "8082:8082"
+    depends_on:
+      - postgres-user
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # ROOM DB + SERVICE
+  # ========================
+  postgres-room:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_room
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  room-service:
+    build: ./HotelSystem_Backend/HotelSystem_ROOM
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres-room
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # BOOKING DB + SERVICE
+  # ========================
+  postgres-booking:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_booking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  booking-service:
+    build: ./HotelSystem_Backend/HotelSystem_BOOKING
+    ports:
+      - "8084:8084"
+    depends_on:
+      - postgres-booking
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # PAYMENT DB + SERVICE
+  # ========================
+  postgres-payment:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_payment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  payment-service:
+    build: ./HotelSystem_Backend/HotelSystem_PAYMENT
+    ports:
+      - "8085:8085"
+    depends_on:
+      - postgres-payment
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # NOTIFICATION DB + SERVICE
+  # ========================
+  postgres-notification:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: hotel_notification
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+
+  notification-service:
+    build: ./HotelSystem_Backend/HotelSystem_NOTIFICATION
+    ports:
+      - "8086:8086"
+    depends_on:
+      - postgres-notification
+      - rabbitmq
+    environment:
+      DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
+      DB_USERNAME: postgres
+      DB_PASSWORD: quocthai
+      RABBIT_HOST: rabbitmq
+      RABBIT_USERNAME: thaiquoc
+      RABBIT_PASSWORD: 123456
+
+  # ========================
+  # FRONTEND
+  # ========================
+  frontend:
+    build: ./HotelSystem
+    ports:
+      - "3000:80"
+    depends_on:
+      - auth-service
+      - user-service
+      - room-service
+      - booking-service
+      - payment-service
+      - notification-service
