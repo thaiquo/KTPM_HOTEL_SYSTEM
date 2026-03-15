@@ -17,7 +17,7 @@ type RoomBackend = {
 };
 
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  baseURL: import.meta.env.VITE_BOOKING_API_URL || '/booking-api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -174,7 +174,7 @@ export const roomApi = {
   },
   
   checkAvailability: (roomId: string, checkIn: string, checkOut: string) =>
-    api.post<ApiResponse<boolean>>('/rooms/check-availability', { roomId, checkIn, checkOut }),
+    roomHttp.post<ApiResponse<boolean>>('/rooms/check-availability', { roomId, checkIn, checkOut }),
 };
 
 // Booking APIs
