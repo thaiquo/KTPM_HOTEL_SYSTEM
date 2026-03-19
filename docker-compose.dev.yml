@@ -1,5 +1,4 @@
 services:
-
   # ========================
   # RABBITMQ
   # ========================
@@ -30,7 +29,7 @@ services:
       - pgadmin_data:/var/lib/pgadmin
 
   # ========================
-  # AUTH DB + SERVICE
+  # AUTH DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-auth:
     image: postgres:15
@@ -44,7 +43,12 @@ services:
       - auth_data:/var/lib/postgresql/data
 
   auth-service:
-    build: ./HotelSystem_Backend/HotelSystem_AUTH
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_AUTH:/app
+      - maven-repo:/root/.m2
     ports:
       - "8081:8081"
     depends_on:
@@ -59,7 +63,7 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # USER DB + SERVICE
+  # USER DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-user:
     image: postgres:15
@@ -73,7 +77,12 @@ services:
       - user_data:/var/lib/postgresql/data
 
   user-service:
-    build: ./HotelSystem_Backend/HotelSystem_USER
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_USER:/app
+      - maven-repo:/root/.m2
     ports:
       - "8082:8082"
     depends_on:
@@ -88,7 +97,7 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # ROOM DB + SERVICE
+  # ROOM DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-room:
     image: postgres:15
@@ -102,7 +111,12 @@ services:
       - room_data:/var/lib/postgresql/data
 
   room-service:
-    build: ./HotelSystem_Backend/HotelSystem_ROOM
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_ROOM:/app
+      - maven-repo:/root/.m2
     ports:
       - "8083:8083"
     depends_on:
@@ -117,7 +131,7 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # BOOKING DB + SERVICE
+  # BOOKING DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-booking:
     image: postgres:15
@@ -131,7 +145,12 @@ services:
       - booking_data:/var/lib/postgresql/data
 
   booking-service:
-    build: ./HotelSystem_Backend/HotelSystem_BOOKING
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_BOOKING:/app
+      - maven-repo:/root/.m2
     ports:
       - "8084:8084"
     depends_on:
@@ -146,7 +165,7 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # PAYMENT DB + SERVICE
+  # PAYMENT DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-payment:
     image: postgres:15
@@ -160,7 +179,12 @@ services:
       - payment_data:/var/lib/postgresql/data
 
   payment-service:
-    build: ./HotelSystem_Backend/HotelSystem_PAYMENT
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_PAYMENT:/app
+      - maven-repo:/root/.m2
     ports:
       - "8085:8085"
     depends_on:
@@ -175,7 +199,7 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # NOTIFICATION DB + SERVICE
+  # NOTIFICATION DB + SERVICE (DEV HOT RELOAD)
   # ========================
   postgres-notification:
     image: postgres:15
@@ -189,7 +213,12 @@ services:
       - notification_data:/var/lib/postgresql/data
 
   notification-service:
-    build: ./HotelSystem_Backend/HotelSystem_NOTIFICATION
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: mvn -DskipTests spring-boot:run
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_NOTIFICATION:/app
+      - maven-repo:/root/.m2
     ports:
       - "8086:8086"
     depends_on:
@@ -204,12 +233,17 @@ services:
       RABBIT_PASSWORD: 123456
 
   # ========================
-  # FRONTEND
+  # FRONTEND (VITE HOT RELOAD)
   # ========================
   frontend:
-    build: ./HotelSystem
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    volumes:
+      - ./HotelSystem:/app
+      - frontend-node-modules:/app/node_modules
     ports:
-      - "3000:80"
+      - "3000:3000"
     depends_on:
       - auth-service
       - user-service
@@ -217,6 +251,9 @@ services:
       - booking-service
       - payment-service
       - notification-service
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_DOCKER: "true"
 
 volumes:
   pgadmin_data:
@@ -226,3 +263,5 @@ volumes:
   booking_data:
   payment_data:
   notification_data:
+  maven-repo:
+  frontend-node-modules:

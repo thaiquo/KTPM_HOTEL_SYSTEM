@@ -32,6 +32,15 @@ public class UserService {
     }
 
     public UserProfile createProfile(Long userId, UserProfile profile) {
+        UserProfile existing = repository.findByUserId(userId).orElse(null);
+
+        if (existing != null) {
+            existing.setFullName(profile.getFullName());
+            existing.setPhone(profile.getPhone());
+            existing.setAddress(profile.getAddress());
+            existing.setDateOfBirth(profile.getDateOfBirth());
+            return repository.save(existing);
+        }
 
         profile.setUserId(userId);
         return repository.save(profile);

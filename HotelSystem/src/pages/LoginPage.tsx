@@ -105,7 +105,7 @@ const LoginPage = () => {
                 <span className="ml-2 text-sm text-gray-600">Ghi nhớ đăng nhập</span>
               </label>
               <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600">
-                Quên mật khẩu?
+               Bạn quên mật khẩu?
               </Link>
             </div>
 
