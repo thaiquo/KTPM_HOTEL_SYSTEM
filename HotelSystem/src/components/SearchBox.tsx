@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Calendar, Users, ChevronDown } from 'lucide-react';
 import { addDays, format } from 'date-fns';
-import { Button } from './ui/Button';
 
 const SearchBox = () => {
   const navigate = useNavigate();
@@ -120,12 +119,12 @@ const SearchBox = () => {
 
         {/* Search Button */}
         <div className="flex items-end">
-          <Button
+          <button
             type="submit"
-            className="w-full lg:text-base font-semibold"
+            className="w-full px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-all duration-200 lg:text-base"
           >
             Tìm phòng
-          </Button>
+          </button>
         </div>
       </form>
     </div>

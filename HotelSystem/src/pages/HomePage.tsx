@@ -3,10 +3,6 @@ import { Link } from 'react-router-dom';
 import { roomApi } from '../services/api';
 import type { Room } from '../types';
 import HeroCarousel from '../components/HeroCarousel';
-import { Card, CardImage, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
-import { Rating } from '../components/ui/Rating';
 
 import {
   Heart,
@@ -14,11 +10,9 @@ import {
   Wifi,
   Tv,
   Wind,
-  Coffee,
   Shield,
   Clock,
   Zap,
-  Shield as SecureIcon,
   BookOpen,
 } from 'lucide-react';
 
@@ -93,7 +87,9 @@ const HomePage = () => {
         <section className="py-16 lg:py-24 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-16 space-y-4">
-              <Badge variant="primary" size="md">Tại sao chọn S-T-T</Badge>
+              <div className="inline-block px-4 py-2 bg-primary/10 rounded-full">
+                <span className="text-sm font-semibold text-primary">Tại sao chọn S-T-T</span>
+              </div>
               <h2 className="text-3xl lg:text-5xl font-bold text-foreground">
                 Trải Nghiệm Lưu Trú Đẳng Cấp
               </h2>
@@ -114,7 +110,7 @@ const HomePage = () => {
                 description="Đội ngũ tận tâm phục vụ 24/7 với chuyên nghiệp"
               />
               <FeatureCard
-                icon={<SecureIcon size={28} className="text-primary" />}
+                icon={<Shield size={28} className="text-primary" />}
                 title="An Toàn & Riêng Tư"
                 description="Hệ thống bảo mật hiện đại, đảm bảo tuyệt đối"
               />
@@ -126,7 +122,9 @@ const HomePage = () => {
         <section className="py-16 lg:py-24 bg-secondary/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-16 space-y-4">
-              <Badge variant="secondary" size="md">Phòng Nổi Bật</Badge>
+              <div className="inline-block px-4 py-2 bg-secondary rounded-full border-2 border-primary">
+                <span className="text-sm font-semibold text-primary">Phòng Nổi Bật</span>
+              </div>
               <h2 className="text-3xl lg:text-5xl font-bold text-foreground">
                 Các Phòng Tuyệt Vời
               </h2>
@@ -146,57 +144,53 @@ const HomePage = () => {
                     <Link
                       key={room.id}
                       to={`/rooms/${room.id}`}
-                      className="h-full"
+                      className="group"
                     >
-                      <Card hover variant="elevated" className="h-full flex flex-col overflow-hidden">
-                        <CardImage>
+                      <div className="bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 h-full flex flex-col">
+                        <div className="relative h-56 overflow-hidden">
                           <img
                             src={room.images[0]}
                             alt={room.name}
                             className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
                           />
                           <div className="absolute top-4 right-4 z-10">
-                            <Badge variant="primary" size="md">
+                            <span className="inline-block px-4 py-2 bg-primary text-white rounded-full text-sm font-semibold">
                               {room.price.toLocaleString('vi-VN')}đ
-                            </Badge>
+                            </span>
                           </div>
                           <div className="absolute bottom-4 left-4 z-10">
-                            <Badge variant="secondary" size="md">
+                            <span className="inline-block px-4 py-2 bg-secondary/90 text-foreground rounded-full text-sm font-semibold">
                               {room.type}
-                            </Badge>
+                            </span>
                           </div>
-                        </CardImage>
-                        <CardContent className="flex-grow flex flex-col">
-                          <CardHeader>
-                            <CardTitle>{room.name}</CardTitle>
-                            <CardDescription>{room.description}</CardDescription>
-                          </CardHeader>
-                          <div className="mt-auto pt-4">
-                            <div className="flex gap-4 text-text-muted text-sm mb-4">
-                              <div className="flex items-center gap-1">
-                                <Wifi size={16} />
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Tv size={16} />
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Wind size={16} />
-                              </div>
+                        </div>
+                        <div className="p-6 flex-grow flex flex-col">
+                          <h3 className="text-xl font-bold text-foreground mb-2">{room.name}</h3>
+                          <p className="text-text-muted text-sm line-clamp-2 mb-4">{room.description}</p>
+                          <div className="flex gap-4 text-text-muted text-sm mb-4 mt-auto">
+                            <div className="flex items-center gap-1">
+                              <Wifi size={16} />
                             </div>
-                            <Button className="w-full" variant="primary" size="md">
-                              Xem chi tiết
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Tv size={16} />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Wind size={16} />
+                            </div>
                           </div>
-                        </CardContent>
-                      </Card>
+                          <button className="w-full px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark transition font-semibold">
+                            Xem chi tiết
+                          </button>
+                        </div>
+                      </div>
                     </Link>
                   ))}
                 </div>
                 <div className="text-center">
                   <Link to="/rooms">
-                    <Button size="lg">
+                    <button className="inline-block px-8 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark transition font-semibold text-lg">
                       Xem Tất Cả Phòng
-                    </Button>
+                    </button>
                   </Link>
                 </div>
               </>
@@ -242,13 +236,13 @@ const FeatureCard = ({
   title: string;
   description: string;
 }) => (
-  <Card variant="elevated" hover className="p-8 text-center">
+  <div className="bg-white p-8 rounded-xl shadow-md hover:shadow-xl transition text-center border-2 border-border">
     <div className="w-16 h-16 mx-auto mb-6 flex items-center justify-center bg-primary/10 rounded-xl">
       {icon}
     </div>
     <h3 className="text-xl font-bold mb-3 text-foreground">{title}</h3>
     <p className="text-text-muted leading-relaxed">{description}</p>
-  </Card>
+  </div>
 );
 
 const WhyCard = ({

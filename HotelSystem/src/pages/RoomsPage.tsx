@@ -3,10 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { roomApi } from '../services/api';
 import type { Room, SearchFilters } from '../types';
 import { Wifi, Tv, Wind, Users, Filter, X, ChevronDown } from 'lucide-react';
-import { Card, CardImage, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
 
 const RoomsPage = () => {
   const [searchParams] = useSearchParams();
