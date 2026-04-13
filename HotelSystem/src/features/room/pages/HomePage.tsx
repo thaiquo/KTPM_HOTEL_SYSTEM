@@ -1,8 +1,11 @@
 import { useEffect, useState, type JSX } from 'react';
 import { Link } from 'react-router-dom';
-import { roomApi } from '../services/api';
-import type { Room } from '../types';
+import { roomApi } from '../../../services/api';
+import type { Room } from '../../../types';
 import HeroCarousel from '../components/HeroCarousel';
+import Card from '../../../shared/components/ui/Card';
+import Spinner from '../../../shared/components/ui/Spinner';
+import Button from '../../../shared/components/ui/Button';
 
 import {
   Heart,
@@ -18,61 +21,26 @@ import {
 const HomePage = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchRooms = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const roomList = await roomApi.getAll();
+      setRooms(roomList.slice(0, 6));
+    } catch (error) {
+      console.error(error);
+      setRooms([]);
+      setError('Không thể tải danh sách phòng nổi bật.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchRooms = async () => {
-      try {
-        const roomList = await roomApi.getAll();
-        setRooms(roomList.slice(0, 6));
-      } catch (error) {
-        console.error(error);
-        setRooms([
-          {
-            id: '1',
-            name: 'Phòng Deluxe',
-            type: 'Deluxe',
-            price: 500000,
-            maxGuests: 2,
-            images: [
-              'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng sang trọng với đầy đủ tiện nghi hiện đại',
-            available: true,
-          },
-          {
-            id: '2',
-            name: 'Phòng VIP',
-            type: 'VIP',
-            price: 800000,
-            maxGuests: 4,
-            images: [
-              'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng VIP cao cấp với view đẹp',
-            available: true,
-          },
-          {
-            id: '3',
-            name: 'Phòng Suite',
-            type: 'Suite',
-            price: 1200000,
-            maxGuests: 4,
-            images: [
-              'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng Suite đẳng cấp 5 sao',
-            available: true,
-          },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRooms();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -84,15 +52,12 @@ const HomePage = () => {
 
       {/* ===== CONTENT WRAPPER (CENTER) ===== */}
       <div className="w-full max-w-7xl mx-auto px-4">
-
         {/* ===== FEATURES ===== */}
         <section className="py-16">
           <h2 className="text-3xl md:text-4xl font-bold text-center mb-3">
             Những trải nghiệm lưu trú mới
           </h2>
-          <p className="text-center text-gray-600 mb-12">
-            S-T-T
-          </p>
+          <p className="text-center text-gray-600 mb-12">S-T-T</p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <Feature
@@ -121,8 +86,18 @@ const HomePage = () => {
 
           {loading ? (
             <div className="flex justify-center py-20">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-orange-500" />
+              <Spinner className="h-12 w-12" />
             </div>
+          ) : error ? (
+            <Card className="p-8 rounded-xl text-center">
+              <p className="text-gray-700 font-semibold">{error}</p>
+              <div className="mt-4 flex items-center justify-center gap-3">
+                <Button onClick={fetchRooms}>Thử lại</Button>
+                <Link to="/rooms" className="text-orange-600 font-semibold hover:text-orange-700">
+                  Xem tất cả phòng
+                </Link>
+              </div>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center">
               {rooms.map((room) => (
@@ -143,9 +118,7 @@ const HomePage = () => {
                   </div>
 
                   <div className="p-6 text-center">
-                    <h3 className="text-xl font-bold mb-2">
-                      {room.name}
-                    </h3>
+                    <h3 className="text-xl font-bold mb-2">{room.name}</h3>
                     <p className="text-gray-600 mb-4 line-clamp-2">
                       {room.description}
                     </p>
@@ -156,15 +129,15 @@ const HomePage = () => {
                       <IconText icon={<Wind size={16} />} text="AC" />
                     </div>
 
-                    <button className="w-full bg-orange-500 text-white py-3 rounded-lg hover:bg-orange-600 transition font-semibold">
+                    <div className="w-full bg-orange-500 text-white py-3 rounded-lg hover:bg-orange-600 transition font-semibold">
                       Xem chi tiết
-                    </button>
+                    </div>
                   </div>
                 </Link>
               ))}
             </div>
           )}
-          <br/>
+          <br />
           <div className="text-center mt-80 mb-20">
             <Link
               to="/rooms"
@@ -175,7 +148,7 @@ const HomePage = () => {
           </div>
         </section>
       </div>
-        <br/>
+      <br />
 
       <section className="w-full py-16 bg-gradient-to-br from-red-50 to-orange-50">
         <div className="max-w mx-auto px-4">
@@ -208,13 +181,13 @@ const Feature = ({
   title: string;
   desc: string;
 }) => (
-  <div className="bg-white p-8 rounded-xl shadow-md hover:shadow-xl transition text-center">
+  <Card className="p-8 rounded-xl hover:shadow-xl transition text-center">
     <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center bg-gray-100 rounded-full">
       {icon}
     </div>
     <h3 className="text-xl font-bold mb-3">{title}</h3>
     <p className="text-gray-600">{desc}</p>
-  </div>
+  </Card>
 );
 
 const IconText = ({

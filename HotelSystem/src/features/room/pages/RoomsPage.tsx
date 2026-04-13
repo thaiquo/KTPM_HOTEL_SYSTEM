@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { roomApi } from '../services/api';
-import type { Room, SearchFilters } from '../types';
+import { roomApi } from '../../../services/api';
+import type { Room, SearchFilters } from '../../../types';
 import { Wifi, Tv, Wind, Users, Filter, X } from 'lucide-react';
+import Card from '../../../shared/components/ui/Card';
+import Button from '../../../shared/components/ui/Button';
+import Spinner from '../../../shared/components/ui/Spinner';
 
 const RoomsPage = () => {
   const [searchParams] = useSearchParams();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<SearchFilters>({
     priceMin: 0,
@@ -16,95 +20,31 @@ const RoomsPage = () => {
     maxGuests: 0,
   });
 
+  const fetchRooms = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const queryFilters: SearchFilters = {
+        checkIn: searchParams.get('checkIn') || undefined,
+        checkOut: searchParams.get('checkOut') || undefined,
+        ...filters,
+      };
+
+      const roomList = await roomApi.getAll(queryFilters);
+      setRooms(roomList);
+    } catch (err) {
+      console.error('Error fetching rooms:', err);
+      setRooms([]);
+      setError('Không thể tải danh sách phòng. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchRooms = async () => {
-      setLoading(true);
-      try {
-        const queryFilters: SearchFilters = {
-          checkIn: searchParams.get('checkIn') || undefined,
-          checkOut: searchParams.get('checkOut') || undefined,
-          ...filters,
-        };
-
-        const roomList = await roomApi.getAll(queryFilters);
-        setRooms(roomList);
-      } catch (error) {
-        console.error('Error fetching rooms:', error);
-        // Mock data for demo
-        setRooms([
-          {
-            id: '1',
-            name: 'Phòng Standard',
-            type: 'Standard',
-            price: 400000,
-            maxGuests: 2,
-            images: ['https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800'],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng tiêu chuẩn với đầy đủ tiện nghi cơ bản',
-            available: true,
-          },
-          {
-            id: '2',
-            name: 'Phòng Deluxe',
-            type: 'Deluxe',
-            price: 600000,
-            maxGuests: 2,
-            images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800'],
-            amenities: ['WiFi', 'TV', 'AC', 'Mini Bar'],
-            description: 'Phòng Deluxe sang trọng với view đẹp',
-            available: true,
-          },
-          {
-            id: '3',
-            name: 'Phòng VIP',
-            type: 'VIP',
-            price: 900000,
-            maxGuests: 4,
-            images: ['https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800'],
-            amenities: ['WiFi', 'TV', 'AC', 'Jacuzzi'],
-            description: 'Phòng VIP cao cấp với jacuzzi',
-            available: true,
-          },
-          {
-            id: '4',
-            name: 'Phòng Suite',
-            type: 'Suite',
-            price: 1500000,
-            maxGuests: 4,
-            images: ['https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800'],
-            amenities: ['WiFi', 'TV', 'AC', 'Jacuzzi', 'Mini Bar', 'Balcony'],
-            description: 'Phòng Suite đẳng cấp 5 sao với ban công riêng',
-            available: true,
-          },
-          {
-            id: '5',
-            name: 'Phòng Deluxe Plus',
-            type: 'Deluxe',
-            price: 750000,
-            maxGuests: 3,
-            images: ['https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800'],
-            amenities: ['WiFi', 'TV', 'AC', 'Mini Bar'],
-            description: 'Phòng Deluxe nâng cấp với không gian rộng rãi',
-            available: true,
-          },
-          {
-            id: '6',
-            name: 'Phòng Premium',
-            type: 'VIP',
-            price: 1100000,
-            maxGuests: 4,
-            images: ['https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800'],
-            amenities: ['WiFi', 'TV', 'AC', 'Jacuzzi', 'Sound System'],
-            description: 'Phòng Premium với hệ thống âm thanh cao cấp',
-            available: true,
-          },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRooms();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, filters]);
 
   const filteredRooms = rooms.filter((room) => {
@@ -121,25 +61,20 @@ const RoomsPage = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2">Danh sách phòng</h1>
-          <p className="text-gray-600">
-            Tìm thấy {filteredRooms.length} phòng phù hợp
-          </p>
+          <p className="text-gray-600">Tìm thấy {filteredRooms.length} phòng phù hợp</p>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Filters Sidebar */}
           <div className="lg:w-64">
-            <div className="bg-white rounded-lg shadow-md p-6 sticky top-24">
+            <Card className="p-6 sticky top-24 rounded-lg">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <Filter size={20} />
                   Bộ lọc
                 </h2>
                 {showFilters && (
-                  <button
-                    onClick={() => setShowFilters(false)}
-                    className="lg:hidden"
-                  >
+                  <button onClick={() => setShowFilters(false)} className="lg:hidden">
                     <X size={20} />
                   </button>
                 )}
@@ -147,9 +82,7 @@ const RoomsPage = () => {
 
               {/* Price Range */}
               <div className="mb-6">
-                <label className="block text-sm font-semibold mb-2">
-                  Khoảng giá (VNĐ)
-                </label>
+                <label className="block text-sm font-semibold mb-2">Khoảng giá (VNĐ)</label>
                 <div className="space-y-2">
                   <input
                     type="number"
@@ -174,14 +107,10 @@ const RoomsPage = () => {
 
               {/* Room Type */}
               <div className="mb-6">
-                <label className="block text-sm font-semibold mb-2">
-                  Loại phòng
-                </label>
+                <label className="block text-sm font-semibold mb-2">Loại phòng</label>
                 <select
                   value={filters.roomType || ''}
-                  onChange={(e) =>
-                    setFilters({ ...filters, roomType: e.target.value })
-                  }
+                  onChange={(e) => setFilters({ ...filters, roomType: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                 >
                   <option value="">Tất cả</option>
@@ -194,9 +123,7 @@ const RoomsPage = () => {
 
               {/* Max Guests */}
               <div className="mb-6">
-                <label className="block text-sm font-semibold mb-2">
-                  Số khách tối đa
-                </label>
+                <label className="block text-sm font-semibold mb-2">Số khách tối đa</label>
                 <select
                   value={filters.maxGuests || ''}
                   onChange={(e) =>
@@ -212,7 +139,7 @@ const RoomsPage = () => {
               </div>
 
               {/* Reset Button */}
-              <button
+              <Button
                 onClick={() =>
                   setFilters({
                     priceMin: 0,
@@ -221,28 +148,36 @@ const RoomsPage = () => {
                     maxGuests: 0,
                   })
                 }
-                className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition"
+                variant="outline"
+                className="w-full py-2 rounded-lg"
               >
                 Đặt lại bộ lọc
-              </button>
-            </div>
+              </Button>
+            </Card>
           </div>
 
           {/* Rooms Grid */}
           <div className="flex-1">
             {/* Mobile Filter Button */}
-            <button
+            <Button
               onClick={() => setShowFilters(!showFilters)}
-              className="lg:hidden mb-4 w-full bg-orange-500 text-white py-3 rounded-lg flex items-center justify-center gap-2"
+              className="lg:hidden mb-4 w-full py-3 rounded-lg"
             >
               <Filter size={20} />
               Bộ lọc
-            </button>
+            </Button>
 
             {loading ? (
               <div className="text-center py-12">
-                <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-300 border-t-orange-500"></div>
+                <Spinner className="h-16 w-16" />
               </div>
+            ) : error ? (
+              <Card className="p-8 rounded-lg text-center">
+                <p className="text-gray-700 font-semibold">{error}</p>
+                <Button className="mt-4" onClick={fetchRooms}>
+                  Thử lại
+                </Button>
+              </Card>
             ) : filteredRooms.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg">
                 <p className="text-gray-500 text-lg">Không tìm thấy phòng phù hợp</p>
@@ -291,9 +226,9 @@ const RoomsPage = () => {
                         </div>
                       </div>
 
-                      <button className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition font-semibold">
+                      <div className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition font-semibold text-center">
                         Xem chi tiết
-                      </button>
+                      </div>
                     </div>
                   </Link>
                 ))}

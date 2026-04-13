@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { isAxiosError } from 'axios';
+import Card from '../../../shared/components/ui/Card';
+import Alert from '../../../shared/components/ui/Alert';
+import Button from '../../../shared/components/ui/Button';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -22,7 +26,12 @@ const LoginPage = () => {
 
     try {
       await login(formData.email, formData.password);
-      navigate('/');
+      const redirect = searchParams.get('redirect');
+      if (redirect && redirect.startsWith('/')) {
+        navigate(redirect, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
     } catch (err: unknown) {
       const message = isAxiosError<{ message?: string }>(err)
         ? err.response?.data?.message
@@ -37,26 +46,20 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <Card className="p-8 shadow-xl">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900">Đăng nhập</h2>
-            <p className="text-gray-600 mt-2">
-              Chào mừng bạn quay trở lại An Khánh Love Hotel
-            </p>
+            <p className="text-gray-600 mt-2">Chào mừng bạn quay trở lại An Khánh Love Hotel</p>
           </div>
 
           {error && (
-            <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-              {error}
-            </div>
+            <Alert variant="error" className="mb-4">{error}</Alert>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Email
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -72,9 +75,7 @@ const LoginPage = () => {
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Mật khẩu
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -105,18 +106,18 @@ const LoginPage = () => {
                 <span className="ml-2 text-sm text-gray-600">Ghi nhớ đăng nhập</span>
               </label>
               <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600">
-               Bạn quên mật khẩu?
+                Bạn quên mật khẩu?
               </Link>
             </div>
 
             {/* Submit Button */}
-            <button
+            <Button
               type="submit"
-              disabled={loading}
-              className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              loading={loading}
+              className="w-full py-3 rounded-lg"
             >
               {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
-            </button>
+            </Button>
           </form>
 
           {/* Register Link */}
@@ -168,7 +169,7 @@ const LoginPage = () => {
               </button>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

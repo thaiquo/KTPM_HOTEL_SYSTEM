@@ -8,10 +8,11 @@ import {
   Search,
   Hotel,
   BedDouble,
+  CalendarDays,
   Newspaper,
   Headset,
 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../../../contexts/AuthContext";
 import { useState } from "react";
 
 export default function Header() {
@@ -113,6 +114,13 @@ export default function Header() {
             {isAuthenticated ? (
               <div className="hidden md:flex items-center gap-5">
                 <Link
+                  to="/my-bookings"
+                  className="flex items-center gap-2 text-gray-700 hover:text-orange-600 font-medium whitespace-nowrap"
+                >
+                  <CalendarDays size={18} />
+                  <span>Phòng đã đặt</span>
+                </Link>
+                <Link
                   to="/profile"
                   className="flex items-center gap-2 text-gray-700 hover:text-orange-600 font-medium whitespace-nowrap"
                 >
@@ -208,6 +216,11 @@ export default function Header() {
 
             {isAuthenticated ? (
               <>
+                <MobileLink
+                  to="/my-bookings"
+                  label="Phòng đã đặt"
+                  setOpen={setMobileMenuOpen}
+                />
                 <Link
                   to="/profile"
                   onClick={() => setMobileMenuOpen(false)}
@@ -267,12 +280,12 @@ const MobileLink = ({
 }: {
   to: string;
   label: string;
-  setOpen: (open: boolean) => void;
+  setOpen: (v: boolean) => void;
 }) => (
   <Link
     to={to}
     onClick={() => setOpen(false)}
-    className="block text-center py-3.5 bg-gray-50 rounded-xl font-medium text-gray-800 hover:bg-orange-50 hover:text-orange-700 transition"
+    className="block px-4 py-3 rounded-xl hover:bg-gray-50 transition"
   >
     {label}
   </Link>

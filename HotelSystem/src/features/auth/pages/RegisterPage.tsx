@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../../contexts/AuthContext';
 import { User, Mail, Lock, Phone, Eye, EyeOff } from 'lucide-react';
 import { isAxiosError } from 'axios';
+import Card from '../../../shared/components/ui/Card';
+import Alert from '../../../shared/components/ui/Alert';
+import Button from '../../../shared/components/ui/Button';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -23,7 +27,6 @@ const RegisterPage = () => {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu xác nhận không khớp');
       return;
@@ -43,7 +46,12 @@ const RegisterPage = () => {
         phone: formData.phone,
         password: formData.password,
       });
-      navigate('/');
+      const redirect = searchParams.get('redirect');
+      if (redirect && redirect.startsWith('/')) {
+        navigate(redirect, { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
     } catch (err: unknown) {
       const message = isAxiosError<{ message?: string }>(err)
         ? err.response?.data?.message
@@ -58,26 +66,20 @@ const RegisterPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <Card className="p-8 shadow-xl">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900">Đăng ký</h2>
-            <p className="text-gray-600 mt-2">
-              Tạo tài khoản để trải nghiệm dịch vụ tốt nhất
-            </p>
+            <p className="text-gray-600 mt-2">Tạo tài khoản để trải nghiệm dịch vụ tốt nhất</p>
           </div>
 
           {error && (
-            <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-              {error}
-            </div>
+            <Alert variant="error" className="mb-4">{error}</Alert>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Họ và tên
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Họ và tên</label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -93,9 +95,7 @@ const RegisterPage = () => {
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Email
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -111,9 +111,7 @@ const RegisterPage = () => {
 
             {/* Phone */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Số điện thoại
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -129,9 +127,7 @@ const RegisterPage = () => {
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Mật khẩu
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -154,9 +150,7 @@ const RegisterPage = () => {
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Xác nhận mật khẩu
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Xác nhận mật khẩu</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
@@ -197,13 +191,13 @@ const RegisterPage = () => {
             </div>
 
             {/* Submit Button */}
-            <button
+            <Button
               type="submit"
-              disabled={loading}
-              className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              loading={loading}
+              className="w-full py-3 rounded-lg"
             >
               {loading ? 'Đang đăng ký...' : 'Đăng ký'}
-            </button>
+            </Button>
           </form>
 
           {/* Login Link */}
@@ -213,7 +207,7 @@ const RegisterPage = () => {
               Đăng nhập
             </Link>
           </p>
-        </div>
+        </Card>
       </div>
     </div>
   );

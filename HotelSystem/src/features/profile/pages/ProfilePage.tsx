@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { userApi } from '../services/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import { userApi } from '../../../services/api';
 import {
   User, Mail, Phone, MapPin, Calendar, Edit3, LogOut,
   Star, Clock, CreditCard, Shield, ChevronRight, Check
@@ -125,12 +125,15 @@ const ProfilePage = () => {
           }}
         >
           {/* Subtle pattern */}
-          <div className="absolute inset-0 opacity-5" style={{
-            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.1) 20px, rgba(255,255,255,0.1) 40px)'
-          }} />
+          <div
+            className="absolute inset-0 opacity-5"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.1) 20px, rgba(255,255,255,0.1) 40px)',
+            }}
+          />
 
           <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          
             {/* Info */}
             <div className="text-center sm:text-left flex-1">
               <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
@@ -187,16 +190,22 @@ const ProfilePage = () => {
                   <div className="w-8 h-px bg-orange-700" />
                 </div>
                 <button
-                  onClick={() => editing ? handleSave() : setEditing(true)}
+                  onClick={() => (editing ? handleSave() : setEditing(true))}
                   className="flex items-center gap-2 text-xs tracking-wider uppercase transition-colors"
                   style={{ color: editing ? '#15803d' : '#9a3412' }}
                 >
                   {saved ? (
-                    <><Check size={14} /> Đã lưu</>
+                    <>
+                      <Check size={14} /> Đã lưu
+                    </>
                   ) : editing ? (
-                    <><Check size={14} /> Lưu</>
+                    <>
+                      <Check size={14} /> Lưu
+                    </>
                   ) : (
-                    <><Edit3 size={14} /> Chỉnh sửa</>
+                    <>
+                      <Edit3 size={14} /> Chỉnh sửa
+                    </>
                   )}
                 </button>
               </div>
@@ -237,8 +246,8 @@ const ProfilePage = () => {
                     onClick={handleSave}
                     className="px-8 py-3 text-white text-xs tracking-widest uppercase transition-colors"
                     style={{ background: '#9a3412' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#7c2d12')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '#9a3412')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#7c2d12')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = '#9a3412')}
                   >
                     Lưu thay đổi
                   </button>
@@ -306,17 +315,25 @@ const ProfilePage = () => {
             </div>
             <div className="divide-y divide-stone-100">
               {mockBookings.map((booking) => (
-                <div key={booking.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50 transition-colors">
+                <div
+                  key={booking.id}
+                  className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50 transition-colors"
+                >
                   <div className="flex items-start gap-4">
                     <div
                       className="w-10 h-10 flex items-center justify-center flex-shrink-0"
                       style={{ background: booking.status === 'completed' ? '#f5f5f4' : '#fff7ed' }}
                     >
-                      <Calendar size={16} className={booking.status === 'completed' ? 'text-gray-400' : 'text-orange-700'} />
+                      <Calendar
+                        size={16}
+                        className={booking.status === 'completed' ? 'text-gray-400' : 'text-orange-700'}
+                      />
                     </div>
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{booking.room}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{booking.date} · {booking.nights} đêm</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {booking.date} · {booking.nights} đêm
+                      </p>
                       <p className="text-xs tracking-wider text-gray-400 mt-0.5 uppercase">#{booking.id}</p>
                     </div>
                   </div>
@@ -361,8 +378,8 @@ const ProfilePage = () => {
                 <button
                   className="w-full py-3 text-white text-xs tracking-widest uppercase transition-colors mt-4"
                   style={{ background: '#9a3412' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#7c2d12')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#9a3412')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#7c2d12')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = '#9a3412')}
                 >
                   Cập nhật mật khẩu
                 </button>
@@ -377,7 +394,10 @@ const ProfilePage = () => {
                   { label: 'Phiên đăng nhập', value: '2 thiết bị', action: 'Quản lý' },
                   { label: 'Nhật ký hoạt động', value: 'Hoạt động gần đây', action: 'Xem' },
                 ].map(({ label, value, action }) => (
-                  <div key={label} className="flex items-center justify-between py-4 border-b border-stone-100 last:border-0">
+                  <div
+                    key={label}
+                    className="flex items-center justify-between py-4 border-b border-stone-100 last:border-0"
+                  >
                     <div>
                       <p className="text-sm text-gray-800">{label}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{value}</p>
