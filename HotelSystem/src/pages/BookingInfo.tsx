@@ -71,28 +71,30 @@ const BookingInfo = () => {
   const totalPrice = room.price * nights;
 
   return (
-    <div className="min-h-screen bg-background py-8 lg:py-12">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Back Button */}
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-primary hover:text-primary-dark mb-8 font-semibold transition"
-        >
-          <ChevronLeft size={20} />
-          Quay lại
-        </button>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20 py-8 lg:py-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-12">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 text-primary hover:text-primary-dark mb-6 font-semibold transition"
+          >
+            <ChevronLeft size={20} />
+            Quay lại
+          </button>
+          <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-2">
+            Thông Tin Đặt Phòng
+          </h1>
+          <p className="text-lg text-text-muted">
+            Vui lòng nhập thông tin của bạn để hoàn tất đặt phòng
+          </p>
+        </div>
 
+        {/* Main Content Grid */}
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Form */}
+          {/* Form Section */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-border">
-              <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-2">
-                Thông Tin Đặt Phòng
-              </h1>
-              <p className="text-text-muted mb-8">
-                Vui lòng hoàn thành thông tin để tiếp tục thanh toán
-              </p>
-
+            <div className="bg-white rounded-2xl shadow-lg p-8 lg:p-10 border-2 border-border">
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Full Name */}
                 <div>
@@ -184,7 +186,7 @@ const BookingInfo = () => {
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  className="w-full px-6 py-4 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark transition-all duration-200 text-lg mt-8"
+                  className="w-full px-6 py-4 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark transition-all duration-200 text-lg mt-8 shadow-lg hover:shadow-xl"
                 >
                   Tiếp Tục Thanh Toán
                 </button>

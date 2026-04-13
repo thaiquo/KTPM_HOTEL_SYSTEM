@@ -212,7 +212,7 @@ const HomePage = () => {
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
               <WhyCard icon={<Clock size={32} />} title="Phục vụ 24/7" description="Hỗ trợ bất cứ lúc nào" />
-              <WhyCard icon={<SecureIcon size={32} />} title="An Toàn" description="Bảo mật tuyệt đối" />
+              <WhyCard icon={<Shield size={32} />} title="An Toàn" description="Bảo mật tuyệt đối" />
               <WhyCard icon={<Zap size={32} />} title="WiFi Nhanh" description="Tốc độ cao, ổn định" />
               <WhyCard icon={<BookOpen size={32} />} title="Tiện Ích" description="Tất cả những gì bạn cần" />
             </div>
@@ -236,12 +236,12 @@ const FeatureCard = ({
   title: string;
   description: string;
 }) => (
-  <div className="bg-white p-8 rounded-xl shadow-md hover:shadow-xl transition text-center border-2 border-border">
-    <div className="w-16 h-16 mx-auto mb-6 flex items-center justify-center bg-primary/10 rounded-xl">
+  <div className="bg-white p-8 lg:p-10 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 text-center border-2 border-border hover:border-primary/50">
+    <div className="w-20 h-20 mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl">
       {icon}
     </div>
-    <h3 className="text-xl font-bold mb-3 text-foreground">{title}</h3>
-    <p className="text-text-muted leading-relaxed">{description}</p>
+    <h3 className="text-2xl font-bold mb-4 text-foreground">{title}</h3>
+    <p className="text-text-muted leading-relaxed text-lg">{description}</p>
   </div>
 );
 
@@ -254,13 +254,13 @@ const WhyCard = ({
   title: string;
   description: string;
 }) => (
-  <div className="text-center space-y-4">
-    <div className="w-16 h-16 mx-auto flex items-center justify-center bg-white/10 rounded-xl text-primary">
+  <div className="text-center space-y-6 p-6 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/15 transition-all duration-300 border border-white/20">
+    <div className="w-20 h-20 mx-auto flex items-center justify-center bg-white/20 rounded-2xl text-white">
       {icon}
     </div>
     <div>
-      <h4 className="font-bold text-lg mb-2">{title}</h4>
-      <p className="text-white/70 text-sm">{description}</p>
+      <h4 className="font-bold text-xl mb-3">{title}</h4>
+      <p className="text-white/80 text-base leading-relaxed">{description}</p>
     </div>
   </div>
 );

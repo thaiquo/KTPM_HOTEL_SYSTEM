@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, DollarSign, Clock, X, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, DollarSign, Clock, X, ChevronRight, Eye, Trash2, CheckCircle, XCircle, ChevronLeft } from 'lucide-react';
 
 interface Booking {
   id: string;
@@ -75,79 +75,82 @@ const MyBookings = () => {
   };
 
   const BookingCard = ({ booking }: { booking: Booking }) => (
-    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-2 border-border hover:shadow-2xl transition-all duration-300">
-      <div className="grid md:grid-cols-3 gap-6 p-6">
-        {/* Image */}
-        <div className="md:col-span-1">
-          <img
-            src={booking.roomImage}
-            alt={booking.roomName}
-            className="w-full h-48 md:h-full object-cover rounded-xl"
-          />
+    <div className={`bg-white rounded-2xl shadow-lg overflow-hidden border-2 hover:shadow-2xl transition-all duration-300 flex flex-col ${
+      booking.status === 'upcoming' ? 'border-warning/20 hover:border-warning/40' :
+      booking.status === 'completed' ? 'border-success/20 hover:border-success/40' :
+      'border-error/20 hover:border-error/40'
+    }`}>
+      {/* Image Section */}
+      <div className="relative h-56 overflow-hidden">
+        <img
+          src={booking.roomImage}
+          alt={booking.roomName}
+          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+        />
+        <div className="absolute top-4 right-4">
+          {getStatusBadge(booking.status)}
         </div>
+      </div>
 
-        {/* Details */}
-        <div className="md:col-span-1 space-y-4">
-          <div>
-            <p className="text-text-muted text-sm mb-1">Phòng</p>
-            <h3 className="text-xl font-bold text-foreground">{booking.roomName}</h3>
-            <p className="text-text-muted text-sm">{booking.roomType}</p>
-          </div>
+      {/* Content Section */}
+      <div className="p-6 flex-grow flex flex-col">
+        {/* Room Info */}
+        <h3 className="text-xl font-bold text-foreground mb-1">
+          {booking.roomName}
+        </h3>
+        <p className="text-text-muted text-sm mb-6">{booking.roomType}</p>
 
+        {/* Details Grid */}
+        <div className="grid md:grid-cols-2 gap-6 mb-6 pb-6 border-b-2 border-border">
+          {/* Dates */}
           <div>
-            <p className="text-text-muted text-sm mb-1">Ngày</p>
-            <div className="flex items-center gap-2 text-sm">
-              <Calendar size={16} className="text-primary" />
-              <span className="font-semibold text-foreground">
-                {new Date(booking.checkIn).toLocaleDateString('vi-VN')} -{' '}
-                {new Date(booking.checkOut).toLocaleDateString('vi-VN')}
-              </span>
+            <p className="text-text-muted text-xs font-semibold mb-2">NGÀY LƯƯU TRÚ</p>
+            <div className="space-y-2">
+              <div>
+                <p className="text-text-muted text-xs mb-1">Nhận</p>
+                <p className="font-semibold text-foreground">
+                  {new Date(booking.checkIn).toLocaleDateString('vi-VN')}
+                </p>
+              </div>
+              <div>
+                <p className="text-text-muted text-xs mb-1">Trả</p>
+                <p className="font-semibold text-foreground">
+                  {new Date(booking.checkOut).toLocaleDateString('vi-VN')}
+                </p>
+              </div>
             </div>
           </div>
 
+          {/* Booking ID */}
           <div>
-            <p className="text-text-muted text-sm mb-1">Mã Đặt</p>
-            <p className="font-mono font-bold text-primary text-sm">
+            <p className="text-text-muted text-xs font-semibold mb-2">MÃ ĐẶT PHÒNG</p>
+            <p className="font-mono font-bold text-primary text-base">
               {booking.id}
             </p>
           </div>
         </div>
 
-        {/* Status & Actions */}
-        <div className="md:col-span-1 flex flex-col justify-between">
-          <div>
-            <div className="mb-4">{getStatusBadge(booking.status)}</div>
-            <div className="mb-4">
-              <p className="text-text-muted text-sm mb-1">Tổng Cộng</p>
-              <p className="text-2xl font-bold text-primary">
-                {booking.price.toLocaleString('vi-VN')}đ
-              </p>
-            </div>
-          </div>
+        {/* Price */}
+        <div className="mb-6">
+          <p className="text-text-muted text-xs font-semibold mb-2">TỔNG CỘNG</p>
+          <p className="text-3xl font-bold text-primary">
+            {booking.price.toLocaleString('vi-VN')}đ
+          </p>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="space-y-3 flex flex-col">
-            <button
-              onClick={() => navigate(`/rooms/${booking.id}`)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-all"
-            >
-              <Clock size={18} />
-              Xem Chi Tiết
+        {/* Action Buttons */}
+        <div className="flex gap-3 mt-auto">
+          <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-all shadow-md hover:shadow-lg">
+            <Eye size={18} />
+            Chi Tiết
+          </button>
+          
+          {booking.status === 'upcoming' && (
+            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-error/10 text-error font-semibold rounded-lg hover:bg-error/20 transition-all border-2 border-error/20">
+              <Trash2 size={18} />
+              Hủy
             </button>
-
-            {booking.status === 'upcoming' && (
-              <button
-                onClick={() =>
-                  confirm('Bạn có chắc chắn muốn hủy đặt phòng này?') &&
-                  alert('Yêu cầu hủy phòng đã được gửi')
-                }
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-error/10 text-error font-semibold rounded-lg hover:bg-error/20 transition-all"
-              >
-                <X size={18} />
-                Hủy Phòng
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -172,10 +175,17 @@ const MyBookings = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background py-8 lg:py-12">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20 py-8 lg:py-16">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-12">
+          <button
+            onClick={() => navigate('/')}
+            className="inline-flex items-center gap-2 text-primary hover:text-primary-dark mb-6 font-semibold transition"
+          >
+            <ChevronLeft size={20} />
+            Quay lại
+          </button>
           <h1 className="text-4xl lg:text-5xl font-bold text-foreground mb-2">
             Đặt Phòng Của Tôi
           </h1>
@@ -185,32 +195,41 @@ const MyBookings = () => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 lg:gap-4 mb-8 border-b-2 border-border">
+        <div className="flex gap-3 mb-10 flex-wrap">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-6 py-4 font-bold border-b-4 transition-all whitespace-nowrap ${
+              className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all duration-200 ${
                 activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-text-muted hover:text-foreground'
+                  ? 'bg-primary text-white shadow-lg'
+                  : 'bg-white text-foreground border-2 border-border hover:border-primary/50'
               }`}
             >
+              {tab.id === 'upcoming' && <Clock size={18} />}
+              {tab.id === 'completed' && <CheckCircle size={18} />}
+              {tab.id === 'cancelled' && <XCircle size={18} />}
               {tab.label}
-              <span className="ml-2 px-2.5 py-1 rounded-full text-sm bg-opacity-20 inline-block">
+              <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                activeTab === tab.id
+                  ? 'bg-white/20 text-white'
+                  : 'bg-primary/10 text-primary'
+              }`}>
                 {tab.count}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Bookings List */}
+        {/* Bookings Grid */}
         {filteredBookings.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="mb-4">
-              <MapPin size={48} className="mx-auto text-text-muted/30" />
+          <div className="text-center py-20 bg-white rounded-2xl border-2 border-border">
+            <div className="mb-6">
+              <div className="inline-block p-4 bg-secondary rounded-full">
+                <MapPin size={40} className="text-text-muted" />
+              </div>
             </div>
-            <p className="text-text-muted text-lg mb-6">
+            <p className="text-text-muted text-lg mb-8 font-medium">
               {activeTab === 'upcoming'
                 ? 'Bạn chưa có đặt phòng sắp tới'
                 : activeTab === 'completed'
@@ -219,14 +238,14 @@ const MyBookings = () => {
             </p>
             <button
               onClick={() => navigate('/rooms')}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark transition shadow-lg hover:shadow-xl"
             >
               Đặt Phòng Ngay
-              <ChevronRight size={18} />
+              <ChevronRight size={20} />
             </button>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredBookings.map((booking) => (
               <BookingCard key={booking.id} booking={booking} />
             ))}
