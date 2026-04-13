@@ -25,54 +25,10 @@ const HomePage = () => {
       try {
         const roomList = await roomApi.getAll();
         setRooms(roomList.slice(0, 6));
-      } catch (error) {
-        console.error(error);
-        setRooms([
-          {
-            id: '1',
-            name: 'Phòng Deluxe',
-            type: 'Deluxe',
-            price: 500000,
-            maxGuests: 2,
-            images: [
-              'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng sang trọng với đầy đủ tiện nghi hiện đại',
-            available: true,
-          },
-          {
-            id: '2',
-            name: 'Phòng VIP',
-            type: 'VIP',
-            price: 800000,
-            maxGuests: 4,
-            images: [
-              'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng VIP cao cấp với view đẹp',
-            available: true,
-          },
-          {
-            id: '3',
-            name: 'Phòng Suite',
-            type: 'Suite',
-            price: 1200000,
-            maxGuests: 4,
-            images: [
-              'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800',
-            ],
-            amenities: ['WiFi', 'TV', 'AC'],
-            description: 'Phòng Suite đẳng cấp 5 sao',
-            available: true,
-          },
-        ]);
       } finally {
         setLoading(false);
       }
     };
-
     fetchRooms();
   }, []);
 

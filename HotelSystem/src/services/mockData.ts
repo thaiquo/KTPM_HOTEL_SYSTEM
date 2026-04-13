@@ -1,0 +1,88 @@
+import type { Room } from '../types';
+
+export const mockRooms: Room[] = [
+  {
+    id: '1',
+    name: 'Phòng Standard Đơn',
+    type: 'Standard',
+    price: 400000,
+    maxGuests: 2,
+    images: [
+      'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800',
+      'https://images.unsplash.com/photo-1582719471537-41a4a16f74d5?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh'],
+    description: 'Phòng tiêu chuẩn thoải mái với đầy đủ tiện nghi cơ bản, phù hợp cho 1-2 khách',
+    available: true,
+  },
+  {
+    id: '2',
+    name: 'Phòng Deluxe Đôi',
+    type: 'Deluxe',
+    price: 600000,
+    maxGuests: 3,
+    images: [
+      'https://images.unsplash.com/photo-1578683078519-e21cc028cb29?w=800',
+      'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh', 'Minibar'],
+    description: 'Phòng cao cấp với thiết kế hiện đại, view đẹp, phù hợp cho cặp đôi',
+    available: true,
+  },
+  {
+    id: '3',
+    name: 'Phòng VIP Suite',
+    type: 'VIP',
+    price: 900000,
+    maxGuests: 4,
+    images: [
+      'https://images.unsplash.com/photo-1582719471537-41a4a16f74d5?w=800',
+      'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh', 'Minibar', 'Bồn tắm'],
+    description: 'Phòng VIP sang trọng với không gian rộng rãi, tiện ích cao cấp',
+    available: true,
+  },
+  {
+    id: '4',
+    name: 'Phòng Suite Sang Trọng',
+    type: 'Suite',
+    price: 1200000,
+    maxGuests: 5,
+    images: [
+      'https://images.unsplash.com/photo-1570129477492-45e003008e0f?w=800',
+      'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh', 'Minibar', 'Bồn tắm', 'Phòng khách'],
+    description: 'Suite hạng nhất với 2 phòng, phòng khách riêng, dành cho nhóm hoặc gia đình',
+    available: true,
+  },
+  {
+    id: '5',
+    name: 'Phòng Deluxe Garden View',
+    type: 'Deluxe',
+    price: 650000,
+    maxGuests: 3,
+    images: [
+      'https://images.unsplash.com/photo-1566665556112-52968e2a58d7?w=800',
+      'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh', 'Minibar', 'Ban công'],
+    description: 'Phòng Deluxe với view vườn đẹp, không khí trong lành',
+    available: true,
+  },
+  {
+    id: '6',
+    name: 'Phòng Standard Twin',
+    type: 'Standard',
+    price: 450000,
+    maxGuests: 2,
+    images: [
+      'https://images.unsplash.com/photo-1537959787849-6c06d7fef0d5?w=800',
+      'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800',
+    ],
+    amenities: ['WiFi', 'TV', 'AC', 'Tủ lạnh'],
+    description: 'Phòng có 2 giường riêng, hoàn hảo cho bạn bè hoặc đồng nghiệp',
+    available: true,
+  },
+];
