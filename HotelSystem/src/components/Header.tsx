@@ -6,10 +6,7 @@ import {
   Menu,
   Heart,
   Search,
-  Hotel,
-  BedDouble,
-  Newspaper,
-  Headset,
+  X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useState } from "react";
@@ -23,195 +20,144 @@ export default function Header() {
     e.preventDefault();
     if (search.trim()) {
       console.log("Tìm kiếm:", search);
-      // Ví dụ: navigate(`/rooms?search=${encodeURIComponent(search)}`)
     }
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
-      <div className="mx-auto max-w px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 lg:h-20 items-center">
+    <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-md border-b-2 border-border shadow-sm">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 lg:h-20 items-center justify-between">
           {/* LEFT - Logo */}
-          <div className="flex-shrink-0">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-orange-500 to-red-500 p-2.5 rounded-xl shadow-md">
-                <Heart size={26} className="text-white fill-white" />
-              </div>
-              <div className="leading-tight hidden sm:block">
-                <div className="text-xl lg:text-2xl font-black tracking-tight text-gray-900">
-                  S-T-T
-                </div>
-                <div className="text-[10px] lg:text-xs uppercase tracking-widest text-orange-600 font-semibold">
-                  Love Hotel
-                </div>
-              </div>
-            </Link>
-          </div>
-          {/* CENTER - Menu + Search */}
-          <div className="hidden lg:flex flex-1 items-center justify-center gap-8 px-6">
-            {/* Navigation */}
-            <nav className="flex items-center gap-8 whitespace-nowrap">
-              <HeaderLink to="/" icon={<Hotel size={18} />} label="Trang chủ" />
-              <HeaderLink
-                to="/rooms"
-                icon={<BedDouble size={18} />}
-                label="Đặt phòng"
-              />
-              <HeaderLink
-                to="/news"
-                icon={<Newspaper size={18} />}
-                label="Tin tức"
-              />
-              <HeaderLink
-                to="/contact"
-                icon={<Headset size={18} />}
-                label="Liên hệ"
-              />
-            </nav>
-
-            {/* Search (NGẮN LẠI) */}
-            <div className="w-[360px]">
-              <form onSubmit={handleSearch} className="relative">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm phòng..."
-                  className="w-full pr-12 pl-5 py-2.5
-                 bg-gray-50 border border-gray-200 rounded-full
-                 focus:bg-white focus:border-orange-400
-                 focus:ring-2 focus:ring-orange-200/50
-                 outline-none transition-all duration-200
-                 text-sm text-gray-800 placeholder-gray-500"
-                />
-
-                {/* ICON SEARCH – BUTTON */}
-                <button
-                  type="submit"
-                  aria-label="Tìm kiếm"
-                  className="absolute right-4 top-1/2 -translate-y-1/2
-                 text-gray-500 hover:text-orange-600
-                 transition-colors"
-                >
-                  <Search size={20} />
-                </button>
-              </form>
+          <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
+            <div className="bg-primary p-2 rounded-xl shadow-md">
+              <Heart size={24} className="text-white fill-white" />
             </div>
-          </div>
+            <div className="hidden sm:block leading-tight">
+              <div className="text-lg lg:text-xl font-bold text-foreground tracking-tight">
+                S-T-T
+              </div>
+              <div className="text-xs uppercase tracking-widest text-primary font-semibold">
+                Love Hotel
+              </div>
+            </div>
+          </Link>
 
-          {/* RIGHT - Hotline + Auth + Mobile button */}
-          <div className="flex items-center gap-6 lg:gap-8 flex-shrink-0">
+          {/* CENTER - Navigation (Desktop) */}
+          <nav className="hidden lg:flex items-center gap-1">
+            <NavLink href="/">Trang chủ</NavLink>
+            <NavLink href="/rooms">Đặt phòng</NavLink>
+          </nav>
+
+          {/* RIGHT - Search + Auth */}
+          <div className="hidden md:flex items-center gap-4 flex-1 justify-end">
+            {/* Search */}
+            <form onSubmit={handleSearch} className="relative w-64">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm phòng..."
+                className="w-full px-4 py-2.5 pr-12 bg-secondary border-2 border-border rounded-full
+                  text-sm text-foreground placeholder-text-muted
+                  focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20
+                  transition-all duration-200"
+              />
+              <button
+                type="submit"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+              >
+                <Search size={18} />
+              </button>
+            </form>
+
             {/* Hotline */}
             <a
               href="tel:0925519789"
-              className="hidden md:flex items-center gap-2 text-orange-600 hover:text-orange-700 font-medium whitespace-nowrap"
+              className="flex items-center gap-1.5 text-primary hover:text-primary-dark font-semibold whitespace-nowrap text-sm"
             >
-              <Phone size={18} className="text-orange-500" />
-              <span>092 5519 789</span>
+              <Phone size={16} />
+              092 5519 789
             </a>
 
             {/* Auth */}
             {isAuthenticated ? (
-              <div className="hidden md:flex items-center gap-5">
+              <div className="flex items-center gap-3">
                 <Link
                   to="/profile"
-                  className="flex items-center gap-2 text-gray-700 hover:text-orange-600 font-medium whitespace-nowrap"
+                  className="flex items-center gap-2 px-3 py-2 text-foreground hover:text-primary transition-colors"
                 >
                   <User size={18} />
-                  <span className="max-w-[140px] truncate">{user?.name}</span>
+                  <span className="max-w-xs truncate text-sm font-medium">{user?.name}</span>
                 </Link>
                 <button
                   onClick={logout}
-                  className="text-gray-500 hover:text-red-600 transition-colors"
-                  title="Đăng xuất"
+                  className="p-2 hover:bg-secondary/50 rounded-lg transition-colors text-text-muted hover:text-error"
                 >
-                  <LogOut size={20} />
+                  <LogOut size={18} />
                 </button>
               </div>
             ) : (
               <Link
                 to="/login"
-                className="hidden md:inline-flex px-6 py-2.5 
-                           bg-gradient-to-r from-orange-500 to-red-500 
-                           text-white font-semibold rounded-full 
-                           hover:brightness-110 hover:shadow-md transition-all duration-200 whitespace-nowrap"
+                className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-all shadow-md hover:shadow-lg"
               >
                 Đăng nhập
               </Link>
             )}
-
-            {/* Mobile toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-full hover:bg-gray-100 transition"
-            >
-              <Menu size={28} className="text-gray-700" />
-            </button>
           </div>
+
+          {/* Mobile Menu Toggle */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-2 ml-2"
+          >
+            {mobileMenuOpen ? (
+              <X size={24} className="text-foreground" />
+            ) : (
+              <Menu size={24} className="text-foreground" />
+            )}
+          </button>
         </div>
       </div>
 
-      {/* ────────────────────────────────────────────────
-          MOBILE MENU & SEARCH
-      ──────────────────────────────────────────────── */}
+      {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-white border-t border-gray-200 shadow-lg">
-          {/* Mobile Search */}
-          <div className="p-4 border-b border-gray-100">
-            <form onSubmit={handleSearch} className="relative">
-              <Search
-                size={18}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
+        <div className="lg:hidden bg-background border-t-2 border-border shadow-lg">
+          <div className="p-4 space-y-3">
+            {/* Mobile Search */}
+            <form onSubmit={handleSearch} className="relative mb-4">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Tìm phòng..."
-                className="w-full pl-12 pr-28 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-300"
+                className="w-full px-4 py-3 pr-12 bg-secondary border-2 border-border rounded-lg
+                  text-foreground placeholder-text-muted
+                  focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-medium"
-              >
-                Tìm
+              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
+                <Search size={18} className="text-text-muted" />
               </button>
             </form>
-          </div>
 
-          {/* Mobile Links */}
-          <div className="p-4 space-y-2">
-            <MobileLink to="/" label="Trang chủ" setOpen={setMobileMenuOpen} />
-            <MobileLink
-              to="/rooms"
-              label="Đặt phòng"
-              setOpen={setMobileMenuOpen}
-            />
-            <MobileLink
-              to="/news"
-              label="Tin tức"
-              setOpen={setMobileMenuOpen}
-            />
-            <MobileLink
-              to="/contact"
-              label="Liên hệ"
-              setOpen={setMobileMenuOpen}
-            />
+            {/* Nav Links */}
+            <MobileNavLink to="/" label="Trang chủ" setOpen={setMobileMenuOpen} />
+            <MobileNavLink to="/rooms" label="Đặt phòng" setOpen={setMobileMenuOpen} />
 
-            <div className="pt-4 pb-2 text-center">
-              <a
-                href="tel:0925519789"
-                className="inline-flex items-center gap-3 text-orange-600 font-semibold text-lg"
-              >
-                <Phone size={20} />
-                092 5519 789
-              </a>
-            </div>
+            {/* Hotline */}
+            <a
+              href="tel:0925519789"
+              className="block text-center py-3 bg-secondary rounded-lg font-semibold text-primary"
+            >
+              <Phone size={18} className="inline mr-2" />
+              092 5519 789
+            </a>
 
+            {/* Auth Section */}
             {isAuthenticated ? (
               <>
                 <Link
                   to="/profile"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="block text-center py-3.5 bg-orange-50 rounded-xl font-semibold text-orange-700"
+                  className="block text-center py-3 bg-primary/10 rounded-lg font-semibold text-primary"
                 >
                   <User size={18} className="inline mr-2" />
                   {user?.name || "Tài khoản"}
@@ -221,7 +167,7 @@ export default function Header() {
                     logout();
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full py-3.5 bg-red-50 text-red-600 font-semibold rounded-xl"
+                  className="w-full py-3 bg-error/10 text-error font-semibold rounded-lg"
                 >
                   Đăng xuất
                 </button>
@@ -230,7 +176,7 @@ export default function Header() {
               <Link
                 to="/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block text-center py-3.5 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold rounded-xl"
+                className="block text-center py-3 bg-primary text-white font-bold rounded-lg"
               >
                 Đăng nhập
               </Link>
@@ -242,25 +188,16 @@ export default function Header() {
   );
 }
 
-const HeaderLink = ({
-  to,
-  icon,
-  label,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-}) => (
+const NavLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
   <Link
-    to={to}
-    className="flex items-center gap-2 font-medium text-gray-700 hover:text-orange-600 transition-colors duration-200 whitespace-nowrap"
+    to={href}
+    className="px-4 py-2 text-foreground hover:text-primary font-medium transition-colors"
   >
-    {icon}
-    <span>{label}</span>
+    {children}
   </Link>
 );
 
-const MobileLink = ({
+const MobileNavLink = ({
   to,
   label,
   setOpen,
@@ -272,7 +209,7 @@ const MobileLink = ({
   <Link
     to={to}
     onClick={() => setOpen(false)}
-    className="block text-center py-3.5 bg-gray-50 rounded-xl font-medium text-gray-800 hover:bg-orange-50 hover:text-orange-700 transition"
+    className="block text-center py-3 bg-secondary rounded-lg font-semibold text-foreground hover:bg-border transition-colors"
   >
     {label}
   </Link>

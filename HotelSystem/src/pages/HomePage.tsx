@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { roomApi } from '../services/api';
 import type { Room } from '../types';
 import HeroCarousel from '../components/HeroCarousel';
+import { Card, CardImage, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Rating } from '../components/ui/Rating';
 
 import {
   Heart,
@@ -13,6 +17,9 @@ import {
   Coffee,
   Shield,
   Clock,
+  Zap,
+  Shield as SecureIcon,
+  BookOpen,
 } from 'lucide-react';
 
 const HomePage = () => {
@@ -76,174 +83,190 @@ const HomePage = () => {
   }, []);
 
   return (
-    <div className="w-full flex flex-col items-center">
-      {/* ===== HERO (full width) ===== */}
-      <div className="w-full">
-        <HeroCarousel />
-      </div>
+    <div className="w-full flex flex-col">
+      {/* ===== HERO SECTION ===== */}
+      <HeroCarousel />
 
-      {/* ===== CONTENT WRAPPER (CENTER) ===== */}
-      <div className="w-full max-w-7xl mx-auto px-4">
+      {/* ===== MAIN CONTENT ===== */}
+      <main className="w-full">
+        {/* Highlights Section */}
+        <section className="py-16 lg:py-24 bg-background">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16 space-y-4">
+              <Badge variant="primary" size="md">Tại sao chọn S-T-T</Badge>
+              <h2 className="text-3xl lg:text-5xl font-bold text-foreground">
+                Trải Nghiệm Lưu Trú Đẳng Cấp
+              </h2>
+              <p className="text-lg text-text-muted max-w-2xl mx-auto">
+                Khám phá sự kết hợp hoàn hảo giữa sang trọng, riêng tư và dịch vụ tuyệt vời
+              </p>
+            </div>
 
-        {/* ===== FEATURES ===== */}
-        <section className="py-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-3">
-            Những trải nghiệm lưu trú mới
-          </h2>
-          <p className="text-center text-gray-600 mb-12">
-            S-T-T
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <Feature
-              icon={<Heart size={30} className="text-red-500" />}
-              title="Thiết kế hiện đại"
-              desc="Không gian tinh tế, sang trọng với tiện nghi cao cấp"
-            />
-            <Feature
-              icon={<Star size={30} className="text-orange-500" />}
-              title="Dịch vụ 5 sao"
-              desc="Đội ngũ nhân viên tận tâm phục vụ 24/7"
-            />
-            <Feature
-              icon={<Shield size={30} className="text-blue-500" />}
-              title="An toàn & Riêng tư"
-              desc="Đảm bảo sự riêng tư tuyệt đối"
-            />
+            <div className="grid md:grid-cols-3 gap-8">
+              <FeatureCard
+                icon={<Heart size={28} className="text-primary" />}
+                title="Thiết Kế Sang Trọng"
+                description="Không gian được trang trí tinh tế với những chi tiết cao cấp"
+              />
+              <FeatureCard
+                icon={<Star size={28} className="text-primary" />}
+                title="Dịch Vụ 5 Sao"
+                description="Đội ngũ tận tâm phục vụ 24/7 với chuyên nghiệp"
+              />
+              <FeatureCard
+                icon={<SecureIcon size={28} className="text-primary" />}
+                title="An Toàn & Riêng Tư"
+                description="Hệ thống bảo mật hiện đại, đảm bảo tuyệt đối"
+              />
+            </div>
           </div>
         </section>
 
-        {/* ===== ROOMS ===== */}
-        <section className="py-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-12">
-            Phòng nổi bật
-          </h2>
-
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-orange-500" />
+        {/* Featured Rooms Section */}
+        <section className="py-16 lg:py-24 bg-secondary/30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16 space-y-4">
+              <Badge variant="secondary" size="md">Phòng Nổi Bật</Badge>
+              <h2 className="text-3xl lg:text-5xl font-bold text-foreground">
+                Các Phòng Tuyệt Vời
+              </h2>
+              <p className="text-lg text-text-muted max-w-2xl mx-auto">
+                Lựa chọn từ bộ sưu tập phòng cao cấp của chúng tôi
+              </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center">
-              {rooms.map((room) => (
-                <Link
-                  key={room.id}
-                  to={`/rooms/${room.id}`}
-                  className="w-full max-w-sm bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition group"
-                >
-                  <div className="relative h-60 overflow-hidden">
-                    <img
-                      src={room.images[0]}
-                      alt={room.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
-                    />
-                    <span className="absolute top-4 right-4 bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                      {room.price.toLocaleString('vi-VN')}đ / đêm
-                    </span>
-                  </div>
 
-                  <div className="p-6 text-center">
-                    <h3 className="text-xl font-bold mb-2">
-                      {room.name}
-                    </h3>
-                    <p className="text-gray-600 mb-4 line-clamp-2">
-                      {room.description}
-                    </p>
-
-                    <div className="flex justify-center gap-6 text-gray-600 text-sm mb-4">
-                      <IconText icon={<Wifi size={16} />} text="WiFi" />
-                      <IconText icon={<Tv size={16} />} text="TV" />
-                      <IconText icon={<Wind size={16} />} text="AC" />
-                    </div>
-
-                    <button className="w-full bg-orange-500 text-white py-3 rounded-lg hover:bg-orange-600 transition font-semibold">
-                      Xem chi tiết
-                    </button>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-          <br/>
-          <div className="text-center mt-80 mb-20">
-            <Link
-              to="/rooms"
-              className="inline-block bg-orange-500 text-white px-8 py-3 rounded-lg hover:bg-orange-700 transition font-semibold"
-            >
-              Xem tất cả phòng
-            </Link>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-border border-t-primary" />
+              </div>
+            ) : (
+              <>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+                  {rooms.map((room) => (
+                    <Link
+                      key={room.id}
+                      to={`/rooms/${room.id}`}
+                      className="h-full"
+                    >
+                      <Card hover variant="elevated" className="h-full flex flex-col overflow-hidden">
+                        <CardImage>
+                          <img
+                            src={room.images[0]}
+                            alt={room.name}
+                            className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                          />
+                          <div className="absolute top-4 right-4 z-10">
+                            <Badge variant="primary" size="md">
+                              {room.price.toLocaleString('vi-VN')}đ
+                            </Badge>
+                          </div>
+                          <div className="absolute bottom-4 left-4 z-10">
+                            <Badge variant="secondary" size="md">
+                              {room.type}
+                            </Badge>
+                          </div>
+                        </CardImage>
+                        <CardContent className="flex-grow flex flex-col">
+                          <CardHeader>
+                            <CardTitle>{room.name}</CardTitle>
+                            <CardDescription>{room.description}</CardDescription>
+                          </CardHeader>
+                          <div className="mt-auto pt-4">
+                            <div className="flex gap-4 text-text-muted text-sm mb-4">
+                              <div className="flex items-center gap-1">
+                                <Wifi size={16} />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Tv size={16} />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Wind size={16} />
+                              </div>
+                            </div>
+                            <Button className="w-full" variant="primary" size="md">
+                              Xem chi tiết
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+                <div className="text-center">
+                  <Link to="/rooms">
+                    <Button size="lg">
+                      Xem Tất Cả Phòng
+                    </Button>
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         </section>
-      </div>
-        <br/>
 
-      <section className="w-full py-16 bg-gradient-to-br from-red-50 to-orange-50">
-        <div className="max-w mx-auto px-4">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-5">
-            HÃY ĐẾN VỚI CHÚNG TÔI
-          </h2>
+        {/* Why Choose Us Section */}
+        <section className="py-16 lg:py-24 bg-accent text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16 space-y-4">
+              <h2 className="text-3xl lg:text-5xl font-bold">
+                Tại Sao Chọn S-T-T?
+              </h2>
+              <p className="text-lg text-white/70 max-w-2xl mx-auto">
+                Chúng tôi cung cấp những trải nghiệm không quên
+              </p>
+            </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 place-items-center mt-12">
-            <Why icon={<Clock size={32} />} title="Phục vụ 24/7" desc="Phục vụ mọi lúc" />
-            <Why icon={<Shield size={32} />} title="An toàn" desc="Bảo mật" />
-            <Why icon={<Wifi size={32} />} title="WiFi mạnh" desc="Tốc độ cao" />
-            <Why icon={<Coffee size={32} />} title="Tiện ích" desc="Cao cấp" />
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              <WhyCard icon={<Clock size={32} />} title="Phục vụ 24/7" description="Hỗ trợ bất cứ lúc nào" />
+              <WhyCard icon={<SecureIcon size={32} />} title="An Toàn" description="Bảo mật tuyệt đối" />
+              <WhyCard icon={<Zap size={32} />} title="WiFi Nhanh" description="Tốc độ cao, ổn định" />
+              <WhyCard icon={<BookOpen size={32} />} title="Tiện Ích" description="Tất cả những gì bạn cần" />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
     </div>
   );
 };
 
 export default HomePage;
 
-/* ===== SUB COMPONENT ===== */
+/* ===== SUB COMPONENTS ===== */
 
-const Feature = ({
+const FeatureCard = ({
   icon,
   title,
-  desc,
+  description,
 }: {
   icon: JSX.Element;
   title: string;
-  desc: string;
+  description: string;
 }) => (
-  <div className="bg-white p-8 rounded-xl shadow-md hover:shadow-xl transition text-center">
-    <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center bg-gray-100 rounded-full">
+  <Card variant="elevated" hover className="p-8 text-center">
+    <div className="w-16 h-16 mx-auto mb-6 flex items-center justify-center bg-primary/10 rounded-xl">
       {icon}
     </div>
-    <h3 className="text-xl font-bold mb-3">{title}</h3>
-    <p className="text-gray-600">{desc}</p>
-  </div>
+    <h3 className="text-xl font-bold mb-3 text-foreground">{title}</h3>
+    <p className="text-text-muted leading-relaxed">{description}</p>
+  </Card>
 );
 
-const IconText = ({
-  icon,
-  text,
-}: {
-  icon: JSX.Element;
-  text: string;
-}) => (
-  <div className="flex items-center gap-1">
-    {icon}
-    <span>{text}</span>
-  </div>
-);
-
-const Why = ({
+const WhyCard = ({
   icon,
   title,
-  desc,
+  description,
 }: {
   icon: JSX.Element;
   title: string;
-  desc: string;
+  description: string;
 }) => (
-  <div className="text-center max-w-xs">
-    <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow text-orange-500">
+  <div className="text-center space-y-4">
+    <div className="w-16 h-16 mx-auto flex items-center justify-center bg-white/10 rounded-xl text-primary">
       {icon}
     </div>
-    <h3 className="font-bold mb-1">{title}</h3>
-    <p className="text-gray-600 text-sm">{desc}</p>
+    <div>
+      <h4 className="font-bold text-lg mb-2">{title}</h4>
+      <p className="text-white/70 text-sm">{description}</p>
+    </div>
   </div>
 );
