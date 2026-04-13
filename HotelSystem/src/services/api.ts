@@ -171,7 +171,12 @@ attachAuthInterceptors(userHttp);
 roomHttp.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Suppress noisy Vite proxy errors - let mock data handle it
+    // Suppress noisy console errors for connection failures
+    // The catch handler in roomApi will handle the fallback to mock data
+    if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
+      // Silently reject - API layer handles fallback
+      return Promise.reject(error);
+    }
     return Promise.reject(error);
   }
 );
