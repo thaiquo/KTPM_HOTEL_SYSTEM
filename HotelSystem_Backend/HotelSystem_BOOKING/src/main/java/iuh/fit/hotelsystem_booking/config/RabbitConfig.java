@@ -14,10 +14,12 @@ public class RabbitConfig {
 
     // QUEUES
     public static final String ROOM_HELD_QUEUE = "room.held.queue";
+    public static final String ROOM_HOLD_FAILED_QUEUE = "room.hold.failed.queue";
     public static final String PAYMENT_RESULT_QUEUE = "payment.result.queue";
 
     // ROUTING KEYS
     public static final String ROOM_HELD_ROUTING_KEY = "room.held";
+    public static final String ROOM_HOLD_FAILED_ROUTING_KEY = "room.hold.failed";
     public static final String PAYMENT_RESULT_ROUTING_KEY = "payment.result";
 
     @Bean
@@ -39,6 +41,22 @@ public class RabbitConfig {
                 .bind(roomHeldQueue())
                 .to(exchange())
                 .with(ROOM_HELD_ROUTING_KEY);
+    }
+
+    // -------------------------
+    // ROOM HOLD FAILED
+    // -------------------------
+    @Bean
+    public Queue roomHoldFailedQueue() {
+        return new Queue(ROOM_HOLD_FAILED_QUEUE);
+    }
+
+    @Bean
+    public Binding roomHoldFailedBinding() {
+        return BindingBuilder
+                .bind(roomHoldFailedQueue())
+                .to(exchange())
+                .with(ROOM_HOLD_FAILED_ROUTING_KEY);
     }
 
     // -------------------------

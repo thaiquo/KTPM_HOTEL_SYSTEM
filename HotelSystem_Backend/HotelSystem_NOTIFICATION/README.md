@@ -35,3 +35,9 @@ Notification service lắng nghe:
 ```bash
 docker compose -f docker-compose.dev.yml up -d notification-service
 ```
+
+## Cập nhật README khi thay đổi
+
+- Nếu đổi endpoint/query params: cập nhật mục **REST endpoints**.
+- Nếu đổi routing keys/flow: cập nhật mục **RabbitMQ**.
+- Nếu đổi JWT/DB/RabbitMQ config: cập nhật mục **ENV / Config**.

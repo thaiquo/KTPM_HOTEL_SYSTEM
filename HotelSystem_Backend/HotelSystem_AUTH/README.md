@@ -61,3 +61,8 @@ curl -X POST http://localhost:8081/auth/refresh \
   -H "Content-Type: application/json" \
   -d '{"refreshToken":"<refresh-token>"}'
 ```
+
+## Cập nhật README khi thay đổi
+
+- Nếu đổi endpoint/payload/response: cập nhật mục **Endpoints** + phần **Test nhanh**.
+- Nếu đổi JWT/DB/RabbitMQ config: cập nhật mục **ENV / Config**.

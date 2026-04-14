@@ -39,3 +39,8 @@ docker compose -f docker-compose.dev.yml up -d user-service
 curl http://localhost:8082/users/me \
   -H "Authorization: Bearer <access-token>"
 ```
+
+## Cập nhật README khi thay đổi
+
+- Nếu đổi endpoint/payload/response hoặc auth requirement: cập nhật mục **Endpoints** + **Auth**.
+- Nếu đổi JWT/DB/RabbitMQ config: cập nhật mục **ENV / Config**.

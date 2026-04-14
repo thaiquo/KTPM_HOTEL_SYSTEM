@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { addDays, differenceInCalendarDays, format } from 'date-fns';
 import { ArrowLeft, Calendar, Users, BedDouble, CheckCircle2 } from 'lucide-react';
+import axios from 'axios';
 
 import { useAuth } from '../../../contexts/AuthContext';
 import { bookingApi, roomApi } from '../../../services/api';
@@ -92,6 +93,22 @@ export default function BookingInfoPage() {
       navigate('/my-bookings?created=1');
     } catch (e) {
       console.error(e);
+      if (axios.isAxiosError(e)) {
+        const status = e.response?.status;
+        const serverMessage = (e.response?.data as { message?: string } | undefined)?.message;
+
+        if (status === 409) {
+          if (serverMessage === 'room is already booked') {
+            setError('Phòng đã được đặt. Vui lòng chọn phòng khác.');
+          } else if (serverMessage === 'room is currently being held') {
+            setError('Phòng đang được giữ tạm thời. Vui lòng thử lại sau.');
+          } else {
+            setError('Phòng không còn khả dụng. Vui lòng thử lại.');
+          }
+          return;
+        }
+      }
+
       setError('Đặt phòng thất bại. Vui lòng thử lại.');
     } finally {
       setSubmitting(false);

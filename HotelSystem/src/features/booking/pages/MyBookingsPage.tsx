@@ -37,9 +37,10 @@ export default function MyBookingsPage() {
       setError('');
       try {
         const list = await bookingApi.getByUser(user.id);
+        const active = list.filter((b) => b.status !== 'CANCELLED');
 
         const enriched = await Promise.all(
-          list.map(async (b) => {
+          active.map(async (b) => {
             try {
               const room = await roomApi.getById(b.roomId);
               return { ...b, room };
@@ -70,8 +71,9 @@ export default function MyBookingsPage() {
     bookingApi
       .getByUser(user.id)
       .then(async (list) => {
+        const active = list.filter((b) => b.status !== 'CANCELLED');
         const enriched = await Promise.all(
-          list.map(async (b) => {
+          active.map(async (b) => {
             try {
               const room = await roomApi.getById(b.roomId);
               return { ...b, room };

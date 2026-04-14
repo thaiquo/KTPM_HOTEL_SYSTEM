@@ -1,0 +1,111 @@
+stages:
+  - test
+  - build
+  - deploy
+
+# Required CI variables (set in GitLab -> Settings -> CI/CD -> Variables):
+# - CI_REGISTRY_USER / CI_REGISTRY_PASSWORD (GitLab provides)
+# - DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY (for deploy stage)
+# - DEPLOY_PATH (e.g. /opt/qlks)
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+
+.default_docker:
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      command: ["--mtu=1460"]
+  before_script:
+    - docker info
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+
+# ----------------------
+# TEST (lightweight)
+# ----------------------
+frontend_test:
+  stage: test
+  image: node:20-alpine
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - cd HotelSystem
+    - npm ci
+    - npm run build
+
+# NOTE: Maven tests are currently skipped in compose; keep pipeline fast.
+# If you want: add mvn test per service here.
+
+# ----------------------
+# BUILD + PUSH
+# ----------------------
+build_images:
+  stage: build
+  extends: .default_docker
+  rules:
+    - if: $CI_COMMIT_BRANCH
+  script:
+    # Frontend
+    - docker build -t "$CI_REGISTRY_IMAGE/frontend:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/frontend:latest" ./HotelSystem
+
+    # Backend services
+    - docker build -t "$CI_REGISTRY_IMAGE/auth-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/auth-service:latest" ./HotelSystem_Backend/HotelSystem_AUTH
+    - docker build -t "$CI_REGISTRY_IMAGE/user-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/user-service:latest" ./HotelSystem_Backend/HotelSystem_USER
+    - docker build -t "$CI_REGISTRY_IMAGE/room-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/room-service:latest" ./HotelSystem_Backend/HotelSystem_ROOM
+    - docker build -t "$CI_REGISTRY_IMAGE/booking-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/booking-service:latest" ./HotelSystem_Backend/HotelSystem_BOOKING
+    - docker build -t "$CI_REGISTRY_IMAGE/payment-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/payment-service:latest" ./HotelSystem_Backend/HotelSystem_PAYMENT
+    - docker build -t "$CI_REGISTRY_IMAGE/notification-service:$IMAGE_TAG" -t "$CI_REGISTRY_IMAGE/notification-service:latest" ./HotelSystem_Backend/HotelSystem_NOTIFICATION
+
+    # Push
+    - docker push "$CI_REGISTRY_IMAGE/frontend:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/frontend:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/auth-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/auth-service:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/user-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/user-service:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/room-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/room-service:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/booking-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/booking-service:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/payment-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/payment-service:latest"
+
+    - docker push "$CI_REGISTRY_IMAGE/notification-service:$IMAGE_TAG"
+    - docker push "$CI_REGISTRY_IMAGE/notification-service:latest"
+
+# ----------------------
+# DEPLOY (SSH + docker compose)
+# ----------------------
+deploy_prod:
+  stage: deploy
+  image: alpine:3.20
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - mkdir -p ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    # Upload deploy compose
+    - rsync -avz deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/deploy/"
+
+    # Remote deploy
+    - |
+      ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+        set -e;
+        cd $DEPLOY_PATH/deploy;
+        echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY';
+        export CI_REGISTRY_IMAGE='$CI_REGISTRY_IMAGE';
+        export IMAGE_TAG='$IMAGE_TAG';
+        docker compose -f docker-compose.deploy.yml pull;
+        docker compose -f docker-compose.deploy.yml up -d;
+        docker compose -f docker-compose.deploy.yml ps;
+      "

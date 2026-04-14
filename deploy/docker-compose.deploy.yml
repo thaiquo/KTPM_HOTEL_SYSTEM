@@ -1,16 +1,4 @@
 services:
-
-  # ========================
-  # REDIS (CACHE)
-  # ========================
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  # ========================
-  # RABBITMQ
-  # ========================
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -21,25 +9,11 @@ services:
       RABBITMQ_DEFAULT_USER: thaiquoc
       RABBITMQ_DEFAULT_PASS: 123456
 
-  # ========================
-  # PGADMIN (UI quan ly DB)
-  # ========================
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
+  redis:
+    image: redis:7-alpine
     ports:
-      - "5050:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: 123456
-    depends_on:
-      - postgres-auth
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - "6379:6379"
 
-  # ========================
-  # AUTH DB + SERVICE
-  # ========================
   postgres-auth:
     image: postgres:15
     ports:
@@ -51,8 +25,63 @@ services:
     volumes:
       - auth_data:/var/lib/postgresql/data
 
+  postgres-user:
+    image: postgres:15
+    ports:
+      - "54322:5432"
+    environment:
+      POSTGRES_DB: hotel_user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - user_data:/var/lib/postgresql/data
+
+  postgres-room:
+    image: postgres:15
+    ports:
+      - "54323:5432"
+    environment:
+      POSTGRES_DB: hotel_room
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - room_data:/var/lib/postgresql/data
+
+  postgres-booking:
+    image: postgres:15
+    ports:
+      - "54324:5432"
+    environment:
+      POSTGRES_DB: hotel_booking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - booking_data:/var/lib/postgresql/data
+
+  postgres-payment:
+    image: postgres:15
+    ports:
+      - "54325:5432"
+    environment:
+      POSTGRES_DB: hotel_payment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - payment_data:/var/lib/postgresql/data
+
+  postgres-notification:
+    image: postgres:15
+    ports:
+      - "54326:5432"
+    environment:
+      POSTGRES_DB: hotel_notification
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+
   auth-service:
-    build: ./HotelSystem_Backend/HotelSystem_AUTH
+    image: ${CI_REGISTRY_IMAGE}/auth-service:${IMAGE_TAG}
     ports:
       - "8081:8081"
     depends_on:
@@ -66,22 +95,8 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
 
-  # ========================
-  # USER DB + SERVICE
-  # ========================
-  postgres-user:
-    image: postgres:15
-    ports:
-      - "54322:5432"
-    environment:
-      POSTGRES_DB: hotel_user
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - user_data:/var/lib/postgresql/data
-
   user-service:
-    build: ./HotelSystem_Backend/HotelSystem_USER
+    image: ${CI_REGISTRY_IMAGE}/user-service:${IMAGE_TAG}
     ports:
       - "8082:8082"
     depends_on:
@@ -95,22 +110,8 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
 
-  # ========================
-  # ROOM DB + SERVICE
-  # ========================
-  postgres-room:
-    image: postgres:15
-    ports:
-      - "54323:5432"
-    environment:
-      POSTGRES_DB: hotel_room
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - room_data:/var/lib/postgresql/data
-
   room-service:
-    build: ./HotelSystem_Backend/HotelSystem_ROOM
+    image: ${CI_REGISTRY_IMAGE}/room-service:${IMAGE_TAG}
     ports:
       - "8083:8083"
     depends_on:
@@ -128,27 +129,14 @@ services:
       REDIS_PORT: 6379
       CACHE_TYPE: redis
 
-  # ========================
-  # BOOKING DB + SERVICE
-  # ========================
-  postgres-booking:
-    image: postgres:15
-    ports:
-      - "54324:5432"
-    environment:
-      POSTGRES_DB: hotel_booking
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - booking_data:/var/lib/postgresql/data
-
   booking-service:
-    build: ./HotelSystem_Backend/HotelSystem_BOOKING
+    image: ${CI_REGISTRY_IMAGE}/booking-service:${IMAGE_TAG}
     ports:
       - "8084:8084"
     depends_on:
       - postgres-booking
       - rabbitmq
+      - room-service
     environment:
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
@@ -156,23 +144,10 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
-
-  # ========================
-  # PAYMENT DB + SERVICE
-  # ========================
-  postgres-payment:
-    image: postgres:15
-    ports:
-      - "54325:5432"
-    environment:
-      POSTGRES_DB: hotel_payment
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - payment_data:/var/lib/postgresql/data
+      ROOM_SERVICE_URL: http://room-service:8083
 
   payment-service:
-    build: ./HotelSystem_Backend/HotelSystem_PAYMENT
+    image: ${CI_REGISTRY_IMAGE}/payment-service:${IMAGE_TAG}
     ports:
       - "8085:8085"
     depends_on:
@@ -186,22 +161,8 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
 
-  # ========================
-  # NOTIFICATION DB + SERVICE
-  # ========================
-  postgres-notification:
-    image: postgres:15
-    ports:
-      - "54326:5432"
-    environment:
-      POSTGRES_DB: hotel_notification
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - notification_data:/var/lib/postgresql/data
-
   notification-service:
-    build: ./HotelSystem_Backend/HotelSystem_NOTIFICATION
+    image: ${CI_REGISTRY_IMAGE}/notification-service:${IMAGE_TAG}
     ports:
       - "8086:8086"
     depends_on:
@@ -215,11 +176,8 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
 
-  # ========================
-  # FRONTEND
-  # ========================
   frontend:
-    build: ./HotelSystem
+    image: ${CI_REGISTRY_IMAGE}/frontend:${IMAGE_TAG}
     ports:
       - "3000:80"
     depends_on:
@@ -231,7 +189,6 @@ services:
       - notification-service
 
 volumes:
-  pgadmin_data:
   auth_data:
   user_data:
   room_data:

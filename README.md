@@ -131,7 +131,13 @@ Luồng đặt phòng dùng RabbitMQ để phối hợp trạng thái phòng và
 RabbitMQ (topic) dùng chung:
 
 - Exchange: `hotel.exchange`
-- Routing keys chính: `room.hold`, `room.held`, `room.confirm`, `room.release`, `payment.request`, `payment.result`, `booking.confirmed`, `booking.cancelled`
+- Routing keys chính: `room.hold`, `room.held`, `room.hold.failed`, `room.confirm`, `room.release`, `payment.request`, `payment.result`, `booking.confirmed`, `booking.cancelled`
+
+Ghi chú concurrency (nhiều người chọn cùng 1 phòng):
+
+- ROOM chỉ HOLD 1 booking tại một thời điểm (first-hold-wins).
+- Nếu phòng đã HOLD/BOOKED thì ROOM publish `room.hold.failed` để BOOKING cancel booking bị trễ (tránh kẹt PENDING).
+- HOLD có TTL mặc định 6 phút (config được) và ROOM tự auto-release khi quá hạn.
 
 ## 5) README theo module
 
@@ -148,3 +154,21 @@ RabbitMQ (topic) dùng chung:
 - Nếu `docker compose` báo không connect được daemon: mở Docker Desktop và đợi status "Running".
 - Nếu API trả 404 qua proxy path: kiểm tra frontend/proxy đang chạy đúng compose (dev/prod) và container service tương ứng đang `Up`.
 - Dev mode trên Windows đôi khi watch file bị lỗi I/O (Vite). Compose đã bật `CHOKIDAR_USEPOLLING=true` để giảm lỗi.
+
+## 7) Performance / Scalability checklist (đo ra số)
+
+- Redis cache cho Room list: ROOM service cache `GET /rooms` vào Redis (TTL mặc định 30s).
+- Rate limiting: ROOM + BOOKING có server-side rate limit trả 429 khi vượt ngưỡng.
+- Timeout + retry (inter-service): BOOKING gọi ROOM để validate trước khi tạo booking (timeout + retry configurable).
+- Load test scripts (k6/JMeter): xem [load-tests/README.md](load-tests/README.md)
+- GitLab CI/CD mẫu build/push/deploy: xem [.gitlab-ci.yml](.gitlab-ci.yml) và [deploy/README.md](deploy/README.md)
+
+## 8) Quy ước cập nhật README (nhớ cập nhật mỗi lần thay đổi)
+
+Để repo luôn ở trạng thái “clone về đọc README là chạy được”, mỗi lần chỉnh code/config nhớ cập nhật README tương ứng:
+
+- Nếu đổi **ports / compose / env** → cập nhật README root và file compose liên quan.
+- Nếu đổi **API endpoint / payload / response** của service → cập nhật README của service đó (mục REST endpoints + body mẫu).
+- Nếu đổi **proxy path** (Vite/Nginx) → cập nhật README root + [HotelSystem/README.md](HotelSystem/README.md).
+- Nếu đổi **RabbitMQ routing keys / flow** → cập nhật README root (mục luồng) + README service liên quan.
+- Nếu thêm **rubric feature** (cache, rate-limit, retry/timeout, load-test, CI/CD) → cập nhật README root mục 7 và README module (nếu module chịu trách nhiệm).

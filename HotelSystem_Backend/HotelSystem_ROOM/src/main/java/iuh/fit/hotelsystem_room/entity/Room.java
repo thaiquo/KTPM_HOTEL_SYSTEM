@@ -3,6 +3,8 @@ package iuh.fit.hotelsystem_room.entity;
 
 import jakarta.persistence.*;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "rooms")
 public class Room {
@@ -23,6 +25,10 @@ public class Room {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RoomStatus status; // AVAILABLE, HOLD, BOOKED
+
+    // HOLD metadata (for concurrency + TTL)
+    private Long holdBookingId;
+    private LocalDateTime holdUntil;
 
     private Integer maxGuests;
 
@@ -117,6 +123,22 @@ public class Room {
 
     public void setBedCount(Integer bedCount) {
         this.bedCount = bedCount;
+    }
+
+    public Long getHoldBookingId() {
+        return holdBookingId;
+    }
+
+    public void setHoldBookingId(Long holdBookingId) {
+        this.holdBookingId = holdBookingId;
+    }
+
+    public LocalDateTime getHoldUntil() {
+        return holdUntil;
+    }
+
+    public void setHoldUntil(LocalDateTime holdUntil) {
+        this.holdUntil = holdUntil;
     }
 
     public String getDescription() {

@@ -41,7 +41,7 @@ const Footer = () => {
             <ul className="space-y-3 text-sm">
               <li className="flex items-start gap-2 text-slate-400">
                 <MapPin size={16} className="mt-1 shrink-0" />
-                <span>An Khánh, Hồ Chí Minh</span>
+                <span>DHKTPM18B, Hồ Chí Minh</span>
               </li>
               <li className="flex items-center gap-2 text-slate-400">
                 <Phone size={16} />
@@ -72,7 +72,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-slate-800 mt-8 pt-8 text-center text-sm text-slate-400">
-          <p>&copy; 2024 S-T-T Love Hotel. All rights reserved.</p>
+          <p>  S-T-T Love Hotel </p>
         </div>
       </div>
     </footer>
