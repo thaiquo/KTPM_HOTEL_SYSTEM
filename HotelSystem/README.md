@@ -15,59 +15,71 @@ The React Compiler is currently not compatible with SWC. See [this issue](https:
 
 If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-```js
+````js
 export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+  # HotelSystem Frontend (React + Vite)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+  Frontend của hệ thống QLKS.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+  ## 1) Chạy nhanh bằng Docker (khuyến nghị)
+
+  Chạy full stack (frontend + 6 backend + RabbitMQ + Postgres) ở thư mục root:
+
+  ```bash
+  docker compose -f docker-compose.dev.yml up -d
+````
+
+Mở UI:
+
+- http://localhost:3000
+
+Frontend trong dev mode dùng Vite dev server và proxy API về các service backend.
+
+## 2) Chạy frontend standalone (không dùng Docker)
+
+```bash
+cd HotelSystem
+npm install
+npm run dev -- --host 0.0.0.0 --port 3000
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Lưu ý: nếu không dùng Docker thì backend cần chạy sẵn trên máy (8081..8086) hoặc bạn cấu hình biến môi trường.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 3) API base paths
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Trong code, frontend gọi API theo các base path dưới đây (được proxy bởi Vite hoặc Nginx):
+
+- `/auth-api/*`
+- `/user-api/*`
+- `/room-api/*`
+- `/booking-api/*`
+- `/payment-api/*`
+- `/notification-api/*`
+
+Dev proxy cấu hình ở [vite.config.ts](vite.config.ts)
+
+## 4) Cấu hình ENV (tuỳ chọn)
+
+Frontend đọc các biến môi trường sau (nếu không set sẽ dùng các path `/xxx-api`):
+
+- `VITE_AUTH_API_URL`
+- `VITE_USER_API_URL`
+- `VITE_ROOM_API_URL`
+- `VITE_BOOKING_API_URL`
+- `VITE_PAYMENT_API_URL`
+- `VITE_NOTIFICATION_API_URL`
+
+Trong Docker dev stack, compose đã set `VITE_DOCKER=true` để Vite proxy trỏ vào tên service trong Docker network.
+
+## 5) Auth tokens
+
+Frontend lưu token trong `localStorage`:
+
+- `accessToken`
+- `refreshToken`
+
+Axios interceptor tự gắn `Authorization: Bearer <accessToken>` và tự refresh khi bị 401 (xem [src/services/api.ts](src/services/api.ts)).
+
+## 6) Production build
+
+Production build được đóng gói bằng Nginx theo [Dockerfile](Dockerfile) và reverse proxy theo [nginx.conf](nginx.conf).
