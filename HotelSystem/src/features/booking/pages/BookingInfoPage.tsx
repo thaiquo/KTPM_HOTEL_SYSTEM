@@ -80,16 +80,14 @@ export default function BookingInfoPage() {
     setSubmitting(true);
 
     try {
-      await bookingApi.create({
-        roomId: room.id,
-        userId: user.id,
-        checkIn: form.checkIn,
-        checkOut: form.checkOut,
-        guests: form.guests,
-        rooms: form.rooms,
-        totalPrice: total,
-        status: 'pending',
-      });
+      const roomId = Number(room.id);
+      const userId = Number(user.id);
+
+      if (!Number.isFinite(roomId) || !Number.isFinite(userId)) {
+        throw new Error('Invalid roomId/userId');
+      }
+
+      await bookingApi.create({ roomId, userId, checkIn: form.checkIn, checkOut: form.checkOut });
 
       navigate('/my-bookings?created=1');
     } catch (e) {

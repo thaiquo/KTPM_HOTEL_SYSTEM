@@ -16,6 +16,16 @@ type RoomBackend = {
   available?: boolean;
 };
 
+type BookingBackend = {
+  id?: number | string;
+  roomId?: number | string;
+  userId?: number | string;
+  checkIn?: string;
+  checkOut?: string;
+  status?: string;
+  createdAt?: string;
+};
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_BOOKING_API_URL || '/booking-api',
   headers: {
@@ -134,6 +144,24 @@ const mapRoom = (room: RoomBackend): Room => {
   };
 };
 
+const mapBooking = (booking: BookingBackend): Booking => {
+  const rawStatus = String(booking.status || 'PENDING').toLowerCase();
+  const status = (['pending', 'confirmed', 'cancelled'].includes(rawStatus) ? rawStatus : 'pending') as Booking['status'];
+
+  return {
+    id: String(booking.id ?? ''),
+    roomId: String(booking.roomId ?? ''),
+    userId: String(booking.userId ?? ''),
+    checkIn: booking.checkIn || '',
+    checkOut: booking.checkOut || '',
+    totalPrice: 0,
+    status,
+    guests: 0,
+    rooms: 0,
+    createdAt: booking.createdAt || '',
+  };
+};
+
 const extractRoomList = (payload: unknown): Room[] => {
   if (Array.isArray(payload)) {
     return payload.map((item) => mapRoom(item as RoomBackend));
@@ -158,6 +186,30 @@ const extractSingleRoom = (payload: unknown): Room => {
   return mapRoom(payload as RoomBackend);
 };
 
+const extractBookingList = (payload: unknown): Booking[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapBooking(item as BookingBackend));
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: BookingBackend[] }).data.map((item) => mapBooking(item));
+  }
+
+  return [];
+};
+
+const extractSingleBooking = (payload: unknown): Booking => {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return mapBooking((payload as { data: BookingBackend }).data);
+  }
+  return mapBooking(payload as BookingBackend);
+};
+
 attachAuthInterceptors(api);
 attachAuthInterceptors(userHttp);
 
@@ -179,17 +231,20 @@ export const roomApi = {
 
 // Booking APIs
 export const bookingApi = {
-  create: (bookingData: Partial<Booking>) => 
-    api.post<ApiResponse<Booking>>('/bookings', bookingData),
-  
-  getByUser: (userId: string) => 
-    api.get<ApiResponse<Booking[]>>(`/bookings/user/${userId}`),
-  
-  getById: (id: string) => 
-    api.get<ApiResponse<Booking>>(`/bookings/${id}`),
-  
-  cancel: (id: string) => 
-    api.put<ApiResponse<Booking>>(`/bookings/${id}/cancel`),
+  create: async (bookingData: { roomId: number; userId: number; checkIn: string; checkOut: string }): Promise<Booking> => {
+    const response = await api.post<unknown>('/bookings', bookingData);
+    return extractSingleBooking(response.data);
+  },
+
+  getByUser: async (userId: string): Promise<Booking[]> => {
+    const response = await api.get<unknown>(`/bookings/user/${userId}`);
+    return extractBookingList(response.data);
+  },
+
+  getById: async (id: string): Promise<Booking> => {
+    const response = await api.get<unknown>(`/bookings/${id}`);
+    return extractSingleBooking(response.data);
+  },
 };
 
 // Auth APIs

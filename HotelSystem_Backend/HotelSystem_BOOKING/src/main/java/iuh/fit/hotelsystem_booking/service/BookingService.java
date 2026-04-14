@@ -8,6 +8,7 @@ import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.time.LocalDateTime;
 
 @Service
@@ -51,5 +52,12 @@ public class BookingService {
     // ===============================
     public Booking getBooking(Long id) {
         return bookingRepository.findById(id).orElseThrow();
+    }
+
+    // ===============================
+    // LIST BOOKINGS BY USER
+    // ===============================
+    public List<Booking> getBookingsByUserId(Long userId) {
+        return bookingRepository.findByUserId(userId);
     }
 }

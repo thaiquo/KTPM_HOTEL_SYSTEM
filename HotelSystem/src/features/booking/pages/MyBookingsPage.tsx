@@ -36,8 +36,7 @@ export default function MyBookingsPage() {
       setFetching(true);
       setError('');
       try {
-        const res = await bookingApi.getByUser(user.id);
-        const list = res.data.data || [];
+        const list = await bookingApi.getByUser(user.id);
 
         const enriched = await Promise.all(
           list.map(async (b) => {
@@ -70,8 +69,7 @@ export default function MyBookingsPage() {
 
     bookingApi
       .getByUser(user.id)
-      .then(async (res) => {
-        const list = res.data.data || [];
+      .then(async (list) => {
         const enriched = await Promise.all(
           list.map(async (b) => {
             try {
