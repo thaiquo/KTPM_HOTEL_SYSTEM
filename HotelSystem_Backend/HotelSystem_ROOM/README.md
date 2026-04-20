@@ -35,18 +35,8 @@ Exchange/queue cụ thể nằm trong phần config RabbitMQ của service.
 - `RABBIT_HOST` / `RABBIT_USERNAME` / `RABBIT_PASSWORD`
 - `jwt.secret` / `jwt.expiration`
 
-Room HOLD TTL (để tránh giữ phòng quá lâu khi nhiều người đặt cùng lúc):
-
-- `ROOM_HOLD_TTL_SECONDS` (default 6 phút)
-- `ROOM_HOLD_SWEEP_MS` (default 30s) — interval job tự release HOLD quá hạn
-
 ## Chạy service
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d room-service
 ```
-
-## Cập nhật README khi thay đổi
-
-- Nếu đổi endpoint/payload/response: cập nhật mục **REST endpoints**.
-- Nếu đổi ENV/Redis cache/rate limit: cập nhật mục **ENV / Config**.

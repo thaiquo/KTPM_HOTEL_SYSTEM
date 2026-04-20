@@ -1,21 +1,20 @@
 import { useEffect, useState, type JSX } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { roomApi } from '../../../services/api';
 import type { Room } from '../../../types';
 import HeroCarousel from '../components/HeroCarousel';
+import RoomCard from '../components/RoomCard';
 import Card from '../../../shared/components/ui/Card';
 import Spinner from '../../../shared/components/ui/Spinner';
 import Button from '../../../shared/components/ui/Button';
 
 import {
-  Heart,
-  Star,
-  Wifi,
-  Tv,
-  Wind,
-  Coffee,
   Shield,
-  Clock,
+  Heart,
+  Sparkles,
+  Phone,
+  Users,
 } from 'lucide-react';
 
 const HomePage = () => {
@@ -28,7 +27,7 @@ const HomePage = () => {
     setError('');
     try {
       const roomList = await roomApi.getAll();
-      setRooms(roomList.slice(0, 6));
+      setRooms(roomList.slice(0, 12));
     } catch (error) {
       console.error(error);
       setRooms([]);
@@ -40,183 +39,333 @@ const HomePage = () => {
 
   useEffect(() => {
     fetchRooms();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const featured = rooms.slice(0, 3);
+  const galleryRooms = rooms.slice(0, 9);
+
+  const fallbackImage = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200';
+
   return (
-    <div className="w-full flex flex-col items-center">
-      {/* ===== HERO (full width) ===== */}
-      <div className="w-full">
-        <HeroCarousel />
-      </div>
+    <div className="w-full">
+      {/* Hotline pill */}
+      <a
+        href="tel:0925519789"
+        className="fixed left-6 bottom-8 z-40"
+        aria-label="Hotline"
+      >
+        <div className="bg-error text-on-error px-4 py-2.5 rounded-full flex items-center gap-2 shadow-lg animate-pulse-glow hover:scale-105 transition-transform">
+          <Phone size={16} fill="currentColor" />
+          <span className="text-xs font-extrabold tracking-widest uppercase font-label">
+            092.5519.789
+          </span>
+        </div>
+      </a>
 
-      {/* ===== CONTENT WRAPPER (CENTER) ===== */}
-      <div className="w-full max-w-7xl mx-auto px-4">
-        {/* ===== FEATURES ===== */}
-        <section className="py-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-3">
-            Những trải nghiệm lưu trú mới
-          </h2>
-          <p className="text-center text-gray-600 mb-12">S-T-T</p>
+      {/* HERO */}
+      <HeroCarousel />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <Feature
-              icon={<Heart size={30} className="text-red-500" />}
-              title="Thiết kế hiện đại"
-              desc="Không gian tinh tế, sang trọng với tiện nghi cao cấp"
-            />
-            <Feature
-              icon={<Star size={30} className="text-orange-500" />}
-              title="Dịch vụ 5 sao"
-              desc="Đội ngũ nhân viên tận tâm phục vụ 24/7"
-            />
-            <Feature
-              icon={<Shield size={30} className="text-blue-500" />}
-              title="An toàn & Riêng tư"
-              desc="Đảm bảo sự riêng tư tuyệt đối"
-            />
-          </div>
-        </section>
-
-        {/* ===== ROOMS ===== */}
-        <section className="py-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-12">
-            Phòng nổi bật
-          </h2>
+      <div className="mx-auto max-w-7xl px-6">
+        {/* Experience Section */}
+        <section className="py-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-16"
+          >
+            <h2 className="font-headline text-3xl md:text-4xl font-extrabold tracking-tight text-on-surface">
+              Những trải nghiệm lưu trú và làm việc mới tại S-T-T?
+            </h2>
+          </motion.div>
 
           {loading ? (
-            <div className="flex justify-center py-20">
-              <Spinner className="h-12 w-12" />
+            <div className="flex justify-center py-16">
+              <Spinner className="h-10 w-10" />
             </div>
           ) : error ? (
-            <Card className="p-8 rounded-xl text-center">
-              <p className="text-gray-700 font-semibold">{error}</p>
+            <Card className="mt-10 p-8 rounded-2xl text-center">
+              <p className="text-on-surface font-semibold">{error}</p>
               <div className="mt-4 flex items-center justify-center gap-3">
                 <Button onClick={fetchRooms}>Thử lại</Button>
-                <Link to="/rooms" className="text-orange-600 font-semibold hover:text-orange-700">
+                <Link to="/rooms" className="text-primary-container font-extrabold hover:brightness-110">
                   Xem tất cả phòng
                 </Link>
               </div>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 place-items-center">
-              {rooms.map((room) => (
-                <Link
-                  key={room.id}
-                  to={`/rooms/${room.id}`}
-                  className="w-full max-w-sm bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition group"
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Main Featured Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+                whileHover={{ y: -10 }}
+                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border border-gray-100 group"
+              >
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={featured[0]?.images?.[0] || fallbackImage}
+                    alt={featured[0]?.name || 'S-T-T Hotel'}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-white text-xs font-medium">
+                    {featured[0]?.type || 'HOTEL'}
+                  </div>
+                </div>
+                <div className="p-6">
+                  <h3 className="font-bold text-lg mb-4 text-on-surface font-headline">
+                    {featured[0]?.name || 'S-T-T Love Hotel'}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                        Chỉ từ
+                      </span>
+                      <span className="text-xl font-bold text-on-surface">
+                        {featured[0]?.price
+                          ? `${featured[0].price.toLocaleString('vi-VN')}đ`
+                          : '80.000đ'}
+                        <span className="text-sm font-normal text-on-surface-variant uppercase">
+                          {' '}/ Giờ
+                        </span>
+                      </span>
+                    </div>
+                    <Link
+                      to={featured[0] ? `/rooms/${featured[0].id}` : '/rooms'}
+                    >
+                      <Button className="px-6 py-2.5 rounded-lg text-sm">
+                        Xem phòng
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Placeholder cards */}
+              {featured.slice(1, 3).map((room, i) => (
+                <motion.div
+                  key={room?.id || i}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: (i + 1) * 0.15 }}
+                  whileHover={{ y: -10 }}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all border border-gray-100 group"
                 >
-                  <div className="relative h-60 overflow-hidden">
+                  <div className="relative h-64 overflow-hidden">
                     <img
-                      src={room.images[0]}
-                      alt={room.name}
-                      className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                      src={room?.images?.[0] || fallbackImage}
+                      alt={room?.name || 'Room'}
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
-                    <span className="absolute top-4 right-4 bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                      {room.price.toLocaleString('vi-VN')}đ / đêm
-                    </span>
-                  </div>
-
-                  <div className="p-6 text-center">
-                    <h3 className="text-xl font-bold mb-2">{room.name}</h3>
-                    <p className="text-gray-600 mb-4 line-clamp-2">
-                      {room.description}
-                    </p>
-
-                    <div className="flex justify-center gap-6 text-gray-600 text-sm mb-4">
-                      <IconText icon={<Wifi size={16} />} text="WiFi" />
-                      <IconText icon={<Tv size={16} />} text="TV" />
-                      <IconText icon={<Wind size={16} />} text="AC" />
-                    </div>
-
-                    <div className="w-full bg-orange-500 text-white py-3 rounded-lg hover:bg-orange-600 transition font-semibold">
-                      Xem chi tiết
+                    <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-white text-xs font-medium">
+                      {room?.type || 'HOTEL'}
                     </div>
                   </div>
-                </Link>
+                  <div className="p-6">
+                    <h3 className="font-bold text-lg mb-4 text-on-surface font-headline">
+                      {room?.name || 'Phòng cao cấp'}
+                    </h3>
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider">
+                          Chỉ từ
+                        </span>
+                        <span className="text-xl font-bold text-on-surface">
+                          {room?.price
+                            ? `${room.price.toLocaleString('vi-VN')}đ`
+                            : '80.000đ'}
+                          <span className="text-sm font-normal text-on-surface-variant uppercase">
+                            {' '}/ Đêm
+                          </span>
+                        </span>
+                      </div>
+                      <Link to={room ? `/rooms/${room.id}` : '/rooms'}>
+                        <Button className="px-6 py-2.5 rounded-lg text-sm">
+                          Xem phòng
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </motion.div>
               ))}
             </div>
           )}
-          <br />
-          <div className="text-center mt-80 mb-20">
-            <Link
-              to="/rooms"
-              className="inline-block bg-orange-500 text-white px-8 py-3 rounded-lg hover:bg-orange-700 transition font-semibold"
-            >
-              Xem tất cả phòng
+        </section>
+
+        {/* Why choose us */}
+        <section className="py-24 -mx-6 px-6 bg-surface-dim overflow-hidden">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center max-w-4xl mx-auto mb-20"
+          >
+            <h2 className="text-3xl md:text-4xl font-extrabold text-on-surface font-headline tracking-tight mb-6">
+              Tại sao chọn S-T-T Love Hotel?
+            </h2>
+            <div className="w-20 h-1 bg-primary-container mx-auto mb-8 rounded-full" />
+            <p className="text-on-surface-variant md:text-lg italic leading-relaxed">
+              Không chỉ là một chỗ dừng chân, S‑T‑T mang đến cho bạn và người thương một
+              không gian lãng mạn, riêng tư và trọn vẹn cảm xúc ngay giữa lòng TP Hồ Chí Minh.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 max-w-7xl mx-auto">
+            <WhyLite
+              icon={<Users size={32} />}
+              title="Không gian riêng tư +"
+              desc="Tận hưởng sự riêng tư tuyệt đối trong từng căn phòng. Thiết kế tối ưu để bạn và người thương có những giây phút thân mật, trọn vẹn."
+              delay={0}
+            />
+            <WhyLite
+              icon={<Heart size={32} />}
+              title="Thiết kế lãng mạn +"
+              desc="Mỗi căn phòng mang phong cách độc đáo, lãng mạn và tinh tế, tạo nên bầu không khí ngọt ngào, giúp tình cảm thêm thăng hoa."
+              delay={0.1}
+            />
+            <WhyLite
+              icon={<Sparkles size={32} />}
+              title="Tiện nghi cao cấp +"
+              desc="Trang bị đầy đủ tiện nghi: giường lớn êm ái, dụng cụ cao cấp, ánh sáng dịu nhẹ và nhiều dịch vụ đi kèm."
+              delay={0.2}
+            />
+            <WhyLite
+              icon={<Shield size={32} />}
+              title="Tự do & bí mật +"
+              desc="Khách hàng được đảm bảo tối đa về sự kín đáo, từ quy trình nhận – trả phòng đến các dịch vụ đi kèm."
+              delay={0.3}
+            />
+          </div>
+        </section>
+
+        {/* Gallery */}
+        <section className="py-24">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl font-extrabold text-on-surface font-headline tracking-tight mb-4">
+              Bộ sưu tập lưu trú độc đáo tại S‑T‑T
+            </h2>
+            <div className="w-24 h-1 bg-outline-variant mx-auto rounded-full" />
+          </motion.div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 auto-rows-[200px]">
+            {galleryRooms.map((room, i) => (
+              <motion.div
+                key={room?.id || i}
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.06 }}
+                whileHover={{ scale: 0.98 }}
+                className={`relative rounded-2xl overflow-hidden group shadow-sm ${
+                  i === 0 ? 'row-span-2 col-span-2' : 'col-span-1'
+                }`}
+              >
+                <img
+                  src={room?.images?.[0] || fallbackImage}
+                  alt={room?.name || `Gallery ${i}`}
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300" />
+                <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <div className="text-white text-sm font-bold font-headline bg-black/40 backdrop-blur-sm rounded-lg px-3 py-1.5">
+                    {room?.name || 'Xem phòng'}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+
+        {/* Rooms grid */}
+        <section className="pb-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="flex items-end justify-between gap-6"
+          >
+            <div>
+              <div className="text-xs uppercase tracking-[0.5em] text-on-surface-variant font-label">
+                Đặt phòng
+              </div>
+              <h2 className="mt-3 text-3xl md:text-5xl font-extrabold tracking-tight text-on-surface font-headline">
+                Phòng nổi bật
+              </h2>
+            </div>
+            <Link to="/rooms" className="hidden sm:inline-flex">
+              <Button variant="outline">Xem tất cả phòng</Button>
+            </Link>
+          </motion.div>
+
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Spinner className="h-10 w-10" />
+            </div>
+          ) : (
+            <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {rooms.slice(0, 6).map((room, i) => (
+                <motion.div
+                  key={room.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: i * 0.1 }}
+                >
+                  <RoomCard room={room} />
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          <div className="text-center mt-10 sm:hidden">
+            <Link to="/rooms" className="inline-flex">
+              <Button variant="outline">Xem tất cả phòng</Button>
             </Link>
           </div>
         </section>
       </div>
-      <br />
-
-      <section className="w-full py-16 bg-gradient-to-br from-red-50 to-orange-50">
-        <div className="max-w mx-auto px-4">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-5">
-            HÃY ĐẾN VỚI CHÚNG TÔI
-          </h2>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 place-items-center mt-12">
-            <Why icon={<Clock size={32} />} title="Phục vụ 24/7" desc="Phục vụ mọi lúc" />
-            <Why icon={<Shield size={32} />} title="An toàn" desc="Bảo mật" />
-            <Why icon={<Wifi size={32} />} title="WiFi mạnh" desc="Tốc độ cao" />
-            <Why icon={<Coffee size={32} />} title="Tiện ích" desc="Cao cấp" />
-          </div>
-        </div>
-      </section>
     </div>
   );
 };
 
 export default HomePage;
 
-/* ===== SUB COMPONENT ===== */
-
-const Feature = ({
+const WhyLite = ({
   icon,
   title,
   desc,
+  delay = 0,
 }: {
   icon: JSX.Element;
   title: string;
   desc: string;
+  delay?: number;
 }) => (
-  <Card className="p-8 rounded-xl hover:shadow-xl transition text-center">
-    <div className="w-16 h-16 mx-auto mb-4 flex items-center justify-center bg-gray-100 rounded-full">
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true }}
+    transition={{ delay, duration: 0.5 }}
+    className="flex flex-col items-center text-center group"
+  >
+    <div className="mb-6 p-4 bg-white rounded-2xl shadow-sm group-hover:shadow-md transition-shadow text-primary-container">
       {icon}
     </div>
-    <h3 className="text-xl font-bold mb-3">{title}</h3>
-    <p className="text-gray-600">{desc}</p>
-  </Card>
-);
-
-const IconText = ({
-  icon,
-  text,
-}: {
-  icon: JSX.Element;
-  text: string;
-}) => (
-  <div className="flex items-center gap-1">
-    {icon}
-    <span>{text}</span>
-  </div>
-);
-
-const Why = ({
-  icon,
-  title,
-  desc,
-}: {
-  icon: JSX.Element;
-  title: string;
-  desc: string;
-}) => (
-  <div className="text-center max-w-xs">
-    <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow text-orange-500">
-      {icon}
-    </div>
-    <h3 className="font-bold mb-1">{title}</h3>
-    <p className="text-gray-600 text-sm">{desc}</p>
-  </div>
+    <h3 className="text-sm font-bold tracking-wider text-primary-container mb-4 uppercase font-headline">
+      {title}
+    </h3>
+    <p className="text-on-surface-variant text-sm leading-relaxed">{desc}</p>
+  </motion.div>
 );

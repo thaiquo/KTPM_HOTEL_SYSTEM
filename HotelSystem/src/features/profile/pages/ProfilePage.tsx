@@ -1,11 +1,56 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { userApi } from '../../../services/api';
 import {
-  User, Mail, Phone, MapPin, Calendar, Edit3, LogOut,
-  Star, Clock, CreditCard, Shield, ChevronRight, Check
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Edit3,
+  LogOut,
+  Star,
+  Shield,
+  ChevronRight,
+  Check,
+  type LucideIcon,
+  CreditCard,
+  Settings,
 } from 'lucide-react';
+import Card from '../../../shared/components/ui/Card';
+import Button from '../../../shared/components/ui/Button';
+
+type FieldRowProps = {
+  label: string;
+  icon: LucideIcon;
+  value: string;
+  onChange: (value: string) => void;
+  type: string;
+  disabled: boolean;
+};
+
+const FieldRow = ({ label, icon: Icon, value, onChange, type, disabled }: FieldRowProps) => (
+  <div className="group">
+    <label className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-2 font-bold font-label">
+      <Icon size={12} className="text-primary-fixed-dim" />
+      {label}
+    </label>
+    {disabled ? (
+      <div className="w-full py-3.5 px-4 rounded-xl bg-surface-container-highest/30 text-on-surface border border-outline-variant/10 font-medium">
+        {value || 'Chưa cập nhật'}
+      </div>
+    ) : (
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full py-3.5 px-4 rounded-xl bg-surface-container-highest/60 text-on-surface placeholder:text-on-surface-variant/50 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/10 transition-all font-medium"
+      />
+    )}
+  </div>
+);
 
 const ProfilePage = () => {
   const { user, logout, loading } = useAuth();
@@ -92,333 +137,391 @@ const ProfilePage = () => {
   const totalBookings = 7;
 
   const tabs = [
-    { key: 'profile', label: 'Thông tin', icon: User },
-    { key: 'bookings', label: 'Đặt phòng', icon: Calendar },
-    { key: 'security', label: 'Bảo mật', icon: Shield },
+    { key: 'profile', label: 'Thông tin cá nhân', icon: User },
+    { key: 'bookings', label: 'Lịch sử đặt phòng', icon: Calendar },
+    { key: 'security', label: 'Bảo mật tài khoản', icon: Shield },
   ];
 
+  const containerVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+      opacity: 1, 
+      y: 0,
+      transition: { 
+        duration: 0.5,
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0 }
+  };
+
   return (
-    <div className="min-h-screen" style={{ background: '#f7f4ef', fontFamily: "'Georgia', serif" }}>
-      {/* Header Bar */}
-      <div className="border-b border-stone-200 bg-white px-6 py-4 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 border-2 border-orange-800 flex items-center justify-center">
-            <span className="text-orange-800 font-bold text-xs">STT</span>
+    <div className="min-h-screen bg-background text-on-background pb-20">
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        {/* Profile Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="relative overflow-hidden rounded-3xl border border-outline-variant/15 bg-inverse-surface p-8 sm:p-10 shadow-2xl"
+        >
+          <div className="absolute inset-0 [background:radial-gradient(1000px_600px_at_15%_15%,rgba(255,106,0,0.15),transparent_60%)]" />
+          <div className="absolute top-0 right-0 p-10 opacity-5">
+             <User size={240} className="text-white" />
           </div>
-          <span className="tracking-[0.3em] text-xs uppercase text-gray-600 hidden sm:block">S-T-T Love Hotel</span>
-        </Link>
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 text-xs text-gray-500 hover:text-red-600 transition-colors tracking-wider uppercase"
-        >
-          <LogOut size={14} />
-          <span className="hidden sm:block">Đăng xuất</span>
-        </button>
-      </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-10">
-        {/* Profile Hero */}
-        <div
-          className="relative overflow-hidden mb-8 p-8"
-          style={{
-            background: 'linear-gradient(135deg, #1c0a00 0%, #431800 50%, #6b2d0a 100%)',
-          }}
-        >
-          {/* Subtle pattern */}
-          <div
-            className="absolute inset-0 opacity-5"
-            style={{
-              backgroundImage:
-                'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.1) 20px, rgba(255,255,255,0.1) 40px)',
-            }}
-          />
+          <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-8">
+            <div className="relative">
+               <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center text-on-primary-container shadow-xl">
+                  <User size={48} />
+               </div>
+               <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-2 shadow-lg border border-gray-50">
+                  <Star size={20} className="text-secondary-fixed fill-secondary-fixed" />
+               </div>
+            </div>
 
-          <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            {/* Info */}
             <div className="text-center sm:text-left flex-1">
-              <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
-                <span className="text-xs tracking-[0.3em] uppercase text-yellow-500">
-                  {memberLevel} Member
+              <div className="flex items-center gap-3 justify-center sm:justify-start mb-2">
+                <span className="px-3 py-0.5 rounded-full bg-primary-container text-on-primary-container text-[10px] tracking-[0.2em] font-black uppercase font-label shadow-sm">
+                  {memberLevel} Status
                 </span>
-                <Star size={12} className="text-yellow-500 fill-yellow-500" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-light text-white mb-1">{profileData.fullName}</h1>
-              <p className="text-gray-400 text-sm">{profileData.email}</p>
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white font-headline">
+                {profileData.fullName}
+              </h1>
+              <p className="text-white/60 text-base mt-1 font-medium">{profileData.email}</p>
+              
+              <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-10">
+                <div>
+                  <p className="text-3xl font-extrabold text-white font-headline tracking-tight">{totalNights}</p>
+                  <p className="text-[10px] text-white/40 tracking-[0.25em] uppercase mt-1 font-bold font-label">Đêm lưu trú</p>
+                </div>
+                <div className="w-px h-10 bg-white/10 hidden sm:block mt-2" />
+                <div>
+                  <p className="text-3xl font-extrabold text-white font-headline tracking-tight">{totalBookings}</p>
+                  <p className="text-[10px] text-white/40 tracking-[0.25em] uppercase mt-1 font-bold font-label">Đặt phòng</p>
+                </div>
+                <div className="w-px h-10 bg-white/10 hidden sm:block mt-2" />
+                <div>
+                  <p className="text-3xl font-extrabold text-white font-headline tracking-tight">1.2M</p>
+                  <p className="text-[10px] text-white/40 tracking-[0.25em] uppercase mt-1 font-bold font-label">Tích lũy (đ)</p>
+                </div>
+              </div>
             </div>
 
-            {/* Stats */}
-            <div className="flex gap-6 sm:gap-8 text-center">
-              <div>
-                <p className="text-2xl font-light text-yellow-400">{totalNights}</p>
-                <p className="text-xs text-gray-500 tracking-wider uppercase mt-1">Đêm lưu trú</p>
-              </div>
-              <div className="w-px bg-stone-700" />
-              <div>
-                <p className="text-2xl font-light text-yellow-400">{totalBookings}</p>
-                <p className="text-xs text-gray-500 tracking-wider uppercase mt-1">Đặt phòng</p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="sm:self-start inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-error/20 hover:border-error/30 hover:text-error transition-all duration-300 font-bold text-sm"
+              title="Đăng xuất"
+            >
+              <LogOut size={18} />
+              <span>Đăng xuất</span>
+            </button>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-stone-300 mb-8 bg-white">
+        {/* Tab Navigation */}
+        <div className="mt-12 flex flex-wrap gap-3">
           {tabs.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
+              type="button"
               onClick={() => setActiveTab(key as typeof activeTab)}
-              className={`flex items-center gap-2 px-6 py-4 text-xs tracking-widest uppercase transition-all border-b-2 ${
-                activeTab === key
-                  ? 'border-orange-800 text-orange-800 font-medium'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
+              className={
+                'relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 ' +
+                (activeTab === key
+                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 scale-105'
+                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest')
+              }
             >
-              <Icon size={14} />
+              <Icon size={18} />
               {label}
+              {activeTab === key && (
+                <motion.div 
+                   layoutId="activeTab"
+                   className="absolute inset-0 bg-primary rounded-2xl -z-10"
+                />
+              )}
             </button>
           ))}
         </div>
 
-        {/* Profile Tab */}
-        {activeTab === 'profile' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Info Card */}
-            <div className="lg:col-span-2 bg-white p-8">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <p className="text-xs tracking-[0.3em] uppercase text-orange-700 mb-1">Thông tin cá nhân</p>
-                  <div className="w-8 h-px bg-orange-700" />
-                </div>
-                <button
-                  onClick={() => (editing ? handleSave() : setEditing(true))}
-                  className="flex items-center gap-2 text-xs tracking-wider uppercase transition-colors"
-                  style={{ color: editing ? '#15803d' : '#9a3412' }}
-                >
-                  {saved ? (
-                    <>
-                      <Check size={14} /> Đã lưu
-                    </>
-                  ) : editing ? (
-                    <>
-                      <Check size={14} /> Lưu
-                    </>
-                  ) : (
-                    <>
-                      <Edit3 size={14} /> Chỉnh sửa
-                    </>
-                  )}
-                </button>
-              </div>
+        {/* Tab Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            exit={{ opacity: 0, y: -10 }}
+            className="mt-8"
+          >
+            {activeTab === 'profile' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <Card className="lg:col-span-2 p-8 sm:p-10 border-outline-variant/10 shadow-xl overflow-visible">
+                  <div className="flex items-center justify-between mb-10">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Personal Settings</div>
+                      <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Hồ sơ cá nhân</h2>
+                    </div>
 
-              <div className="space-y-6">
-                {[
-                  { label: 'Họ và tên', icon: User, key: 'fullName', type: 'text' },
-                  { label: 'Email', icon: Mail, key: 'email', type: 'email' },
-                  { label: 'Số điện thoại', icon: Phone, key: 'phone', type: 'tel' },
-                  { label: 'Địa chỉ', icon: MapPin, key: 'address', type: 'text' },
-                  { label: 'Ngày sinh', icon: Calendar, key: 'dob', type: 'text' },
-                ].map(({ label, icon: Icon, key, type }) => (
-                  <div key={key}>
-                    <label className="flex items-center gap-2 text-xs tracking-widest uppercase text-gray-400 mb-2">
-                      <Icon size={12} />
-                      {label}
-                    </label>
-                    {editing ? (
-                      <input
-                        type={type}
-                        value={profileData[key as keyof typeof profileData]}
-                        onChange={(e) => setProfileData({ ...profileData, [key]: e.target.value })}
-                        className="w-full py-2 border-0 border-b-2 border-orange-200 bg-transparent focus:border-orange-700 focus:outline-none text-gray-800 transition-colors"
-                        style={{ fontFamily: 'inherit' }}
-                      />
-                    ) : (
-                      <p className="text-gray-800 py-2 border-b border-stone-100">
-                        {profileData[key as keyof typeof profileData]}
-                      </p>
+                    {!editing && (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(true)}
+                        className="inline-flex items-center gap-2 text-sm font-bold text-primary-fixed-dim hover:text-primary transition-all group"
+                      >
+                        <Edit3 size={18} className="group-hover:rotate-12 transition-transform" /> 
+                        Chỉnh sửa
+                      </button>
                     )}
                   </div>
-                ))}
-              </div>
 
-              {editing && (
-                <div className="flex gap-3 mt-8">
-                  <button
-                    onClick={handleSave}
-                    className="px-8 py-3 text-white text-xs tracking-widest uppercase transition-colors"
-                    style={{ background: '#9a3412' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#7c2d12')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '#9a3412')}
-                  >
-                    Lưu thay đổi
-                  </button>
-                  <button
-                    onClick={() => setEditing(false)}
-                    className="px-8 py-3 border border-gray-300 text-gray-600 text-xs tracking-widest uppercase hover:border-gray-600 transition-colors"
-                  >
-                    Hủy
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Side Cards */}
-            <div className="space-y-4">
-              {/* Membership Card */}
-              <div
-                className="p-6 text-white relative overflow-hidden"
-                style={{ background: 'linear-gradient(135deg, #92400e, #78350f)' }}
-              >
-                <div className="absolute top-[-20px] right-[-20px] w-32 h-32 rounded-full border border-yellow-600 opacity-20" />
-                <p className="text-xs tracking-[0.3em] uppercase text-yellow-400 mb-3">Hạng thành viên</p>
-                <div className="flex items-center gap-2 mb-1">
-                  <Star size={20} className="text-yellow-400 fill-yellow-400" />
-                  <span className="text-2xl font-light">{memberLevel}</span>
-                </div>
-                <p className="text-stone-300 text-xs mt-3">Tích lũy thêm 8 đêm để lên hạng Platinum</p>
-                <div className="mt-4 bg-stone-800 bg-opacity-40 h-1.5">
-                  <div className="h-full bg-yellow-400" style={{ width: '60%' }} />
-                </div>
-                <p className="text-xs text-stone-400 mt-1">12/20 đêm</p>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="bg-white p-6">
-                <p className="text-xs tracking-[0.3em] uppercase text-gray-400 mb-4">Nhanh</p>
-                {[
-                  { label: 'Đặt phòng mới', href: '/rooms', icon: Calendar },
-                  { label: 'Ưu đãi của tôi', href: '/offers', icon: CreditCard },
-                  { label: 'Lịch sử thanh toán', href: '/payments', icon: Clock },
-                ].map(({ label, href, icon: Icon }) => (
-                  <Link
-                    key={label}
-                    to={href}
-                    className="flex items-center justify-between py-3 border-b border-stone-100 last:border-0 text-sm text-gray-700 hover:text-orange-800 group transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon size={14} className="text-gray-400 group-hover:text-orange-700" />
-                      {label}
-                    </div>
-                    <ChevronRight size={14} className="text-gray-300 group-hover:text-orange-700" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bookings Tab */}
-        {activeTab === 'bookings' && (
-          <div className="bg-white">
-            <div className="p-6 border-b border-stone-100">
-              <p className="text-xs tracking-[0.3em] uppercase text-orange-700 mb-1">Lịch sử đặt phòng</p>
-              <div className="w-8 h-px bg-orange-700" />
-            </div>
-            <div className="divide-y divide-stone-100">
-              {mockBookings.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50 transition-colors"
-                >
-                  <div className="flex items-start gap-4">
-                    <div
-                      className="w-10 h-10 flex items-center justify-center flex-shrink-0"
-                      style={{ background: booking.status === 'completed' ? '#f5f5f4' : '#fff7ed' }}
-                    >
-                      <Calendar
-                        size={16}
-                        className={booking.status === 'completed' ? 'text-gray-400' : 'text-orange-700'}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
+                    <FieldRow
+                      label="Họ và tên"
+                      icon={User}
+                      type="text"
+                      value={profileData.fullName}
+                      onChange={(v) => setProfileData({ ...profileData, fullName: v })}
+                      disabled={!editing}
+                    />
+                    <FieldRow
+                      label="Email (Không thể thay đổi)"
+                      icon={Mail}
+                      type="email"
+                      value={profileData.email}
+                      onChange={(v) => setProfileData({ ...profileData, email: v })}
+                      disabled={true}
+                    />
+                    <FieldRow
+                      label="Số điện thoại"
+                      icon={Phone}
+                      type="tel"
+                      value={profileData.phone}
+                      onChange={(v) => setProfileData({ ...profileData, phone: v })}
+                      disabled={!editing}
+                    />
+                    <FieldRow
+                      label="Địa chỉ"
+                      icon={MapPin}
+                      type="text"
+                      value={profileData.address}
+                      onChange={(v) => setProfileData({ ...profileData, address: v })}
+                      disabled={!editing}
+                    />
+                    <div className="md:col-span-2">
+                      <FieldRow
+                        label="Ngày sinh"
+                        icon={Calendar}
+                        type="date"
+                        value={profileData.dob}
+                        onChange={(v) => setProfileData({ ...profileData, dob: v })}
+                        disabled={!editing}
                       />
                     </div>
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{booking.room}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {booking.date} · {booking.nights} đêm
-                      </p>
-                      <p className="text-xs tracking-wider text-gray-400 mt-0.5 uppercase">#{booking.id}</p>
-                    </div>
                   </div>
-                  <div className="flex items-center gap-6 sm:text-right">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{booking.amount}</p>
-                    </div>
-                    <span
-                      className="text-xs px-3 py-1 tracking-wider uppercase"
-                      style={{
-                        background: booking.status === 'completed' ? '#f1f5f9' : '#fff7ed',
-                        color: booking.status === 'completed' ? '#64748b' : '#c2410c',
-                      }}
+
+                  {editing && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex flex-col sm:flex-row gap-4 mt-12"
                     >
-                      {booking.status === 'completed' ? 'Hoàn thành' : 'Sắp tới'}
-                    </span>
-                  </div>
+                      <Button type="button" onClick={handleSave} className="px-8 py-3.5 rounded-xl font-bold flex-1 sm:flex-none">
+                        Lưu thay đổi
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => setEditing(false)} className="px-8 py-3.5 rounded-xl font-bold flex-1 sm:flex-none">
+                        Hủy
+                      </Button>
+                    </motion.div>
+                  )}
+                  
+                  {saved && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="mt-6 flex items-center gap-2 text-primary-fixed-dim font-bold"
+                    >
+                      <Check size={20} /> Đã cập nhật thông tin thành công!
+                    </motion.div>
+                  )}
+                </Card>
+
+                <div className="space-y-8">
+                  <motion.div variants={itemVariants}>
+                    <Card className="p-8 overflow-hidden relative border-none shadow-2xl bg-gradient-to-br from-[#ffb694] to-[#ff6a00] text-white">
+                      <div className="absolute top-0 right-0 p-8 opacity-20 rotate-12">
+                         <Star size={120} />
+                      </div>
+                      <div className="relative">
+                        <div className="text-[10px] uppercase tracking-[0.3em] text-white/70 font-black font-label">E-Membership</div>
+                        <div className="mt-4 flex items-center gap-3">
+                          <Star size={24} className="fill-white" />
+                          <span className="text-3xl font-black tracking-tight font-headline">{memberLevel} Tier</span>
+                        </div>
+                        <p className="mt-3 text-sm text-white/80 font-medium leading-relaxed">Tích lũy thêm 8 đêm để nâng cấp lên hạng Platinum và nhận ưu đãi 20%.</p>
+                        <div className="mt-6 h-2.5 rounded-full bg-black/10">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: '60%' }}
+                            transition={{ duration: 1, delay: 0.5 }}
+                            className="h-full rounded-full bg-white shadow-sm" 
+                          />
+                        </div>
+                        <p className="mt-3 text-xs text-white/70 font-bold tracking-widest uppercase">12 / 20 Đêm lưu trú</p>
+                      </div>
+                    </Card>
+                  </motion.div>
+
+                  <motion.div variants={itemVariants}>
+                    <Card className="p-8 border-outline-variant/10 shadow-xl">
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label mb-6">Quick actions</div>
+                      <div className="space-y-2">
+                        {[
+                          { label: 'Tìm phòng nghỉ mới', href: '/rooms', icon: MapPin },
+                          { label: 'Lịch sử thanh toán', href: '/my-bookings', icon: CreditCard },
+                          { label: 'Cài đặt tài khoản', href: '#', icon: Settings },
+                        ].map(({ label, href, icon: Icon }) => (
+                          <Link
+                            key={label}
+                            to={href}
+                            className="group flex items-center justify-between p-4 -mx-2 rounded-2xl hover:bg-surface-container-high transition-all"
+                          >
+                            <div className="flex items-center gap-4">
+                               <div className="p-2 rounded-xl bg-surface-container-highest text-primary-fixed-dim group-hover:bg-primary group-hover:text-on-primary transition-all">
+                                  <Icon size={18} />
+                               </div>
+                               <span className="font-bold text-on-surface group-hover:translate-x-1 transition-transform">{label}</span>
+                            </div>
+                            <ChevronRight size={18} className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-all" />
+                          </Link>
+                        ))}
+                      </div>
+                    </Card>
+                  </motion.div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Security Tab */}
-        {activeTab === 'security' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-8">
-              <p className="text-xs tracking-[0.3em] uppercase text-orange-700 mb-1">Đổi mật khẩu</p>
-              <div className="w-8 h-px bg-orange-700 mb-8" />
-              <div className="space-y-6">
-                {['Mật khẩu hiện tại', 'Mật khẩu mới', 'Xác nhận mật khẩu'].map((label) => (
-                  <div key={label}>
-                    <label className="block text-xs tracking-widest uppercase text-gray-400 mb-3">{label}</label>
-                    <input
-                      type="password"
-                      placeholder="••••••••"
-                      className="w-full py-3 border-0 border-b-2 border-gray-200 bg-transparent focus:border-orange-700 focus:outline-none text-gray-800 transition-colors"
-                      style={{ fontFamily: 'inherit' }}
-                    />
+            {activeTab === 'bookings' && (
+              <motion.div variants={itemVariants}>
+                <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
+                  <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Reservation History</div>
+                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Lịch sử đặt phòng</h2>
+                    <p className="mt-2 text-sm text-on-surface-variant font-medium italic">Danh sách các kỳ lưu trú gần đây của bạn tại S-T-T Hotel.</p>
                   </div>
-                ))}
-                <button
-                  className="w-full py-3 text-white text-xs tracking-widest uppercase transition-colors mt-4"
-                  style={{ background: '#9a3412' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = '#7c2d12')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = '#9a3412')}
-                >
-                  Cập nhật mật khẩu
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="bg-white p-6">
-                <p className="text-xs tracking-[0.3em] uppercase text-gray-400 mb-4">Bảo mật tài khoản</p>
-                {[
-                  { label: 'Xác thực hai yếu tố', value: 'Chưa bật', action: 'Bật ngay' },
-                  { label: 'Phiên đăng nhập', value: '2 thiết bị', action: 'Quản lý' },
-                  { label: 'Nhật ký hoạt động', value: 'Hoạt động gần đây', action: 'Xem' },
-                ].map(({ label, value, action }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between py-4 border-b border-stone-100 last:border-0"
-                  >
-                    <div>
-                      <p className="text-sm text-gray-800">{label}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{value}</p>
-                    </div>
-                    <button className="text-xs text-orange-700 hover:text-orange-900 tracking-wider uppercase transition-colors">
-                      {action}
-                    </button>
+                  <div className="divide-y divide-outline-variant/10">
+                    {mockBookings.map((booking, idx) => (
+                      <motion.div 
+                        key={booking.id} 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-surface-container-lowest transition-colors group"
+                      >
+                        <div className="flex gap-5">
+                          <div className="w-14 h-14 rounded-2xl bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-all">
+                             <Calendar size={24} />
+                          </div>
+                          <div>
+                            <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Ref #{booking.id}</div>
+                            <div className="mt-1 text-xl font-black tracking-tight text-on-surface font-headline group-hover:text-primary transition-colors">{booking.room}</div>
+                            <div className="mt-1 text-sm text-on-surface-variant font-bold">{booking.date} · {booking.nights} đêm</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between sm:justify-end gap-8">
+                          <div className="text-lg font-black text-on-surface font-headline">{booking.amount}</div>
+                          <span className={
+                            'px-4 py-1.5 rounded-full text-[10px] font-black tracking-[0.2em] uppercase border-2 ' +
+                            (booking.status === 'completed'
+                              ? 'border-green-500/20 bg-green-500/5 text-green-600'
+                              : 'border-primary/20 bg-primary/5 text-primary')
+                          }>
+                            {booking.status === 'completed' ? 'Hoàn thành' : 'Sắp tới'}
+                          </span>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </Card>
+              </motion.div>
+            )}
 
-              <div className="bg-white p-6">
-                <p className="text-xs tracking-[0.3em] uppercase text-red-600 mb-4">Nguy hiểm</p>
-                <button className="text-sm text-red-600 hover:text-red-800 transition-colors flex items-center gap-2">
-                  <LogOut size={14} />
-                  Đăng xuất khỏi tất cả thiết bị
-                </button>
+            {activeTab === 'security' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <Card className="p-8 sm:p-10 border-outline-variant/10 shadow-xl">
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Privacy & Security</div>
+                  <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Cập nhật mật khẩu</h2>
+
+                  <div className="mt-10 space-y-8">
+                    {['Mật khẩu hiện tại', 'Mật khẩu mới', 'Xác nhận mật khẩu mới'].map((label) => (
+                      <div key={label}>
+                        <label className="block text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-bold font-label">{label}</label>
+                        <input
+                          type="password"
+                          placeholder="••••••••"
+                          className="w-full py-4 px-5 rounded-xl bg-surface-container-highest/60 text-on-surface placeholder:text-on-surface-variant/40 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-4 focus:ring-primary-container/10 transition-all font-medium"
+                        />
+                      </div>
+                    ))}
+
+                    <Button type="button" className="w-full py-4 rounded-xl font-bold tracking-wide shadow-lg shadow-primary/10">
+                      Cập nhật mật khẩu
+                    </Button>
+                    <p className="text-center text-xs text-on-surface-variant italic">Tính năng hiện đang trong quá trình nâng cấp hệ thống.</p>
+                  </div>
+                </Card>
+
+                <div className="space-y-8">
+                  <motion.div variants={itemVariants}>
+                    <Card className="p-8 border-outline-variant/10 shadow-xl">
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label mb-6">Device management</div>
+                      <div className="divide-y divide-outline-variant/10">
+                        {[
+                          { label: 'Xác thực hai yếu tố (2FA)', value: 'Khuyên dùng', action: 'Kích hoạt', icon: Shield },
+                          { label: 'Quản lý phiên đăng nhập', value: '2 thiết bị đang online', action: 'Xem tất cả', icon: User },
+                        ].map(({ label, value, action, icon: Icon }) => (
+                          <div key={label} className="flex items-center justify-between py-5 first:pt-0">
+                            <div className="flex items-center gap-4">
+                               <div className="p-2.5 rounded-xl bg-surface-container-high text-primary-fixed-dim">
+                                  <Icon size={18} />
+                               </div>
+                               <div>
+                                  <div className="font-bold text-on-surface">{label}</div>
+                                  <div className="text-xs text-on-surface-variant mt-0.5">{value}</div>
+                               </div>
+                            </div>
+                            <button type="button" className="text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4">
+                              {action}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </motion.div>
+
+                  <motion.div variants={itemVariants}>
+                    <Card className="p-8 border-error/10 shadow-xl border-dashed">
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-error font-black font-label mb-4">Danger Zone</div>
+                      <p className="text-sm text-on-surface-variant mb-6 leading-relaxed font-medium">Việc đăng xuất khỏi tất cả thiết bị sẽ yêu cầu bạn phải đăng nhập lại trên mọi ứng dụng.</p>
+                      <button type="button" className="w-full inline-flex items-center justify-center gap-2 py-3.5 rounded-xl border-2 border-error/20 text-error font-bold hover:bg-error/5 transition-all">
+                        <LogOut size={18} />
+                        Đăng xuất mọi thiết bị
+                      </button>
+                    </Card>
+                  </motion.div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

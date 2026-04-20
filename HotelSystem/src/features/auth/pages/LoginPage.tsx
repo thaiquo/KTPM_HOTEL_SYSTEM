@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { isAxiosError } from 'axios';
@@ -44,12 +45,29 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
-      <div className="max-w-md w-full">
-        <Card className="p-8 shadow-xl">
+    <div className="min-h-screen relative flex items-center justify-center py-14 px-6 bg-background">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          backgroundImage:
+            'url(https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1920)',
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/45 to-background" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="relative max-w-md w-full"
+      >
+        <Card className="p-8 bg-surface/70 backdrop-blur-[24px] border border-white/5 shadow-2xl shadow-black/50">
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900">Đăng nhập</h2>
-            <p className="text-gray-600 mt-2">Chào mừng bạn quay trở lại An Khánh Love Hotel</p>
+            <div className="text-[11px] uppercase tracking-[0.28em] text-on-surface-variant font-label">
+              Welcome back
+            </div>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-on-surface font-headline">Đăng nhập</h2>
+            <p className="text-on-surface-variant mt-2">Chào mừng bạn quay trở lại S-T-T Hotel</p>
           </div>
 
           {error && (
@@ -59,37 +77,37 @@ const LoginPage = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={20} />
                 <input
                   type="email"
                   required
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                  placeholder="email@example.com"
+                  className="w-full pl-10 pr-4 py-3 rounded-lg bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all"
+                  placeholder="email@domain.com"
                 />
               </div>
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Mật khẩu</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={20} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -101,13 +119,11 @@ const LoginPage = () => {
               <label className="flex items-center">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                  className="w-4 h-4 rounded border-outline-variant/30 bg-surface-container-highest text-primary-container focus:ring-primary-container/30"
                 />
-                <span className="ml-2 text-sm text-gray-600">Ghi nhớ đăng nhập</span>
+                <span className="ml-2 text-sm text-on-surface-variant">Ghi nhớ đăng nhập</span>
               </label>
-              <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600">
-                Bạn quên mật khẩu?
-              </Link>
+              <span className="text-sm text-on-surface-variant">Bạn quên mật khẩu?</span>
             </div>
 
             {/* Submit Button */}
@@ -121,9 +137,9 @@ const LoginPage = () => {
           </form>
 
           {/* Register Link */}
-          <p className="text-center text-gray-600 mt-6">
+          <p className="text-center text-on-surface-variant mt-6">
             Chưa có tài khoản?{' '}
-            <Link to="/register" className="text-orange-500 font-semibold hover:text-orange-600">
+            <Link to="/register" className="text-primary-fixed-dim font-semibold hover:text-primary transition-colors">
               Đăng ký ngay
             </Link>
           </p>
@@ -132,15 +148,15 @@ const LoginPage = () => {
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
+                <div className="w-full border-t border-outline-variant/20"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500">Hoặc đăng nhập với</span>
+                <span className="px-4 bg-surface/70 text-on-surface-variant">Hoặc đăng nhập với</span>
               </div>
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-4">
-              <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+              <button type="button" className="flex items-center justify-center px-4 py-3 border border-outline-variant/20 rounded-lg bg-surface-container-highest/40 hover:bg-surface-container-highest/70 hover:border-outline-variant/40 transition-all text-on-surface">
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
@@ -161,7 +177,7 @@ const LoginPage = () => {
                 </svg>
                 Google
               </button>
-              <button className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+              <button type="button" className="flex items-center justify-center px-4 py-3 border border-outline-variant/20 rounded-lg bg-surface-container-highest/40 hover:bg-surface-container-highest/70 hover:border-outline-variant/40 transition-all text-on-surface">
                 <svg className="w-5 h-5 mr-2" fill="#1877F2" viewBox="0 0 24 24">
                   <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                 </svg>
@@ -170,7 +186,7 @@ const LoginPage = () => {
             </div>
           </div>
         </Card>
-      </div>
+      </motion.div>
     </div>
   );
 };

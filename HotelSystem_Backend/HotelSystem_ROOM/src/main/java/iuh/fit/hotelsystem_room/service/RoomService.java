@@ -5,8 +5,6 @@ package iuh.fit.hotelsystem_room.service;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.entity.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,22 +18,18 @@ public class RoomService {
         this.roomRepository = roomRepository;
     }
 
-    @Cacheable(cacheNames = "rooms", key = "'all'")
     public List<Room> getAllRooms() {
         return roomRepository.findAll();
     }
 
-    @Cacheable(cacheNames = "rooms", key = "'id:' + #id")
     public Room getRoomById(Long id) {
         return roomRepository.findById(id).orElseThrow();
     }
 
-    @Cacheable(cacheNames = "rooms", key = "'available'")
     public List<Room> getAvailableRooms() {
         return roomRepository.findByStatus(RoomStatus.AVAILABLE);
     }
 
-    @CacheEvict(cacheNames = "rooms", allEntries = true)
     public Room createRoom(Room room) {
         if (room.getRoomNumber() == null || room.getRoomNumber().trim().isEmpty()) {
             throw new IllegalArgumentException("roomNumber is required");
@@ -75,7 +69,6 @@ public class RoomService {
         return roomRepository.save(room);
     }
 
-    @CacheEvict(cacheNames = "rooms", allEntries = true)
     public Room updateStatus(Long id, RoomStatus status) {
         Room room = roomRepository.findById(id).orElseThrow();
         room.setStatus(status);

@@ -1,292 +1,238 @@
-import { Link } from "react-router-dom";
-import {
-  Phone,
-  User,
-  LogOut,
-  Menu,
-  Heart,
-  Search,
-  Hotel,
-  BedDouble,
-  CalendarDays,
-  Newspaper,
-  Headset,
-} from "lucide-react";
-import { useAuth } from "../../../contexts/AuthContext";
-import { useState } from "react";
+import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Menu, LogOut, User as UserIcon, Map, X, Heart } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../../contexts/AuthContext';
 
-export default function Header() {
-  const { user, isAuthenticated, logout } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [search, setSearch] = useState("");
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (search.trim()) {
-      console.log("Tìm kiếm:", search);
-      // Ví dụ: navigate(`/rooms?search=${encodeURIComponent(search)}`)
-    }
-  };
-
-  return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
-      <div className="mx-auto max-w px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 lg:h-20 items-center">
-          {/* LEFT - Logo */}
-          <div className="flex-shrink-0">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="bg-gradient-to-br from-orange-500 to-red-500 p-2.5 rounded-xl shadow-md">
-                <Heart size={26} className="text-white fill-white" />
-              </div>
-              <div className="leading-tight hidden sm:block">
-                <div className="text-xl lg:text-2xl font-black tracking-tight text-gray-900">
-                  S-T-T
-                </div>
-                <div className="text-[10px] lg:text-xs uppercase tracking-widest text-orange-600 font-semibold">
-                  Love Hotel
-                </div>
-              </div>
-            </Link>
-          </div>
-          {/* CENTER - Menu + Search */}
-          <div className="hidden lg:flex flex-1 items-center justify-center gap-8 px-6">
-            {/* Navigation */}
-            <nav className="flex items-center gap-8 whitespace-nowrap">
-              <HeaderLink to="/" icon={<Hotel size={18} />} label="Trang chủ" />
-              <HeaderLink
-                to="/rooms"
-                icon={<BedDouble size={18} />}
-                label="Đặt phòng"
-              />
-              <HeaderLink
-                to="/news"
-                icon={<Newspaper size={18} />}
-                label="Tin tức"
-              />
-              <HeaderLink
-                to="/contact"
-                icon={<Headset size={18} />}
-                label="Liên hệ"
-              />
-            </nav>
-
-            {/* Search (NGẮN LẠI) */}
-            <div className="w-[360px]">
-              <form onSubmit={handleSearch} className="relative">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm phòng..."
-                  className="w-full pr-12 pl-5 py-2.5
-                 bg-gray-50 border border-gray-200 rounded-full
-                 focus:bg-white focus:border-orange-400
-                 focus:ring-2 focus:ring-orange-200/50
-                 outline-none transition-all duration-200
-                 text-sm text-gray-800 placeholder-gray-500"
-                />
-
-                {/* ICON SEARCH – BUTTON */}
-                <button
-                  type="submit"
-                  aria-label="Tìm kiếm"
-                  className="absolute right-4 top-1/2 -translate-y-1/2
-                 text-gray-500 hover:text-orange-600
-                 transition-colors"
-                >
-                  <Search size={20} />
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* RIGHT - Hotline + Auth + Mobile button */}
-          <div className="flex items-center gap-6 lg:gap-8 flex-shrink-0">
-            {/* Hotline */}
-            <a
-              href="tel:0925519789"
-              className="hidden md:flex items-center gap-2 text-orange-600 hover:text-orange-700 font-medium whitespace-nowrap"
-            >
-              <Phone size={18} className="text-orange-500" />
-              <span>092 5519 789</span>
-            </a>
-
-            {/* Auth */}
-            {isAuthenticated ? (
-              <div className="hidden md:flex items-center gap-5">
-                <Link
-                  to="/my-bookings"
-                  className="flex items-center gap-2 text-gray-700 hover:text-orange-600 font-medium whitespace-nowrap"
-                >
-                  <CalendarDays size={18} />
-                  <span>Phòng đã đặt</span>
-                </Link>
-                <Link
-                  to="/profile"
-                  className="flex items-center gap-2 text-gray-700 hover:text-orange-600 font-medium whitespace-nowrap"
-                >
-                  <User size={18} />
-                  <span className="max-w-[140px] truncate">{user?.name}</span>
-                </Link>
-                <button
-                  onClick={logout}
-                  className="text-gray-500 hover:text-red-600 transition-colors"
-                  title="Đăng xuất"
-                >
-                  <LogOut size={20} />
-                </button>
-              </div>
-            ) : (
-              <Link
-                to="/login"
-                className="hidden md:inline-flex px-6 py-2.5 
-                           bg-gradient-to-r from-orange-500 to-red-500 
-                           text-white font-semibold rounded-full 
-                           hover:brightness-110 hover:shadow-md transition-all duration-200 whitespace-nowrap"
-              >
-                Đăng nhập
-              </Link>
-            )}
-
-            {/* Mobile toggle */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-full hover:bg-gray-100 transition"
-            >
-              <Menu size={28} className="text-gray-700" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ────────────────────────────────────────────────
-          MOBILE MENU & SEARCH
-      ──────────────────────────────────────────────── */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden bg-white border-t border-gray-200 shadow-lg">
-          {/* Mobile Search */}
-          <div className="p-4 border-b border-gray-100">
-            <form onSubmit={handleSearch} className="relative">
-              <Search
-                size={18}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm phòng..."
-                className="w-full pl-12 pr-28 py-3 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-300"
-              />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-medium"
-              >
-                Tìm
-              </button>
-            </form>
-          </div>
-
-          {/* Mobile Links */}
-          <div className="p-4 space-y-2">
-            <MobileLink to="/" label="Trang chủ" setOpen={setMobileMenuOpen} />
-            <MobileLink
-              to="/rooms"
-              label="Đặt phòng"
-              setOpen={setMobileMenuOpen}
-            />
-            <MobileLink
-              to="/news"
-              label="Tin tức"
-              setOpen={setMobileMenuOpen}
-            />
-            <MobileLink
-              to="/contact"
-              label="Liên hệ"
-              setOpen={setMobileMenuOpen}
-            />
-
-            <div className="pt-4 pb-2 text-center">
-              <a
-                href="tel:0925519789"
-                className="inline-flex items-center gap-3 text-orange-600 font-semibold text-lg"
-              >
-                <Phone size={20} />
-                092 5519 789
-              </a>
-            </div>
-
-            {isAuthenticated ? (
-              <>
-                <MobileLink
-                  to="/my-bookings"
-                  label="Phòng đã đặt"
-                  setOpen={setMobileMenuOpen}
-                />
-                <Link
-                  to="/profile"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block text-center py-3.5 bg-orange-50 rounded-xl font-semibold text-orange-700"
-                >
-                  <User size={18} className="inline mr-2" />
-                  {user?.name || "Tài khoản"}
-                </Link>
-                <button
-                  onClick={() => {
-                    logout();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full py-3.5 bg-red-50 text-red-600 font-semibold rounded-xl"
-                >
-                  Đăng xuất
-                </button>
-              </>
-            ) : (
-              <Link
-                to="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block text-center py-3.5 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold rounded-xl"
-              >
-                Đăng nhập
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
-    </header>
-  );
-}
-
-const HeaderLink = ({
-  to,
-  icon,
-  label,
-}: {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-}) => (
-  <Link
-    to={to}
-    className="flex items-center gap-2 font-medium text-gray-700 hover:text-orange-600 transition-colors duration-200 whitespace-nowrap"
-  >
-    {icon}
-    <span>{label}</span>
-  </Link>
-);
-
-const MobileLink = ({
+const NavLink = ({
   to,
   label,
-  setOpen,
+  isScrolled,
+  isHome,
 }: {
   to: string;
   label: string;
-  setOpen: (v: boolean) => void;
+  isScrolled: boolean;
+  isHome: boolean;
 }) => (
   <Link
     to={to}
-    onClick={() => setOpen(false)}
-    className="block px-4 py-3 rounded-xl hover:bg-gray-50 transition"
+    className={`text-sm font-semibold transition-colors duration-300 font-headline ${
+      isHome && !isScrolled
+        ? 'text-white/90 hover:text-white'
+        : 'text-on-surface hover:text-primary-container'
+    }`}
   >
     {label}
   </Link>
 );
+
+export default function Header() {
+  const { user, isAuthenticated, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const navLinks = [
+    { to: '/', label: 'Trang chủ' },
+    { to: '/rooms', label: 'Đặt phòng' },
+    { to: '/my-bookings', label: 'Phòng đã đặt' },
+    { to: '/profile', label: 'Tài khoản' },
+  ];
+
+  return (
+    <header
+      className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
+        isScrolled || !isHome
+          ? 'bg-white/90 backdrop-blur-xl shadow-sm py-2 border-b border-outline-variant/30'
+          : 'bg-transparent py-4'
+      }`}
+    >
+      <div className="flex items-center justify-between w-full px-6 py-2 mx-auto max-w-7xl">
+        {/* Logo */}
+        <Link to="/" className="flex items-center gap-3 group cursor-pointer">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center p-2 border transition-all duration-300 ${
+              isScrolled || !isHome
+                ? 'bg-primary-container/10 border-primary-container/20'
+                : 'bg-white/10 border-white/20'
+            }`}
+          >
+            <Heart
+              size={20}
+              className={`transition-colors duration-300 ${
+                isScrolled || !isHome ? 'text-primary-container' : 'text-white'
+              }`}
+              fill="currentColor"
+            />
+          </div>
+          <div className="flex flex-col leading-tight">
+            <span
+              className={`text-sm font-black tracking-tight font-headline transition-colors duration-300 ${
+                isScrolled || !isHome ? 'text-on-surface' : 'text-white'
+              }`}
+            >
+              S-T-T
+            </span>
+            <span
+              className={`text-[10px] tracking-[0.2em] font-medium uppercase transition-colors duration-300 ${
+                isScrolled || !isHome ? 'text-primary-container' : 'text-white/80'
+              }`}
+            >
+              Love Hotel
+            </span>
+          </div>
+        </Link>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center gap-8">
+          {navLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              label={link.label}
+              isScrolled={isScrolled}
+              isHome={isHome}
+            />
+          ))}
+        </nav>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-3">
+          <Link
+            to="/rooms"
+            className={`hidden lg:inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all duration-300 ${
+              isScrolled || !isHome
+                ? 'bg-tertiary-container text-on-tertiary'
+                : 'bg-white/15 backdrop-blur-sm text-white border border-white/20 hover:bg-white/25'
+            }`}
+          >
+            <Map size={16} />
+            Xem bản đồ
+          </Link>
+
+          {isAuthenticated ? (
+            <>
+              <Link
+                to="/profile"
+                className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-full font-semibold transition-all duration-300 text-sm ${
+                  isScrolled || !isHome
+                    ? 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                    : 'bg-white/15 backdrop-blur-sm text-white border border-white/20'
+                }`}
+              >
+                <UserIcon size={16} className="text-primary-fixed-dim" />
+                <span className="max-w-[120px] truncate">{user?.name || 'Tài khoản'}</span>
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                className={`px-3 py-2 rounded-full transition-all duration-300 ${
+                  isScrolled || !isHome
+                    ? 'text-on-surface-variant hover:text-error hover:bg-error/5'
+                    : 'text-white/80 hover:text-white hover:bg-white/10'
+                }`}
+                title="Đăng xuất"
+              >
+                <LogOut size={18} />
+              </button>
+            </>
+          ) : (
+            <Link
+              to="/login"
+              className={`font-bold px-6 py-2 rounded-full text-sm transition-all duration-300 active:scale-95 ${
+                isScrolled || !isHome
+                  ? 'bg-primary-container text-on-primary-container hover:brightness-110'
+                  : 'bg-black/60 backdrop-blur-sm text-white border border-white/10 hover:bg-black/80'
+              }`}
+            >
+              Đăng nhập
+            </Link>
+          )}
+
+          {/* Mobile Toggle */}
+          <button
+            type="button"
+            className="md:hidden p-2"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Menu"
+          >
+            {open ? (
+              <X
+                size={22}
+                className={isScrolled || !isHome ? 'text-on-surface' : 'text-white'}
+              />
+            ) : (
+              <Menu
+                size={22}
+                className={isScrolled || !isHome ? 'text-on-surface' : 'text-white'}
+              />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Menu with Animation */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-full left-0 right-0 bg-white shadow-xl p-4 md:hidden flex flex-col gap-3 border-t border-gray-100"
+          >
+            {navLinks.map((link) => (
+              <Link
+                key={link.to}
+                onClick={() => setOpen(false)}
+                to={link.to}
+                className="text-on-surface font-semibold py-2 border-b border-gray-50 last:border-0 hover:text-primary-container transition-colors font-headline"
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="flex flex-col gap-3 mt-2">
+              <Link
+                onClick={() => setOpen(false)}
+                to="/rooms"
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-tertiary-container text-on-tertiary font-bold text-sm"
+              >
+                <Map size={18} />
+                Xem bản đồ
+              </Link>
+              {isAuthenticated ? (
+                <button
+                  onClick={() => {
+                    logout();
+                    setOpen(false);
+                  }}
+                  className="w-full py-3 rounded-xl bg-error/10 text-error font-bold text-sm"
+                >
+                  Đăng xuất
+                </button>
+              ) : (
+                <Link
+                  onClick={() => setOpen(false)}
+                  to="/login"
+                  className="w-full text-center py-3 rounded-xl bg-primary-container text-on-primary-container font-bold text-sm"
+                >
+                  Đăng nhập
+                </Link>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </header>
+  );
+}

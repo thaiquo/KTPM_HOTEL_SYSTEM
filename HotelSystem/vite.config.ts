@@ -16,7 +16,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3000,
+    port: Number(process.env.VITE_PORT) || 5173,
     proxy: {
       '/auth-api': {
         target: authTarget,

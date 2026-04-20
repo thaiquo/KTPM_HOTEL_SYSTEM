@@ -6,12 +6,14 @@ type SpinnerProps = {
 
 export default function Spinner({ className }: SpinnerProps) {
   return (
-    <span
-      aria-label="Loading"
-      className={cn(
-        'inline-block animate-spin rounded-full border-4 border-gray-300 border-t-orange-500',
-        className
-      )}
-    />
+    <div className={cn('relative flex items-center justify-center', className)}>
+       <span
+         className="absolute w-full h-full rounded-full border-4 border-primary/10"
+       />
+       <span
+         aria-label="Loading"
+         className="w-full h-full rounded-full border-4 border-transparent border-t-primary animate-spin"
+       />
+    </div>
   );
 }

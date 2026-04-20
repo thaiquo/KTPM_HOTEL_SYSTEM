@@ -3,76 +3,166 @@ import { Heart, Phone, Mail, MapPin, Facebook, Instagram, Twitter } from 'lucide
 
 const Footer = () => {
   return (
-    <footer className="bg-slate-900 text-white">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid md:grid-cols-4 gap-8">
-          {/* Brand */}
-          <div>
-            <Link to="/" className="flex items-center gap-3 mb-4">
-              <div className="bg-orange-500 p-2 rounded-lg">
-                <Heart size={20} className="text-white" fill="white" />
+    <footer className="bg-inverse-surface text-inverse-on-surface pt-20 pb-10 px-4 md:px-8">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+        {/* Brand & Contact */}
+        <div className="flex flex-col gap-8 md:col-span-1">
+          <Link to="/" className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-inverse-on-surface/10 rounded-xl flex items-center justify-center p-2 border border-inverse-on-surface/10">
+              <Heart size={20} className="text-primary-fixed-dim" fill="currentColor" />
+            </div>
+            <div>
+              <div className="text-lg font-black tracking-tight font-headline text-inverse-on-surface">
+                S-T-T
               </div>
-              <div>
-                <div className="text-lg font-black">S-T-T</div>
-                <div className="text-[10px] uppercase tracking-widest text-orange-500">
-                  Love Hotel
-                </div>
+              <div className="text-[10px] uppercase tracking-[0.2em] font-medium text-primary-fixed-dim font-headline">
+                Love Hotel
               </div>
-            </Link>
-            <p className="text-slate-400 text-sm">
-              Nơi lý tưởng cho khoảng thời gian riêng tư và lãng mạn của bạn.
-            </p>
+            </div>
+          </Link>
+
+          <div className="flex flex-col gap-6">
+            <h4 className="text-primary-fixed-dim font-bold text-sm uppercase tracking-widest">
+              Thông tin liên hệ
+            </h4>
+            <a
+              href="tel:0925519789"
+              className="flex items-center gap-4 text-inverse-on-surface/70 hover:text-inverse-on-surface transition-colors cursor-pointer group"
+            >
+              <div className="p-2 rounded-full border border-inverse-on-surface/10 group-hover:bg-primary-container group-hover:border-primary-container transition-all">
+                <Phone className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-medium">092.5519.789</span>
+            </a>
+            <div className="flex items-start gap-4 text-inverse-on-surface/70 hover:text-inverse-on-surface transition-colors cursor-pointer group">
+              <div className="p-2 rounded-full border border-inverse-on-surface/10 group-hover:bg-primary-container group-hover:border-primary-container transition-all mt-1">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <span className="text-sm leading-relaxed max-w-[200px]">
+                An Khánh, Thủ Đức, Hồ Chí Minh
+              </span>
+            </div>
+            <a
+              href="mailto:info@stthotel.com"
+              className="flex items-center gap-4 text-inverse-on-surface/70 hover:text-inverse-on-surface transition-colors cursor-pointer group"
+            >
+              <div className="p-2 rounded-full border border-inverse-on-surface/10 group-hover:bg-primary-container group-hover:border-primary-container transition-all">
+                <Mail className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-medium">info@stthotel.com</span>
+            </a>
           </div>
 
-          {/* Links */}
-          <div>
-            <h3 className="font-bold mb-4">Liên kết nhanh</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/" className="text-slate-400 hover:text-orange-500">Trang chủ</Link></li>
-              <li><Link to="/rooms" className="text-slate-400 hover:text-orange-500">Đặt phòng</Link></li>
-              <li><Link to="/news" className="text-slate-400 hover:text-orange-500">Tin tức</Link></li>
-              <li><Link to="/contact" className="text-slate-400 hover:text-orange-500">Liên hệ</Link></li>
-            </ul>
-          </div>
-
-          {/* Contact */}
-          <div>
-            <h3 className="font-bold mb-4">Liên hệ</h3>
-            <ul className="space-y-3 text-sm">
-              <li className="flex items-start gap-2 text-slate-400">
-                <MapPin size={16} className="mt-1 shrink-0" />
-                <span>DHKTPM18B, Hồ Chí Minh</span>
-              </li>
-              <li className="flex items-center gap-2 text-slate-400">
-                <Phone size={16} />
-                <a href="tel:0925519789" className="hover:text-orange-500">092 5519 789</a>
-              </li>
-              <li className="flex items-center gap-2 text-slate-400">
-                <Mail size={16} />
-                <a href="mailto:info@stthotel.com" className="hover:text-orange-500">info@stthotel.com</a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Social */}
-          <div>
-            <h3 className="font-bold mb-4">Theo dõi chúng tôi</h3>
-            <div className="flex gap-3">
-              <a href="#" className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center hover:bg-orange-500 transition">
-                <Facebook size={18} />
+          <div className="flex flex-col gap-4">
+            <h4 className="text-primary-fixed-dim font-bold text-sm uppercase tracking-widest">
+              Theo dõi chúng tôi tại:
+            </h4>
+            <div className="flex gap-4">
+              <a
+                href="#"
+                className="p-2 rounded-full border border-inverse-on-surface/10 hover:bg-white hover:text-inverse-surface transition-all transform hover:-translate-y-1"
+              >
+                <Facebook className="w-5 h-5" />
               </a>
-              <a href="#" className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center hover:bg-orange-500 transition">
-                <Instagram size={18} />
+              <a
+                href="#"
+                className="p-2 rounded-full border border-inverse-on-surface/10 hover:bg-white hover:text-inverse-surface transition-all transform hover:-translate-y-1"
+              >
+                <Instagram className="w-5 h-5" />
               </a>
-              <a href="#" className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center hover:bg-orange-500 transition">
-                <Twitter size={18} />
+              <a
+                href="#"
+                className="p-2 rounded-full border border-inverse-on-surface/10 hover:bg-white hover:text-inverse-surface transition-all transform hover:-translate-y-1"
+              >
+                <Twitter className="w-5 h-5" />
               </a>
             </div>
           </div>
         </div>
 
-        <div className="border-t border-slate-800 mt-8 pt-8 text-center text-sm text-slate-400">
-          <p>  S-T-T Love Hotel </p>
+        {/* Links Groups */}
+        <div className="flex flex-col gap-6">
+          <h4 className="text-inverse-on-surface font-bold text-sm uppercase tracking-widest relative inline-block">
+            S-T-T Love Hotel
+            <span className="absolute -bottom-2 left-0 w-8 h-[2px] bg-primary-container"></span>
+          </h4>
+          <ul className="flex flex-col gap-4 text-inverse-on-surface/50 text-sm mt-4">
+            <li>
+              <Link to="/rooms" className="hover:text-primary-fixed-dim transition-colors">
+                Phòng nghỉ cao cấp
+              </Link>
+            </li>
+            <li>
+              <Link to="/rooms" className="hover:text-primary-fixed-dim transition-colors">
+                Phòng VIP & Suite
+              </Link>
+            </li>
+            <li>
+              <Link to="/rooms" className="hover:text-primary-fixed-dim transition-colors">
+                Phòng theo giờ
+              </Link>
+            </li>
+          </ul>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <h4 className="text-inverse-on-surface font-bold text-sm uppercase tracking-widest relative inline-block">
+            Khám phá
+            <span className="absolute -bottom-2 left-0 w-8 h-[2px] bg-primary-container"></span>
+          </h4>
+          <ul className="flex flex-col gap-4 text-inverse-on-surface/50 text-sm mt-4">
+            <li>
+              <Link to="/rooms" className="hover:text-primary-fixed-dim transition-colors">
+                Lưu trú ngắn hạn
+              </Link>
+            </li>
+            <li>
+              <Link to="/rooms" className="hover:text-primary-fixed-dim transition-colors">
+                Lưu trú dài hạn
+              </Link>
+            </li>
+            <li>
+              <Link to="/" className="hover:text-primary-fixed-dim transition-colors">
+                Liên hệ
+              </Link>
+            </li>
+          </ul>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <h4 className="text-inverse-on-surface font-bold text-sm uppercase tracking-widest relative inline-block">
+            Hỗ trợ
+            <span className="absolute -bottom-2 left-0 w-8 h-[2px] bg-primary-container"></span>
+          </h4>
+          <ul className="flex flex-col gap-4 text-inverse-on-surface/50 text-sm mt-4">
+            <li>
+              <a href="#" className="hover:text-primary-fixed-dim transition-colors">
+                Chính sách giao và nhận phòng
+              </a>
+            </li>
+            <li>
+              <a href="#" className="hover:text-primary-fixed-dim transition-colors">
+                Chính sách đổi, trả phòng và hoàn tiền
+              </a>
+            </li>
+            <li>
+              <a href="#" className="hover:text-primary-fixed-dim transition-colors">
+                Câu hỏi thường gặp
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto border-t border-inverse-on-surface/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-inverse-on-surface/40">
+        <p>Copyright 2025 © S-T-T Love Hotel</p>
+        <div className="flex gap-6">
+          <a href="#" className="hover:text-inverse-on-surface transition-colors">
+            Điều khoản dịch vụ
+          </a>
+          <a href="#" className="hover:text-inverse-on-surface transition-colors">
+            Chính sách bảo mật
+          </a>
         </div>
       </div>
     </footer>

@@ -7,7 +7,10 @@ export default function Card({ className, ...props }: CardProps) {
   return (
     <div
       {...props}
-      className={cn('bg-white rounded-2xl shadow', className)}
+      className={cn(
+        'bg-surface-container-low rounded-xl border border-outline-variant/10 shadow-2xl',
+        className
+      )}
     />
   );
 }

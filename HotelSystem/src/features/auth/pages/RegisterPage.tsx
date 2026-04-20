@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { User, Mail, Lock, Phone, Eye, EyeOff } from 'lucide-react';
 import { isAxiosError } from 'axios';
@@ -64,12 +65,29 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center py-12 px-4">
-      <div className="max-w-md w-full">
-        <Card className="p-8 shadow-xl">
+    <div className="min-h-screen relative flex items-center justify-center py-14 px-6 bg-background">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          backgroundImage:
+            'url(https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1920)',
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/45 to-background" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="relative max-w-md w-full"
+      >
+        <Card className="p-8 bg-surface/70 backdrop-blur-[24px] border border-white/5 shadow-2xl shadow-black/50">
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900">Đăng ký</h2>
-            <p className="text-gray-600 mt-2">Tạo tài khoản để trải nghiệm dịch vụ tốt nhất</p>
+            <div className="text-[11px] uppercase tracking-[0.28em] text-on-surface-variant font-label">
+              Create account
+            </div>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-on-surface font-headline">Đăng ký</h2>
+            <p className="text-on-surface-variant mt-2 font-medium">Khởi đầu hành trình lãng mạn tại S-T-T</p>
           </div>
 
           {error && (
@@ -79,15 +97,15 @@ const RegisterPage = () => {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Họ và tên</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Họ và tên</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={18} />
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all font-medium"
                   placeholder="Nguyễn Văn A"
                 />
               </div>
@@ -95,31 +113,31 @@ const RegisterPage = () => {
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={18} />
                 <input
                   type="email"
                   required
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                  placeholder="email@example.com"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all font-medium"
+                  placeholder="email@domain.com"
                 />
               </div>
             </div>
 
             {/* Phone */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Số điện thoại</label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={18} />
                 <input
                   type="tel"
                   required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all font-medium"
                   placeholder="0901234567"
                 />
               </div>
@@ -127,46 +145,46 @@ const RegisterPage = () => {
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Mật khẩu</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Mật khẩu</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={18} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-12 py-3 rounded-xl bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all font-medium"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
                 >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Xác nhận mật khẩu</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-on-surface-variant mb-2 font-label">Xác nhận mật khẩu</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-primary-fixed-dim" size={18} />
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
                   required
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-12 py-3 rounded-xl bg-surface-container-highest/70 text-on-surface placeholder:text-on-surface-variant/60 outline-none border border-outline-variant/15 focus:border-primary-container/40 focus:ring-2 focus:ring-primary-container/20 transition-all font-medium"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface transition-colors"
                 >
-                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
@@ -176,17 +194,10 @@ const RegisterPage = () => {
               <input
                 type="checkbox"
                 required
-                className="w-4 h-4 mt-1 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                className="w-4 h-4 mt-1 rounded border-outline-variant/30 bg-surface-container-highest text-primary-container focus:ring-primary-container/30 transition-all cursor-pointer"
               />
-              <label className="ml-2 text-sm text-gray-600">
-                Tôi đồng ý với{' '}
-                <Link to="/terms" className="text-orange-500 hover:text-orange-600">
-                  Điều khoản sử dụng
-                </Link>{' '}
-                và{' '}
-                <Link to="/privacy" className="text-orange-500 hover:text-orange-600">
-                  Chính sách bảo mật
-                </Link>
+              <label className="ml-2 text-sm text-on-surface-variant font-medium leading-relaxed">
+                Tôi đồng ý với Điều khoản sử dụng và Chính sách bảo mật.
               </label>
             </div>
 
@@ -194,23 +205,24 @@ const RegisterPage = () => {
             <Button
               type="submit"
               loading={loading}
-              className="w-full py-3 rounded-lg"
+              className="w-full py-3.5 rounded-xl font-bold tracking-wide shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-[0.98]"
             >
-              {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+              {loading ? 'Đang tạo tài khoản...' : 'Đăng ký ngay'}
             </Button>
           </form>
 
           {/* Login Link */}
-          <p className="text-center text-gray-600 mt-6">
+          <p className="text-center text-on-surface-variant mt-8 font-medium">
             Đã có tài khoản?{' '}
-            <Link to="/login" className="text-orange-500 font-semibold hover:text-orange-600">
+            <Link to="/login" className="text-primary-fixed-dim font-bold hover:text-primary transition-colors">
               Đăng nhập
             </Link>
           </p>
         </Card>
-      </div>
+      </motion.div>
     </div>
   );
 };
 
 export default RegisterPage;
+
