@@ -1,8 +1,8 @@
 package iuh.fit.hotelsystem_room.controller;
 
 import iuh.fit.hotelsystem_room.entity.Room;
-import iuh.fit.hotelsystem_room.entity.RoomStatus;
 import iuh.fit.hotelsystem_room.service.RoomService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,24 +23,29 @@ public class RoomController {
     }
 
     @GetMapping("/{id}")
-    public Room getRoomById(@PathVariable Long id) {
-        return roomService.getRoomById(id);
-    }
-
-    @GetMapping("/available")
-    public List<Room> getAvailableRooms() {
-        return roomService.getAvailableRooms();
+    public ResponseEntity<Room> getRoomById(@PathVariable Long id) {
+        return roomService.getRoomById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public Room createRoom(@RequestBody Room room) {
-        return roomService.createRoom(room);
+        return roomService.saveRoom(room);
     }
 
-    @PutMapping("/{id}/status")
-    public Room updateStatus(@PathVariable Long id,
-                             @RequestParam String status) {
-        RoomStatus parsed = RoomStatus.valueOf(status.trim().toUpperCase());
-        return roomService.updateStatus(id, parsed);
+    @PutMapping("/{id}")
+    public ResponseEntity<Room> updateRoom(@PathVariable Long id, @RequestBody Room roomDetails) {
+        try {
+            return ResponseEntity.ok(roomService.updateRoom(id, roomDetails));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteRoom(@PathVariable Long id) {
+        roomService.deleteRoom(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -1,53 +1,41 @@
-package iuh.fit.hotelsystem_auth.entity;
+package iuh.fit.hotelsystem_auth.dto.response;
 
-import jakarta.persistence.*;
+import iuh.fit.hotelsystem_auth.entity.User;
 
-@Entity
-@Table(name = "users")
-public class User {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class UserDto {
     private Long id;
-
-    @Column(nullable = false, unique = true)
     private String email;
-
-    @Column(nullable = false)
-    private String password;
-
-    @Column(nullable = false, unique = true)
     private String phoneNumber;
-
-    @Column(nullable = false)
     private String name;
-
-    @Column(nullable = true)
     private String dateOfBirth;
-
-    @Column(nullable = true)
     private String address;
+    private String role;
 
-    @ManyToOne
-    @JoinColumn(name = "role_id")
-    private Role role;
+    public UserDto() {}
 
-    public User() {}
+    public UserDto(User user) {
+        this.id = user.getId();
+        this.email = user.getEmail();
+        this.phoneNumber = user.getPhoneNumber();
+        this.name = user.getName();
+        this.dateOfBirth = user.getDateOfBirth();
+        this.address = user.getAddress();
+        this.role = user.getRole().getName().name();
+    }
 
     public Long getId() { return id; }
     public String getEmail() { return email; }
-    public String getPassword() { return password; }
     public String getPhoneNumber() { return phoneNumber; }
     public String getName() { return name; }
     public String getDateOfBirth() { return dateOfBirth; }
     public String getAddress() { return address; }
-    public Role getRole() { return role; }
+    public String getRole() { return role; }
 
+    public void setId(Long id) { this.id = id; }
     public void setEmail(String email) { this.email = email; }
-    public void setPassword(String password) { this.password = password; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
     public void setName(String name) { this.name = name; }
     public void setDateOfBirth(String dateOfBirth) { this.dateOfBirth = dateOfBirth; }
     public void setAddress(String address) { this.address = address; }
-    public void setRole(Role role) { this.role = role; }
+    public void setRole(String role) { this.role = role; }
 }

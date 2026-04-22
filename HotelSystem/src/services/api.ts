@@ -35,6 +35,7 @@ const api = axios.create({
 
 const authHttp = axios.create({
   baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -252,12 +253,29 @@ export const authApi = {
   login: (email: string, password: string) =>
     authHttp.post<{ accessToken: string; refreshToken: string }>('/auth/login', { email, password }),
 
-  register: (userData: Partial<User> & { password: string }) =>
-    authHttp.post<void>('/auth/register', {
-      email: userData.email,
-      password: userData.password,
-      role: userData.role || 'CUSTOMER',
+  register: (payload: Partial<User> & {
+    email?: string;
+    name?: string;
+    phone?: string;
+    phoneNumber?: string;
+    dateOfBirth?: string;
+    password: string;
+    role?: string;
+  }) =>
+    authHttp.post<string>('/auth/register', {
+      name: payload.name || '',
+      email: payload.email,
+      phoneNumber: payload.phoneNumber || payload.phone || '',
+      dateOfBirth: payload.dateOfBirth || '',
+      password: payload.password,
+      role: payload.role || 'CUSTOMER',
     }),
+
+  sendOtp: (method: 'EMAIL' | 'PHONE') =>
+    authHttp.post<string>('/auth/send-otp', null, { params: { method } }),
+
+  verifyOtp: (otp: string) =>
+    authHttp.post<string>('/auth/verify-otp', null, { params: { otp } }),
 
   refreshTokens: (refreshToken: string) =>
     authHttp.post<{ accessToken: string; refreshToken: string }>('/auth/refresh', { refreshToken }),
