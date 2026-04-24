@@ -1,6 +1,6 @@
 export interface Room {
   id: string;
-  name: string;
+  roomNumber: string;
   type: string;
   price: number;
   maxGuests: number;
@@ -8,6 +8,8 @@ export interface Room {
   amenities: string[];
   description: string;
   available: boolean;
+  floor: number;
+  bedType: string;
 }
 
 export interface BookingData {
@@ -36,6 +38,7 @@ export interface User {
   email: string;
   name: string;
   phone: string;
+  gender?: boolean;
   role: string;
 }
 

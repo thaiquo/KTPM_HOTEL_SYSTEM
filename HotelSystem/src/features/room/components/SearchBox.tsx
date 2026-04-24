@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Calendar, Users, ChevronDown } from 'lucide-react';
+import { Calendar, Users, ChevronDown } from 'lucide-react';
 import { addDays, format } from 'date-fns';
 import Button from '../../../shared/components/ui/Button';
 
@@ -10,7 +10,6 @@ const SearchBox = () => {
   const [tomorrow] = useState(() => format(addDays(new Date(), 1), 'yyyy-MM-dd'));
 
   const [searchData, setSearchData] = useState({
-    location: 'TP Hồ Chí Minh',
     checkIn: today,
     checkOut: tomorrow,
     rooms: 1,
@@ -20,7 +19,6 @@ const SearchBox = () => {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams({
-      location: searchData.location,
       checkIn: searchData.checkIn,
       checkOut: searchData.checkOut,
       rooms: searchData.rooms.toString(),
@@ -30,69 +28,58 @@ const SearchBox = () => {
   };
 
   return (
-    <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 p-4 lg:p-6">
+    <div className="w-full">
       <form
         onSubmit={handleSearch}
-        className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center"
+        className="grid grid-cols-1 items-end gap-4 lg:grid-cols-[1.1fr_1.1fr_1fr_230px]"
       >
-        {/* Location */}
-        <div className="flex flex-col gap-1 border-r border-gray-200 px-3 last:border-0">
-          <label className="text-[10px] uppercase tracking-wider text-primary-container font-bold font-label">
-            Chọn vị trí
+        <div className="flex flex-col gap-2">
+          <label className="text-xs uppercase tracking-[0.2em] text-[#d4af37] font-bold">
+            Nhận phòng
           </label>
-          <div className="flex items-center gap-2 text-on-surface font-semibold">
-            <MapPin className="w-4 h-4 text-on-surface-variant" />
-            <input
-              type="text"
-              value={searchData.location}
-              onChange={(e) => setSearchData({ ...searchData, location: e.target.value })}
-              className="w-full bg-transparent outline-none placeholder:text-on-surface-variant/70"
-              placeholder="Chọn địa điểm"
-            />
-          </div>
-        </div>
-
-        {/* Date */}
-        <div className="flex flex-col gap-1 border-r border-gray-200 px-3 last:border-0">
-          <label className="text-[10px] uppercase tracking-wider text-primary-container font-bold font-label">
-            Nhận - Trả phòng
-          </label>
-          <div className="flex items-center gap-2 text-on-surface font-semibold">
-            <Calendar className="w-4 h-4 text-on-surface-variant" />
+          <div className="flex items-center gap-2 border border-black/10 bg-[#fafafa] px-4 py-4 text-[#111]">
+            <Calendar className="h-4 w-4 text-[#d4af37]" />
             <input
               type="date"
               value={searchData.checkIn}
               min={today}
               onChange={(e) => setSearchData({ ...searchData, checkIn: e.target.value })}
-              className="bg-transparent outline-none w-[110px]"
+              className="w-full bg-transparent outline-none"
             />
-            <span className="text-on-surface-variant">→</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-xs uppercase tracking-[0.2em] text-[#d4af37] font-bold">
+            Trả phòng
+          </label>
+          <div className="flex items-center gap-2 border border-black/10 bg-[#fafafa] px-4 py-4 text-[#111]">
+            <Calendar className="h-4 w-4 text-[#d4af37]" />
             <input
               type="date"
               value={searchData.checkOut}
               min={searchData.checkIn}
               onChange={(e) => setSearchData({ ...searchData, checkOut: e.target.value })}
-              className="bg-transparent outline-none w-[110px]"
+              className="w-full bg-transparent outline-none"
             />
           </div>
         </div>
 
-        {/* Rooms & Guests */}
-        <div className="flex flex-col gap-1 border-r border-gray-200 px-3 last:border-0">
-          <label className="text-[10px] uppercase tracking-wider text-primary-container font-bold font-label">
-            Phòng và Khách
+        <div className="flex flex-col gap-2">
+          <label className="text-xs uppercase tracking-[0.2em] text-[#d4af37] font-bold">
+            Số khách
           </label>
-          <div className="flex items-center gap-2 text-on-surface font-semibold">
-            <Users className="w-4 h-4 text-on-surface-variant" />
+          <div className="flex items-center gap-2 border border-black/10 bg-[#fafafa] px-4 py-4 text-[#111]">
+            <Users className="h-4 w-4 text-[#d4af37]" />
             <div className="relative flex-1">
-              <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" size={16} />
+              <ChevronDown className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#888]" size={16} />
               <select
                 value={`${searchData.rooms}-${searchData.guests}`}
                 onChange={(e) => {
                   const [rooms, guests] = e.target.value.split('-').map(Number);
                   setSearchData({ ...searchData, rooms, guests });
                 }}
-                className="w-full bg-transparent outline-none appearance-none cursor-pointer pr-6"
+                className="w-full appearance-none cursor-pointer bg-transparent pr-6 outline-none text-[#111]"
               >
                 <option value="1-2">1 Phòng - 2 Khách</option>
                 <option value="1-4">1 Phòng - 4 Khách</option>
@@ -104,9 +91,8 @@ const SearchBox = () => {
           </div>
         </div>
 
-        {/* Search Button */}
-        <div className="flex px-2">
-          <Button type="submit" className="w-full py-3 rounded-xl font-bold hover:shadow-lg hover:shadow-primary-container/30 transition-all transform active:scale-95">
+        <div className="flex md:pl-2">
+          <Button type="submit" className="w-full rounded-none border border-[#d4af37] bg-[#d4af37] py-4 text-[15px] font-extrabold text-[#0f0f0f] transition-all hover:brightness-110">
             Tìm phòng
           </Button>
         </div>

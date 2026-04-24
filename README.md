@@ -76,7 +76,7 @@ Prod proxy (Nginx) nằm ở [HotelSystem/nginx.conf](HotelSystem/nginx.conf)
 - Windows: cài Docker Desktop và bật WSL2
 - Docker Compose v2 (`docker compose ...`)
 
-### Chạy DEV (khuyến nghị khi đang code)
+### Chạy DEV lần đầu (hoặc mỗi ngày)
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
@@ -96,17 +96,94 @@ Restart 1 service khi vừa sửa code nhưng container chưa reload:
 docker compose -f docker-compose.dev.yml restart booking-service
 ```
 
-Tắt dev stack:
+Tắt dev stack (không mất dữ liệu DB):
 
 ```bash
 docker compose -f docker-compose.dev.yml down
 ```
 
-Reset sạch toàn bộ DB volumes:
+Reset sạch toàn bộ DB volumes (xóa toàn bộ dữ liệu):
 
 ```bash
 docker compose -f docker-compose.dev.yml down -v
 ```
+
+### Sau khi tắt máy, mở lại để chạy project
+
+1. Mở Docker Desktop và chờ trạng thái `Running`.
+2. Mở terminal tại thư mục project.
+3. Chạy lại stack dev:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml ps
+```
+
+4. Mở ứng dụng:
+
+- Frontend: http://localhost:3000
+- RabbitMQ: http://localhost:15672
+- pgAdmin: http://localhost:5050
+
+### Dữ liệu có mất sau khi tắt máy không?
+
+- Không mất nếu bạn chỉ tắt máy hoặc chạy `docker compose down`.
+- Chỉ mất khi bạn xóa volume bằng `docker compose down -v` hoặc `docker volume prune`.
+
+## 4) Kiểm tra dữ liệu trong PostgreSQL
+
+Bạn có thể kiểm tra data theo 2 cách: `pgAdmin` hoặc `psql` trong container.
+
+### Cách 1: pgAdmin (dễ nhìn)
+
+1. Mở `http://localhost:5050`.
+2. Đăng nhập:
+
+- Email: `admin@gmail.com`
+- Password: `123456`
+
+3. Add server mới:
+
+- Host: `postgres-auth` hoặc `postgres-room` hoặc `postgres-booking` hoặc `postgres-payment` hoặc `postgres-notification`
+- Port: `5432`
+- Username: `postgres`
+- Password: `quocthai`
+
+4. Vào `Query Tool` và chạy thử:
+
+```sql
+SELECT * FROM users LIMIT 20;
+SELECT * FROM rooms LIMIT 20;
+```
+
+### Cách 2: psql trong terminal (nhanh)
+
+Vào DB ROOM:
+
+```bash
+docker compose -f docker-compose.dev.yml exec postgres-room psql -U postgres -d hotel_room
+```
+
+Vào DB AUTH:
+
+```bash
+docker compose -f docker-compose.dev.yml exec postgres-auth psql -U postgres -d hotel_auth
+```
+
+Các lệnh psql cơ bản:
+
+```sql
+\dt
+SELECT * FROM room_types LIMIT 10;
+SELECT * FROM rooms LIMIT 10;
+\q
+```
+
+## 5) Ghi chú dữ liệu mẫu (seed)
+
+- `HotelSystem_ROOM` đã được chỉnh để không tự recreate schema mỗi lần start (`ddl-auto=update`).
+- Seeder ROOM chỉ chạy khi bật `ROOM_SEED_ENABLED=true`.
+- Sau khi seed lần đầu, đặt lại `ROOM_SEED_ENABLED=false` để tránh nạp lại dữ liệu mẫu.
 
 ### Chạy PROD (build image)
 
@@ -117,7 +194,7 @@ docker compose ps
 
 Trong prod, frontend là Nginx (port 3000:80 theo compose) và Nginx reverse proxy về các backend.
 
-## 4) Luồng nghiệp vụ chính (đặt phòng)
+## 6) Luồng nghiệp vụ chính (đặt phòng)
 
 Luồng đặt phòng dùng RabbitMQ để phối hợp trạng thái phòng và thanh toán demo:
 
@@ -133,7 +210,7 @@ RabbitMQ (topic) dùng chung:
 - Exchange: `hotel.exchange`
 - Routing keys chính: `room.hold`, `room.held`, `room.confirm`, `room.release`, `payment.request`, `payment.result`, `booking.confirmed`, `booking.cancelled`
 
-## 5) README theo module
+## 7) README theo module
 
 - Frontend: [HotelSystem/README.md](HotelSystem/README.md)
 - AUTH service: [HotelSystem_Backend/HotelSystem_AUTH/README.md](HotelSystem_Backend/HotelSystem_AUTH/README.md)
@@ -143,7 +220,7 @@ RabbitMQ (topic) dùng chung:
 - PAYMENT service: [HotelSystem_Backend/HotelSystem_PAYMENT/README.md](HotelSystem_Backend/HotelSystem_PAYMENT/README.md)
 - NOTIFICATION service: [HotelSystem_Backend/HotelSystem_NOTIFICATION/README.md](HotelSystem_Backend/HotelSystem_NOTIFICATION/README.md)
 
-## 6) Ghi chú nhanh / Troubleshoot
+## 8) Ghi chú nhanh / Troubleshoot
 
 - Nếu `docker compose` báo không connect được daemon: mở Docker Desktop và đợi status "Running".
 - Nếu API trả 404 qua proxy path: kiểm tra frontend/proxy đang chạy đúng compose (dev/prod) và container service tương ứng đang `Up`.

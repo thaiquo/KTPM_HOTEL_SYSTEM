@@ -58,34 +58,17 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
 
-  # ========================
-  # USER DB + SERVICE
-  # ========================
-  postgres-user:
-    image: postgres:15
-    ports:
-      - "54322:5432"
-    environment:
-      POSTGRES_DB: hotel_user
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - user_data:/var/lib/postgresql/data
-
   user-service:
     build: ./HotelSystem_Backend/HotelSystem_USER
     ports:
       - "8082:8082"
     depends_on:
-      - postgres-user
-      - rabbitmq
+      - postgres-auth
     environment:
-      DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
+      DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
-      RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
+
 
   # ========================
   # ROOM DB + SERVICE
@@ -115,6 +98,10 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local-access-key}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local-secret-key}
+      AWS_REGION: ap-southeast-2
+      AWS_S3_BUCKET: ktpmbtl-s3-bucket
 
   # ========================
   # BOOKING DB + SERVICE
@@ -221,7 +208,6 @@ services:
 volumes:
   pgadmin_data:
   auth_data:
-  user_data:
   room_data:
   booking_data:
   payment_data:
