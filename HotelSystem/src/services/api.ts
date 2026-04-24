@@ -1,19 +1,56 @@
 import axios from 'axios';
 import type { Room, Booking, User, UserProfile, ApiResponse, SearchFilters } from '../types';
 
+export interface EmployeeBackend {
+  id: number;
+  email: string;
+  phoneNumber: string;
+  name: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  role: string;
+  active?: boolean;
+}
+
+export interface CreateEmployeePayload {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
+export interface UpdateEmployeePayload {
+  name: string;
+  email: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
 type RoomBackend = {
-  id: number | string;
-  roomNumber?: string;
-  name?: string;
-  type?: string;
-  price?: number;
-  status?: string;
-  maxGuests?: number;
-  description?: string;
-  imageUrl?: string;
-  images?: string[];
-  amenities?: string[];
-  available?: boolean;
+  id: number;
+  roomNumber: string;
+  roomType: {
+    id: number;
+    type: string;
+    basePrice: number;
+    maxCapacity: number;
+    defaultCapacity: number;
+    description: string;
+    images: { imageUrl: string; isThumbnail: boolean }[];
+  };
+  status: string;
+  floor: number;
+  beds: { type: string; quantity: number }[];
+  note?: string;
+  actualCapacity: number;
 };
 
 type BookingBackend = {
@@ -50,6 +87,14 @@ const userHttp = axios.create({
 
 const roomHttp = axios.create({
   baseURL: import.meta.env.VITE_ROOM_API_URL || '/room-api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+const authResourceHttp = axios.create({
+  baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -126,22 +171,18 @@ const DEFAULT_ROOM_IMAGE =
   'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800';
 
 const mapRoom = (room: RoomBackend): Room => {
-  const roomId = String(room.id);
-  const roomName = room.name || (room.roomNumber ? `Phòng ${room.roomNumber}` : `Phòng ${roomId}`);
-
   return {
-    id: roomId,
-    name: roomName,
-    type: room.type || 'Standard',
-    price: room.price ?? 0,
-    maxGuests: room.maxGuests ?? 2,
-    images: room.images?.length ? room.images : [room.imageUrl || DEFAULT_ROOM_IMAGE],
-    amenities: room.amenities?.length ? room.amenities : ['WiFi', 'TV', 'AC'],
-    description: room.description || 'Phòng với đầy đủ tiện nghi hiện đại',
-    available:
-      typeof room.available === 'boolean'
-        ? room.available
-        : (room.status || '').toUpperCase() === 'AVAILABLE',
+    id: String(room.id),
+    roomNumber: room.roomNumber,
+    type: room.roomType.type,
+    price: room.roomType.basePrice,
+    maxGuests: room.actualCapacity || room.roomType.maxCapacity,
+    images: room.roomType.images?.map(img => img.imageUrl) || [],
+    amenities: [], 
+    description: room.roomType.description,
+    available: room.status === 'AVAILABLE',
+    floor: room.floor,
+    bedType: room.beds?.map(b => `${b.quantity} ${b.type}`).join(', ') || 'Chưa cấu hình',
   };
 };
 
@@ -213,6 +254,8 @@ const extractSingleBooking = (payload: unknown): Booking => {
 
 attachAuthInterceptors(api);
 attachAuthInterceptors(userHttp);
+attachAuthInterceptors(authResourceHttp);
+attachAuthInterceptors(roomHttp);
 
 // Room APIs
 export const roomApi = {
@@ -226,8 +269,43 @@ export const roomApi = {
     return extractSingleRoom(response.data);
   },
   
-  checkAvailability: (roomId: string, checkIn: string, checkOut: string) =>
-    roomHttp.post<ApiResponse<boolean>>('/rooms/check-availability', { roomId, checkIn, checkOut }),
+  getAvailableRooms: async (roomTypeId: string, checkIn: string, checkOut: string): Promise<Room[]> => {
+    const response = await roomHttp.get<unknown>('/rooms/available', {
+      params: { roomTypeId, checkIn, checkOut }
+    });
+    return extractRoomList(response.data);
+  },
+
+  create: async (room: Partial<Room>): Promise<Room> => {
+    const response = await roomHttp.post<unknown>('/rooms', room);
+    return extractSingleRoom(response.data);
+  },
+
+  update: async (id: string, room: Partial<Room>): Promise<Room> => {
+    const response = await roomHttp.put<unknown>(`/rooms/${id}`, room);
+    return extractSingleRoom(response.data);
+  },
+
+  remove: async (id: string): Promise<void> => {
+    await roomHttp.delete(`/rooms/${id}`);
+  },
+
+  getRoomTypes: async (): Promise<any[]> => {
+    const response = await roomHttp.get<any[]>('/room-types');
+    return response.data;
+  },
+
+  createType: (type: any) => roomHttp.post('/room-types', type),
+  updateType: (id: number, type: any) => roomHttp.put(`/room-types/${id}`, type),
+  deleteType: (id: number) => roomHttp.delete(`/room-types/${id}`),
+
+  uploadImage: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return roomHttp.post<{url: string}>('/rooms/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  }
 };
 
 // Booking APIs
@@ -259,6 +337,7 @@ export const authApi = {
     phone?: string;
     phoneNumber?: string;
     dateOfBirth?: string;
+    gender?: boolean;
     password: string;
     role?: string;
   }) =>
@@ -267,6 +346,7 @@ export const authApi = {
       email: payload.email,
       phoneNumber: payload.phoneNumber || payload.phone || '',
       dateOfBirth: payload.dateOfBirth || '',
+      gender: payload.gender,
       password: payload.password,
       role: payload.role || 'CUSTOMER',
     }),
@@ -286,9 +366,27 @@ export const authApi = {
 };
 
 export const userApi = {
-  getMe: () => userHttp.get<UserProfile>('/users/me'),
-  updateMe: (profile: UserProfile) => userHttp.put<UserProfile>('/users/me', profile),
-  createProfile: (profile: UserProfile) => userHttp.post<UserProfile>('/users', profile),
+  getMe: () => userHttp.get<UserProfile>('/api/users/me'),
+  updateMe: (profile: UserProfile) => userHttp.put<UserProfile>('/api/users/me', profile),
+  createProfile: (profile: UserProfile) => userHttp.post<UserProfile>('/api/users', profile),
+};
+
+export const employeeApi = {
+  getAll: (params?: { keyword?: string; active?: boolean }) =>
+    userHttp.get<EmployeeBackend[]>('/api/users/employees', { params }),
+
+  create: (payload: CreateEmployeePayload) =>
+    userHttp.post<EmployeeBackend>('/api/users/employees', payload),
+
+  update: (employeeId: number, payload: UpdateEmployeePayload) =>
+    userHttp.put<EmployeeBackend>(`/api/users/employees/${employeeId}`, payload),
+
+  updateStatus: (employeeId: number, active: boolean) =>
+    userHttp.patch<EmployeeBackend>(`/api/users/employees/${employeeId}/status`, null, {
+      params: { active },
+    }),
+
+  remove: (employeeId: number) => userHttp.delete(`/api/users/employees/${employeeId}`),
 };
 
 export default api;

@@ -1,0 +1,64 @@
+{
+  "roomTypes": [
+    {
+      "type": "STANDARD",
+      "price": 500000,
+      "capacity": 2,
+      "description": "Phòng tiêu chuẩn, tiện nghi cơ bản cho 1-2 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
+        "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800"
+      ]
+    },
+    {
+      "type": "DELUXE",
+      "price": 900000,
+      "capacity": 3,
+      "description": "Phòng cao cấp, có thể thêm extra bed cho 2-3 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800",
+        "https://images.unsplash.com/photo-1566195992011-5f6b21e539aa?w=800"
+      ]
+    },
+    {
+      "type": "SUPERIOR",
+      "price": 1200000,
+      "capacity": 3,
+      "description": "PhòngSuperior rộng rãi, nội thất hiện đại cho 2-3 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1582719478250-c89cae4df85b?w=800",
+        "https://images.unsplash.com/photo-1595576508898-0ad5c879a061?w=800"
+      ]
+    },
+    {
+      "type": "VIP",
+      "price": 2000000,
+      "capacity": 4,
+      "description": "Phòng VIP hạng sang, dịch vụ đặc biệt cho 2-4 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800",
+        "https://images.unsplash.com/photo-1591088398332-8a77d399e80c?w=800"
+      ]
+    },
+    {
+      "type": "FAMILY",
+      "price": 1600000,
+      "capacity": 6,
+      "description": "Phòng gia đình rộng rãi, tối đa 6 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800",
+        "https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=800"
+      ]
+    },
+    {
+      "type": "SUITE",
+      "price": 3500000,
+      "capacity": 4,
+      "description": "Phòng hạng sang có phòng khách riêng, tối đa 4 người.",
+      "images": [
+        "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800",
+        "https://images.unsplash.com/photo-1590490359683-658d3d23f972?w=800"
+      ]
+    }
+  ]
+}

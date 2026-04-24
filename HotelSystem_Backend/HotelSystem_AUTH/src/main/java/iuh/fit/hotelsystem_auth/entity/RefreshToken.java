@@ -14,19 +14,28 @@ public class RefreshToken {
     @Column(nullable = false, unique = true)
     private String token;
 
-    @OneToOne
-    @JoinColumn(name = "user_id")
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(nullable = false)
+    private String email;
+
+    @Column(nullable = false)
+    private String role;
 
     @Column(nullable = false)
     private Instant expiryDate;
 
     public Long getId() { return id; }
     public String getToken() { return token; }
-    public User getUser() { return user; }
+    public Long getUserId() { return userId; }
+    public String getEmail() { return email; }
+    public String getRole() { return role; }
     public Instant getExpiryDate() { return expiryDate; }
 
     public void setToken(String token) { this.token = token; }
-    public void setUser(User user) { this.user = user; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public void setEmail(String email) { this.email = email; }
+    public void setRole(String role) { this.role = role; }
     public void setExpiryDate(Instant expiryDate) { this.expiryDate = expiryDate; }
 }

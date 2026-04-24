@@ -29,6 +29,9 @@ public class RegistrationSession {
     @Column(nullable = true)
     private String dateOfBirth;
 
+    @Column(nullable = true)
+    private Boolean gender;
+
     private String role;
 
     private String otp;
@@ -48,6 +51,7 @@ public class RegistrationSession {
     public String getPhoneNumber() { return phoneNumber; }
     public String getName() { return name; }
     public String getDateOfBirth() { return dateOfBirth; }
+    public Boolean getGender() { return gender; }
     public String getRole() { return role; }
     public String getOtp() { return otp; }
     public Instant getOtpExpiry() { return otpExpiry; }
@@ -60,6 +64,7 @@ public class RegistrationSession {
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
     public void setName(String name) { this.name = name; }
     public void setDateOfBirth(String dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+    public void setGender(Boolean gender) { this.gender = gender; }
     public void setRole(String role) { this.role = role; }
     public void setOtp(String otp) { this.otp = otp; }
     public void setOtpExpiry(Instant otpExpiry) { this.otpExpiry = otpExpiry; }

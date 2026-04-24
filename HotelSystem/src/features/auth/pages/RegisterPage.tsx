@@ -22,6 +22,7 @@ const RegisterPage = () => {
     email: '',
     phoneNumber: '',
     dateOfBirth: '',
+    gender: true,
     password: '',
     confirmPassword: '',
   });
@@ -48,6 +49,7 @@ const RegisterPage = () => {
         email: formData.email,
         phoneNumber: formData.phoneNumber,
         dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
         password: formData.password,
         role: 'CUSTOMER',
       });
@@ -181,6 +183,21 @@ const RegisterPage = () => {
                   className="w-full pl-10 pr-4 py-3 rounded-lg bg-[#f7f7f7] text-[#0f0f0f] placeholder:text-[#999] outline-none border border-[#ddd] focus:border-[#d4af37] focus:ring-2 focus:ring-[#d4af37]/20 transition-all"
                 />
               </div>
+            </div>
+
+            {/* Gender */}
+            <div>
+              <label className="block text-xs font-bold tracking-widest uppercase text-[#0f0f0f] mb-2 font-label">Giới tính</label>
+              <label className="flex items-center justify-between w-full px-4 py-3 rounded-lg bg-[#f7f7f7] border border-[#ddd]">
+                <span className="text-sm text-[#0f0f0f]">{formData.gender ? 'Nam' : 'Nữ'}</span>
+                <input
+                  type="checkbox"
+                  checked={formData.gender}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.checked })}
+                  className="w-5 h-5 rounded border-[#ddd] bg-white text-[#d4af37] focus:ring-[#d4af37]/30"
+                />
+              </label>
+              <p className="mt-1 text-xs text-[#666]">Bật: Nam, tắt: Nữ.</p>
             </div>
 
             {/* Password */}

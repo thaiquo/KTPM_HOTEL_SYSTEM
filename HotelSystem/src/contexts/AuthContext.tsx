@@ -7,7 +7,7 @@ import type { User } from '../types';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User | null>;
   register: (userData: Partial<User> & { password: string }) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
@@ -118,12 +118,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (tokenUser) {
       try {
         const profileRes = await userApi.getMe();
-        setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
+        const mergedUser = mergeProfileIntoUser(tokenUser, profileRes.data);
+        setUser(mergedUser);
+        return mergedUser;
       } catch {
         setUser(tokenUser);
+        return tokenUser;
       }
     } else {
       setUser(null);
+      return null;
     }
   };
 

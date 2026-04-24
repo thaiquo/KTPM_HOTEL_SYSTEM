@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { Menu, LogOut, User as UserIcon, X } from 'lucide-react';
+import { Menu, LogOut, User as UserIcon, X, ShoppingCart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCart } from '../../../contexts/CartContext';
 import logoTriStar from '../../../assets/hotel.png';
+import { getManagementHomeByRole } from '../../lib/roleRoute';
 
 const NavLink = ({
   to,
@@ -35,6 +37,7 @@ const NavLink = ({
 
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth();
+  const { totalRooms } = useCart();
   const [open, setOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -67,7 +70,7 @@ export default function Header() {
   ];
 
   if (user && (user.role === 'ADMIN' || user.role === 'STAFF')) {
-    navLinks.push({ to: '/admin', label: 'Quản lý' });
+    navLinks.push({ to: getManagementHomeByRole(user.role), label: 'Quản lý' });
   }
 
   return (
@@ -76,7 +79,7 @@ export default function Header() {
         isHidden ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'
       }`}
     >
-      <div className="container-custom flex h-[94px] items-center justify-between gap-8">
+      <div className="container-custom flex h-23.5 items-center justify-between gap-8">
         <Link to="/" className="flex items-center gap-3 group cursor-pointer shrink-0">
           <div className="h-16 w-16 overflow-hidden rounded-2xl border border-[#d4af37]/55 bg-black p-1 shadow-[0_0_0_1px_rgba(212,175,55,0.15)]">
             <img src={logoTriStar} alt="TriStar Hotel" className="h-full w-full rounded-xl object-cover" />
@@ -94,6 +97,25 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
+          {/* Cart Icon */}
+          <Link
+            to="/booking/cart"
+            className="relative rounded-full p-2.5 text-white/80 transition-all duration-300 hover:bg-white/10 hover:text-[#d4af37]"
+            title="Giỏ hàng"
+          >
+            <ShoppingCart size={20} />
+            {totalRooms > 0 && (
+              <motion.span
+                key={totalRooms}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#d4af37] text-[10px] font-black text-[#0f0f0f]"
+              >
+                {totalRooms}
+              </motion.span>
+            )}
+          </Link>
+
           {isAuthenticated ? (
             <>
               <Link
@@ -101,7 +123,7 @@ export default function Header() {
                 className="hidden sm:flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:border-[#d4af37]/60 hover:text-[#d4af37]"
               >
                 <UserIcon size={16} className="text-[#d4af37]" />
-                <span className="max-w-[120px] truncate">{user?.name || 'Tài khoản'}</span>
+                <span className="max-w-30 truncate">{user?.name || 'Tài khoản'}</span>
               </Link>
               <button
                 type="button"

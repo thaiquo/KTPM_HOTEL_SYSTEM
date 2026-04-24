@@ -7,6 +7,7 @@ import { isAxiosError } from 'axios';
 import Card from '../../../shared/components/ui/Card';
 import Alert from '../../../shared/components/ui/Alert';
 import Button from '../../../shared/components/ui/Button';
+import { getManagementHomeByRole } from '../../../shared/lib/roleRoute';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -26,12 +27,12 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      await login(formData.email, formData.password);
+      const loggedInUser = await login(formData.email, formData.password);
       const redirect = searchParams.get('redirect');
       if (redirect && redirect.startsWith('/')) {
         navigate(redirect, { replace: true });
       } else {
-        navigate('/', { replace: true });
+        navigate(getManagementHomeByRole(loggedInUser?.role), { replace: true });
       }
     } catch (err: unknown) {
       const message = isAxiosError<{ message?: string }>(err)
@@ -68,7 +69,7 @@ const LoginPage = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
             <div>
-              <label className="block text-xs font-bold tracking-widest uppercase text-[#0f0f0f] mb-2 font-label">Tài khoản</label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-[#0f0f0f] mb-2 font-label">email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#d4af37]" size={20} />
                 <input
@@ -77,7 +78,7 @@ const LoginPage = () => {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 rounded-lg bg-[#f7f7f7] text-[#0f0f0f] placeholder:text-[#999] outline-none border border-[#ddd] focus:border-[#d4af37] focus:ring-2 focus:ring-[#d4af37]/20 transition-all"
-                  placeholder="sdt hoặc email "
+                  placeholder="thinh@gmail.com"
                 />
               </div>
             </div>

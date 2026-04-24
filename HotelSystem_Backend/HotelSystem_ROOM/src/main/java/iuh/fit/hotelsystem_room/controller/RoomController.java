@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 
 @RestController
 @RequestMapping("/rooms")
@@ -24,23 +26,29 @@ public class RoomController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Room> getRoomById(@PathVariable Long id) {
-        return roomService.getRoomById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        Room room = roomService.getRoomById(id);
+        if (room == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(room);
+    }
+
+    @GetMapping("/available")
+    public List<Room> getAvailableRooms(
+            @RequestParam Long roomTypeId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
+        return roomService.getAvailableRooms(roomTypeId, checkIn, checkOut);
     }
 
     @PostMapping
     public Room createRoom(@RequestBody Room room) {
-        return roomService.saveRoom(room);
+        return roomService.createRoom(room);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Room> updateRoom(@PathVariable Long id, @RequestBody Room roomDetails) {
-        try {
-            return ResponseEntity.ok(roomService.updateRoom(id, roomDetails));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        Room updated = roomService.updateRoom(id, roomDetails);
+        if (updated == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(updated);
     }
 
     @DeleteMapping("/{id}")

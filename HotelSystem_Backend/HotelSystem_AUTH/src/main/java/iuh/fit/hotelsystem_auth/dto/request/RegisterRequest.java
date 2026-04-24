@@ -6,6 +6,7 @@ public class RegisterRequest {
     private String phoneNumber;
     private String name;
     private String dateOfBirth;
+    private Boolean gender;
     private String role;
     private String address;
 
@@ -17,6 +18,7 @@ public class RegisterRequest {
     public String getPhoneNumber() { return phoneNumber; }
     public String getName() { return name; }
     public String getDateOfBirth() { return dateOfBirth; }
+    public Boolean getGender() { return gender; }
     public String getRole() { return role; }
     public String getAddress() { return address; }
 
@@ -38,6 +40,10 @@ public class RegisterRequest {
 
     public void setDateOfBirth(String dateOfBirth) {
         this.dateOfBirth = dateOfBirth;
+    }
+
+    public void setGender(Boolean gender) {
+        this.gender = gender;
     }
 
     public void setRole(String role) {

@@ -3,7 +3,7 @@ package iuh.fit.hotelsystem_room.listener;
 import iuh.fit.hotelsystem_room.config.RabbitConfig;
 import iuh.fit.hotelsystem_room.dto.RoomMessage;
 import iuh.fit.hotelsystem_room.entity.Room;
-import iuh.fit.hotelsystem_room.entity.RoomStatus;
+import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;

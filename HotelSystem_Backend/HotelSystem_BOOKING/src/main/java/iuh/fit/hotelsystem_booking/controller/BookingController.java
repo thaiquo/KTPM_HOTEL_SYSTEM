@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 
 @RestController
 @RequestMapping("/bookings")
@@ -32,5 +34,13 @@ public class BookingController {
     @GetMapping("/user/{userId}")
     public List<Booking> getBookingsByUser(@PathVariable Long userId) {
         return bookingService.getBookingsByUserId(userId);
+    }
+
+    // Lấy danh sách ID phòng đã được đặt trong khoảng thời gian
+    @GetMapping("/booked-rooms")
+    public List<Long> getBookedRooms(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
+        return bookingService.getBookedRoomIds(checkIn, checkOut);
     }
 }

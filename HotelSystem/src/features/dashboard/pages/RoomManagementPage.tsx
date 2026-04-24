@@ -1,163 +1,312 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
+  HiOutlineOfficeBuilding,
   HiOutlinePlus, 
   HiOutlinePencilAlt, 
   HiOutlineTrash,
-  HiOutlineFilter,
   HiOutlineDownload,
-  HiOutlineDotsHorizontal
+  HiOutlineSearch,
+  HiOutlineX,
+  HiOutlineFilter,
+  HiOutlinePlusCircle,
+  HiOutlineMinusCircle
 } from 'react-icons/hi';
+import { roomApi } from '../../../services/api';
+import type { Room } from '../../../types';
+import toast from 'react-hot-toast';
+
+interface RoomType {
+  id: number;
+  type: string;
+  basePrice: number;
+  maxCapacity: number;
+  defaultCapacity: number;
+}
+
+interface Bed {
+  id?: number;
+  type: 'SINGLE' | 'DOUBLE' | 'QUEEN' | 'KING' | 'EXTRA' | 'SOFA' | 'BUNK';
+  quantity: number;
+}
 
 const RoomManagementPage: React.FC = () => {
-  // Dữ liệu mẫu (sẽ được thay thế bằng dữ liệu từ API sau)
-  const rooms = [
-    { id: 1, name: 'Phòng Standard 101', type: 'STANDARD', price: '500,000đ', capacity: 2, status: 'AVAILABLE', area: '25m²' },
-    { id: 2, name: 'Phòng Deluxe 202', type: 'DELUXE', price: '1,200,000đ', capacity: 3, status: 'BOOKED', area: '45m²' },
-    { id: 3, name: 'Phòng Suite 303', type: 'SUITE', price: '3,500,000đ', capacity: 4, status: 'AVAILABLE', area: '80m²' },
-    { id: 4, name: 'Phòng VIP 404', type: 'VIP', price: '5,000,000đ', capacity: 2, status: 'MAINTENANCE', area: '60m²' },
-    { id: 5, name: 'Phòng Family 505', type: 'FAMILY', price: '2,500,000đ', capacity: 5, status: 'AVAILABLE', area: '70m²' },
-  ];
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL');
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'AVAILABLE':
-        return <span className="px-3 py-1 text-[11px] font-bold bg-green-100 text-green-600 rounded-full uppercase tracking-wider">Sẵn sàng</span>;
-      case 'BOOKED':
-        return <span className="px-3 py-1 text-[11px] font-bold bg-blue-100 text-blue-600 rounded-full uppercase tracking-wider">Đã đặt</span>;
-      case 'MAINTENANCE':
-        return <span className="px-3 py-1 text-[11px] font-bold bg-amber-100 text-amber-600 rounded-full uppercase tracking-wider">Bảo trì</span>;
-      default:
-        return <span className="px-3 py-1 text-[11px] font-bold bg-gray-100 text-gray-600 rounded-full uppercase tracking-wider">{status}</span>;
+  // Form state
+  const [formData, setFormData] = useState({
+    roomNumber: '',
+    roomType: { id: 0 },
+    status: 'AVAILABLE',
+    floor: 1,
+    note: '',
+    actualCapacity: 2,
+    beds: [] as Bed[]
+  });
+
+  const fetchRooms = async () => {
+    try {
+      setLoading(true);
+      const data = await roomApi.getAll();
+      setRooms(data);
+    } catch (error) {
+      toast.error('Không thể tải danh sách phòng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchRoomTypes = async () => {
+    try {
+      const data = await roomApi.getRoomTypes();
+      setRoomTypes(data);
+    } catch (error) {
+      console.error('Failed to fetch room types:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchRooms();
+    fetchRoomTypes();
+  }, []);
+
+  const handleOpenModal = (room?: Room) => {
+    if (room) {
+      setEditingRoom(room);
+      const matchedType = roomTypes.find(t => t.type === room.type);
+      setFormData({
+        roomNumber: room.roomNumber,
+        roomType: { id: matchedType?.id || 0 },
+        status: room.available ? 'AVAILABLE' : 'BOOKED',
+        floor: room.floor,
+        note: '',
+        actualCapacity: room.maxGuests,
+        beds: [] // In a real app, you'd fetch the beds for this specific room
+      });
+    } else {
+      setEditingRoom(null);
+      setFormData({
+        roomNumber: '',
+        roomType: { id: roomTypes[0]?.id || 0 },
+        status: 'AVAILABLE',
+        floor: 1,
+        note: '',
+        actualCapacity: 2,
+        beds: [{ type: 'DOUBLE', quantity: 1 }]
+      });
+    }
+    setIsModalOpen(true);
+  };
+
+  const addBed = () => {
+    setFormData({
+      ...formData,
+      beds: [...formData.beds, { type: 'SINGLE', quantity: 1 }]
+    });
+  };
+
+  const removeBed = (index: number) => {
+    setFormData({
+      ...formData,
+      beds: formData.beds.filter((_, i) => i !== index)
+    });
+  };
+
+  const updateBed = (index: number, field: keyof Bed, value: any) => {
+    const newBeds = [...formData.beds];
+    newBeds[index] = { ...newBeds[index], [field]: value };
+    setFormData({ ...formData, beds: newBeds });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingRoom) {
+        await roomApi.update(editingRoom.id, formData as any);
+        toast.success('Cập nhật thành công');
+      } else {
+        await roomApi.create(formData as any);
+        toast.success('Thêm phòng mới thành công');
+      }
+      setIsModalOpen(false);
+      fetchRooms();
+    } catch (error) {
+      toast.error('Có lỗi xảy ra');
     }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Header Area */}
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Quản lý Phòng</h1>
-          <p className="text-sm text-gray-500 mt-1">Xem và quản lý tất cả các phòng trong hệ thống khách sạn.</p>
+          <p className="text-sm text-gray-500 mt-1">Quản lý chi tiết cấu hình giường và trạng thái từng phòng.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all shadow-sm">
-            <HiOutlineDownload className="w-5 h-5 mr-2 text-gray-400" />
-            <span className="text-sm font-medium">Xuất dữ liệu</span>
-          </button>
-          <button className="flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20">
-            <HiOutlinePlus className="w-5 h-5 mr-2" />
-            <span className="text-sm font-semibold">Thêm Phòng mới</span>
-          </button>
-        </div>
+        <button 
+          onClick={() => handleOpenModal()}
+          className="flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
+        >
+          <HiOutlinePlus className="w-5 h-5 mr-2" />
+          <span className="text-sm font-semibold">Thêm Phòng mới</span>
+        </button>
       </div>
 
-      {/* Stats Cards (Optional but adds premium feel) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {[
-          { label: 'Tổng số phòng', value: '45', color: 'bg-indigo-500' },
-          { label: 'Đang trống', value: '28', color: 'bg-green-500' },
-          { label: 'Đã được đặt', value: '12', color: 'bg-blue-500' },
-          { label: 'Đang bảo trì', value: '5', color: 'bg-amber-500' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
-            <div className={`w-12 h-12 ${stat.color} rounded-2xl flex items-center justify-center text-white shadow-lg opacity-80`}>
-              <HiOutlineOfficeBuilding className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{stat.label}</p>
-              <p className="text-xl font-bold text-gray-900 mt-0.5">{stat.value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Table Area */}
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
-          <div className="flex items-center gap-4">
-            <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
-              <button className="px-4 py-1.5 text-xs font-bold bg-indigo-50 text-indigo-600 rounded-lg">Tất cả</button>
-              <button className="px-4 py-1.5 text-xs font-bold text-gray-500 hover:text-indigo-600 rounded-lg transition-colors">Đang trống</button>
-              <button className="px-4 py-1.5 text-xs font-bold text-gray-500 hover:text-indigo-600 rounded-lg transition-colors">Đã đặt</button>
+        <div className="p-6 border-b border-gray-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-50/50">
+          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto flex-1">
+            <div className="relative w-full md:w-80">
+              <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input 
+                type="text" 
+                placeholder="Tìm số phòng..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+              />
+            </div>
+            <div className="relative w-full md:w-56">
+              <HiOutlineFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <select 
+                value={selectedTypeFilter}
+                onChange={(e) => setSelectedTypeFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all appearance-none shadow-sm cursor-pointer"
+              >
+                <option value="ALL">Tất cả loại phòng</option>
+                {roomTypes.map(type => (
+                  <option key={type.id} value={type.type}>{type.type}</option>
+                ))}
+              </select>
             </div>
           </div>
-          <button className="flex items-center text-gray-500 hover:text-indigo-600 transition-colors">
-            <HiOutlineFilter className="w-5 h-5 mr-1" />
-            <span className="text-sm font-medium">Bộ lọc</span>
-          </button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-white">
-                <th className="px-8 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Tên phòng / Mã</th>
-                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Loại phòng</th>
-                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Giá / Đêm</th>
-                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Sức chứa</th>
-                <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Trạng thái</th>
-                <th className="px-8 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50 text-right">Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {rooms.map((room) => (
-                <tr key={room.id} className="hover:bg-gray-50/50 transition-all group">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                        <HiOutlineOfficeBuilding className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{room.name}</p>
-                        <p className="text-[11px] text-gray-400 font-medium">#{room.id.toString().padStart(4, '0')}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-lg">{room.type}</span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <p className="text-sm font-bold text-indigo-600">{room.price}</p>
-                  </td>
-                  <td className="px-6 py-5">
-                    <div className="flex items-center text-gray-500">
-                      <HiOutlineUserCircle className="w-4 h-4 mr-1.5" />
-                      <span className="text-sm font-medium">{room.capacity} Người</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    {getStatusBadge(room.status)}
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Chỉnh sửa">
-                        <HiOutlinePencilAlt className="w-5 h-5" />
-                      </button>
-                      <button className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Xóa">
-                        <HiOutlineTrash className="w-5 h-5" />
-                      </button>
-                      <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all">
-                        <HiOutlineDotsHorizontal className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="py-20 text-center"><div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div></div>
+          ) : (
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-white">
+                  <th className="px-8 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Số phòng</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Tầng</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Loại phòng</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Sức chứa thực tế</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50">Trạng thái</th>
+                  <th className="px-8 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50 text-right">Hành động</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="p-6 border-t border-gray-50 flex items-center justify-between">
-          <p className="text-xs font-medium text-gray-400">Hiển thị <span className="text-gray-900">5</span> trong <span className="text-gray-900">45</span> phòng</p>
-          <div className="flex gap-2">
-            <button className="px-4 py-2 text-xs font-bold text-gray-400 bg-gray-50 rounded-xl cursor-not-allowed">Trước</button>
-            <button className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-xl shadow-lg shadow-indigo-600/20">1</button>
-            <button className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-all">2</button>
-            <button className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-all">Tiếp</button>
-          </div>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rooms.filter(r => (selectedTypeFilter === 'ALL' || r.type === selectedTypeFilter) && r.roomNumber.includes(searchTerm)).map((room) => (
+                  <tr key={room.id} className="hover:bg-gray-50/50 transition-all">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold">
+                          {room.roomNumber}
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">Phòng {room.roomNumber}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 text-sm text-gray-600">Tầng {room.floor}</td>
+                    <td className="px-6 py-5">
+                      <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-lg">{room.type}</span>
+                    </td>
+                    <td className="px-6 py-5 text-sm text-gray-600">{room.maxGuests} Người</td>
+                    <td className="px-6 py-5">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                        room.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {room.available ? 'Sẵn sàng' : 'Bận'}
+                      </span>
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => handleOpenModal(room)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"><HiOutlinePencilAlt className="w-5 h-5" /></button>
+                        <button onClick={() => roomApi.remove(room.id).then(() => fetchRooms())} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"><HiOutlineTrash className="w-5 h-5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">{editingRoom ? 'Cập nhật phòng' : 'Thêm phòng mới'}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-all"><HiOutlineX className="w-6 h-6" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-8 space-y-6 max-h-[80vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Số phòng</label>
+                  <input required type="text" value={formData.roomNumber} onChange={e => setFormData({...formData, roomNumber: e.target.value})} placeholder="VD: 101" className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tầng</label>
+                  <input required type="number" value={formData.floor} onChange={e => setFormData({...formData, floor: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Loại phòng</label>
+                  <select value={formData.roomType.id} onChange={e => setFormData({...formData, roomType: { id: parseInt(e.target.value) }})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    {roomTypes.map(type => (
+                      <option key={type.id} value={type.id}>{type.type}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sức chứa thực tế</label>
+                  <input required type="number" value={formData.actualCapacity} onChange={e => setFormData({...formData, actualCapacity: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                </div>
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Cấu hình giường (Beds)</label>
+                    <button type="button" onClick={addBed} className="flex items-center text-xs font-bold text-indigo-600 hover:text-indigo-700"><HiOutlinePlusCircle className="w-4 h-4 mr-1" /> Thêm giường</button>
+                  </div>
+                  <div className="space-y-3">
+                    {formData.beds.map((bed, idx) => (
+                      <div key={idx} className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-in slide-in-from-left-2 duration-300">
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Loại giường</label>
+                          <select value={bed.type} onChange={e => updateBed(idx, 'type', e.target.value)} className="w-full bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 outline-none">
+                            <option value="SINGLE">Giường đơn</option>
+                            <option value="DOUBLE">Giường đôi</option>
+                            <option value="QUEEN">Queen Size</option>
+                            <option value="KING">King Size</option>
+                            <option value="EXTRA">Giường phụ</option>
+                            <option value="SOFA">Sofa Bed</option>
+                            <option value="BUNK">Giường tầng</option>
+                          </select>
+                        </div>
+                        <div className="w-24">
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Số lượng</label>
+                          <input type="number" value={bed.quantity} onChange={e => updateBed(idx, 'quantity', parseInt(e.target.value))} className="w-full bg-transparent border-none p-0 text-sm font-bold text-gray-900 focus:ring-0 outline-none" />
+                        </div>
+                        <button type="button" onClick={() => removeBed(idx)} className="p-2 text-gray-400 hover:text-red-500 transition-all"><HiOutlineMinusCircle className="w-6 h-6" /></button>
+                      </div>
+                    ))}
+                    {formData.beds.length === 0 && (
+                      <div className="py-8 text-center border-2 border-dashed border-gray-100 rounded-2xl text-gray-400 text-sm italic">Chưa có giường nào được thiết lập</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-4 pt-4 border-t border-gray-50">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-6 py-3 bg-gray-100 text-gray-600 font-bold rounded-2xl hover:bg-gray-200 transition-all">Hủy</button>
+                <button type="submit" className="flex-1 px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all">Xác nhận</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

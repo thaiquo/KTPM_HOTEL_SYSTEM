@@ -1,7 +1,6 @@
 package iuh.fit.hotelsystem_room.entity;
 
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
-import iuh.fit.hotelsystem_room.entity.enums.RoomType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -20,39 +19,28 @@ public class Room {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private String name;
+    @Column(nullable = false, unique = true)
+    private String roomNumber; // 101, 202...
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private RoomType type; // e.g., Deluxe, Standard, Suite
-
-    @Column(nullable = false)
-    private Double price;
-
-    @Column(nullable = false)
-    private Integer capacity;
-
-    @Column(columnDefinition = "TEXT")
-    private String description;
-
-    @ElementCollection
-    @CollectionTable(name = "room_images", joinColumns = @JoinColumn(name = "room_id"))
-    @Column(name = "image_url")
-    private List<String> images;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_type_id", nullable = false)
+    private RoomType roomType;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RoomStatus status;
 
     @Column(nullable = false)
-    private Double area; // Square meters
+    private Integer floor;
 
+    @Column(columnDefinition = "TEXT")
+    private String note;
+
+    // 👉 cấu hình giường (QUAN TRỌNG)
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Bed> beds;
+
+    // 👉 capacity thực tế của phòng này (có thể khác type)
     @Column(nullable = false)
-    private String bedType; // e.g., Single, Double, Queen, King
-
-    @ElementCollection
-    @CollectionTable(name = "room_amenities", joinColumns = @JoinColumn(name = "room_id"))
-    @Column(name = "amenity")
-    private List<String> amenities;
+    private Integer actualCapacity;
 }

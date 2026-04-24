@@ -14,7 +14,7 @@ public class SecurityConfig {
 
         @Bean
         public WebSecurityCustomizer webSecurityCustomizer() {
-                return web -> web.ignoring().requestMatchers("/auth/**", "/error");
+                return web -> web.ignoring().requestMatchers("/auth/**", "/api/users/**", "/error");
         }
 
     @Bean

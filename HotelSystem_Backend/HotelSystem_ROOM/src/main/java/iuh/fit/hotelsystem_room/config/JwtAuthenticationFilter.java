@@ -41,6 +41,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String role = jwtUtil.extractRole(token); // e.g., "ADMIN", "STAFF"
 
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                System.out.println("JWT Validated - Email: " + email + ", Role: " + role);
                 // Prefix with ROLE_ for Spring Security
                 List<SimpleGrantedAuthority> authorities = Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role));
 
