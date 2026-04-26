@@ -97,6 +97,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
     volumes:
+      - ./HotelSystem_Backend/HotelSystem_ROOM/pg_hba.conf.dev:/var/lib/postgresql/data/pg_hba.conf
       - room_data:/var/lib/postgresql/data
 
   room-service:

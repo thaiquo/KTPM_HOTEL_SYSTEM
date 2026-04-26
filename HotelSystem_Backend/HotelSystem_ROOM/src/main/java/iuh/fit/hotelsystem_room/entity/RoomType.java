@@ -34,6 +34,6 @@ public class RoomType {
     private String description;
 
     // 👉 ảnh theo loại phòng (UI dùng cái này)
-    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<RoomTypeImage> images;
 }

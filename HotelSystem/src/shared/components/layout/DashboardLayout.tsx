@@ -161,8 +161,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-7xl mx-auto">
+        <div className="flex-1 min-h-0 overflow-hidden px-6 py-6 lg:px-8">
+          <div className="w-full max-w-none mx-auto h-full min-h-0">
             <Outlet />
           </div>
         </div>

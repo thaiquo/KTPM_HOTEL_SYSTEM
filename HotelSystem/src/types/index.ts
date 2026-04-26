@@ -10,6 +10,8 @@ export interface Room {
   available: boolean;
   floor: number;
   bedType: string;
+  status?: 'AVAILABLE' | 'BOOKED' | 'MAINTENANCE' | 'OCCUPIED' | 'HOLD';
+  note?: string;
 }
 
 export interface BookingData {

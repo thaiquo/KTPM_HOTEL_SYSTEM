@@ -22,7 +22,7 @@ public class Room {
     @Column(nullable = false, unique = true)
     private String roomNumber; // 101, 202...
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "room_type_id", nullable = false)
     private RoomType roomType;
 
@@ -37,7 +37,7 @@ public class Room {
     private String note;
 
     // 👉 cấu hình giường (QUAN TRỌNG)
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<Bed> beds;
 
     // 👉 capacity thực tế của phòng này (có thể khác type)

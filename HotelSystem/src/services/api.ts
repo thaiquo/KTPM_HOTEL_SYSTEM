@@ -183,6 +183,8 @@ const mapRoom = (room: RoomBackend): Room => {
     available: room.status === 'AVAILABLE',
     floor: room.floor,
     bedType: room.beds?.map(b => `${b.quantity} ${b.type}`).join(', ') || 'Chưa cấu hình',
+    status: room.status as Room['status'],
+    note: room.note,
   };
 };
 
