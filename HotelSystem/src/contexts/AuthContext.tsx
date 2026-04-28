@@ -52,12 +52,13 @@ const buildUserFromAccessToken = (token: string): User | null => {
   };
 };
 
-const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string; phone?: string }): User | null => {
+const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string; phone?: string; phoneNumber?: string; dateOfBirth?: string }): User | null => {
   if (!current) return null;
   return {
     ...current,
     name: profile.fullName || current.name,
-    phone: profile.phone || current.phone,
+    phone: profile.phone || profile.phoneNumber || current.phone,
+    dateOfBirth: profile.dateOfBirth || current.dateOfBirth,
   };
 };
 

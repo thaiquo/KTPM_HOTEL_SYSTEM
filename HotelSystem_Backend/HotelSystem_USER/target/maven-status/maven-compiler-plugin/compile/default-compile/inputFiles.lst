@@ -1,5 +1,6 @@
 /app/src/main/java/iuh/fit/hotelsystem_user/HotelSystemUserApplication.java
 /app/src/main/java/iuh/fit/hotelsystem_user/config/DataSeeder.java
+/app/src/main/java/iuh/fit/hotelsystem_user/config/JwtFilter.java
 /app/src/main/java/iuh/fit/hotelsystem_user/config/RoleSeeder.java
 /app/src/main/java/iuh/fit/hotelsystem_user/config/SecurityConfig.java
 /app/src/main/java/iuh/fit/hotelsystem_user/controller/InternalController.java
@@ -13,4 +14,5 @@
 /app/src/main/java/iuh/fit/hotelsystem_user/repository/RoleRepository.java
 /app/src/main/java/iuh/fit/hotelsystem_user/repository/UserRepository.java
 /app/src/main/java/iuh/fit/hotelsystem_user/service/UserService.java
+/app/src/main/java/iuh/fit/hotelsystem_user/util/JwtUtil.java
 /app/src/main/java/iuh/fit/hotelsystem_user/util/PasswordUtil.java

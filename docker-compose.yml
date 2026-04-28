@@ -35,7 +35,7 @@ services:
   postgres-auth:
     image: postgres:15
     ports:
-      - "54321:5432"
+      - "55421:5432"
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
@@ -57,6 +57,11 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
+      VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
+      VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
+      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
 
   user-service:
     build: ./HotelSystem_Backend/HotelSystem_USER
@@ -76,7 +81,7 @@ services:
   postgres-room:
     image: postgres:15
     ports:
-      - "54323:5432"
+      - "55423:5432"
     environment:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
@@ -109,7 +114,7 @@ services:
   postgres-booking:
     image: postgres:15
     ports:
-      - "54324:5432"
+      - "55424:5432"
     environment:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
@@ -138,7 +143,7 @@ services:
   postgres-payment:
     image: postgres:15
     ports:
-      - "54325:5432"
+      - "55425:5432"
     environment:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
@@ -167,7 +172,7 @@ services:
   postgres-notification:
     image: postgres:15
     ports:
-      - "54326:5432"
+      - "55426:5432"
     environment:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres
