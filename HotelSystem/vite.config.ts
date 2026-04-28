@@ -7,6 +7,8 @@ const authTarget = isDocker ? 'http://auth-service:8081' : 'http://localhost:808
 const userTarget = isDocker ? 'http://user-service:8082' : 'http://localhost:8082'
 const roomTarget = isDocker ? 'http://room-service:8083' : 'http://localhost:8083'
 const bookingTarget = isDocker ? 'http://booking-service:8084' : 'http://localhost:8084'
+const paymentTarget = isDocker ? 'http://payment-service:8085' : 'http://localhost:8085'
+const notificationTarget = isDocker ? 'http://notification-service:8086' : 'http://localhost:8086'
 
 export default defineConfig({
   plugins: [react()],
@@ -42,6 +44,16 @@ export default defineConfig({
         target: bookingTarget,
         changeOrigin: true,
         rewrite: (apiPath) => apiPath.replace(/^\/booking-api/, ''),
+      },
+      '/payment-api': {
+        target: paymentTarget,
+        changeOrigin: true,
+        rewrite: (apiPath) => apiPath.replace(/^\/payment-api/, ''),
+      },
+      '/notification-api': {
+        target: notificationTarget,
+        changeOrigin: true,
+        rewrite: (apiPath) => apiPath.replace(/^\/notification-api/, ''),
       },
     },
   }

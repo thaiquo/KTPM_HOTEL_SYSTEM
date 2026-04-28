@@ -34,7 +34,7 @@ services:
   postgres-auth:
     image: postgres:15
     ports:
-      - "54321:5432"
+      - "55421:5432"
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
@@ -83,6 +83,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
 
 
   # ========================
@@ -91,7 +92,7 @@ services:
   postgres-room:
     image: postgres:15
     ports:
-      - "54323:5432"
+      - "55423:5432"
     environment:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
@@ -118,6 +119,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      SEED_ENABLED: "true"
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
@@ -132,7 +134,7 @@ services:
   postgres-booking:
     image: postgres:15
     ports:
-      - "54324:5432"
+      - "55424:5432"
     environment:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
@@ -169,7 +171,7 @@ services:
   postgres-payment:
     image: postgres:15
     ports:
-      - "54325:5432"
+      - "55425:5432"
     environment:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
@@ -199,6 +201,12 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      # ── VNPAY Sandbox credentials (từ vnpay_nodejs/config/default.json) ──
+      VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
+      VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
+      VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
+      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
 
   # ========================
   # NOTIFICATION DB + SERVICE (DEV HOT RELOAD)
@@ -206,7 +214,7 @@ services:
   postgres-notification:
     image: postgres:15
     ports:
-      - "54326:5432"
+      - "55426:5432"
     environment:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres

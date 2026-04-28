@@ -11,6 +11,7 @@ public class RabbitConfig {
     public static final String EXCHANGE = "hotel.exchange";
     public static final String BOOKING_QUEUE = "notification.booking.queue";
     public static final String PAYMENT_QUEUE = "notification.payment.queue";
+    public static final String REFUND_QUEUE = "notification.refund.queue";
 
     @Bean
     public TopicExchange exchange() {
@@ -28,10 +29,15 @@ public class RabbitConfig {
     }
 
     @Bean
-    public Binding bookingConfirmedBinding() {
+    public Queue refundQueue() {
+        return new Queue(REFUND_QUEUE);
+    }
+
+    @Bean
+    public Binding bookingEventBinding() {
         return BindingBuilder.bind(bookingQueue())
                 .to(exchange())
-                .with("booking.confirmed");
+                .with("booking.*");
     }
 
     @Bean
@@ -39,6 +45,13 @@ public class RabbitConfig {
         return BindingBuilder.bind(paymentQueue())
                 .to(exchange())
                 .with("payment.result");
+    }
+
+    @Bean
+    public Binding refundNotificationBinding() {
+        return BindingBuilder.bind(refundQueue())
+                .to(exchange())
+                .with("refund.notification");
     }
 
     @Bean

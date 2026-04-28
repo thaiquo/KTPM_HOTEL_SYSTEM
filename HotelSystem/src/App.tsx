@@ -14,6 +14,7 @@ import ProfilePage from './features/profile/pages/ProfilePage';
 import BookingInfoPage from './features/booking/pages/BookingInfoPage';
 import MyBookingsPage from './features/booking/pages/MyBookingsPage';
 import BookingCartPage from './features/booking/pages/BookingCartPage';
+import PaymentResultPage from './features/booking/pages/PaymentResultPage';
 // import các page khác khi cần...
 
 import ProtectedRoute from './shared/components/auth/ProtectedRoute';
@@ -54,6 +55,7 @@ function App() {
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/booking" element={<BookingInfoPage />} />
               <Route path="/my-bookings" element={<MyBookingsPage />} />
+              <Route path="/payment-result" element={<PaymentResultPage />} />
             </Route>
           </Route>
 

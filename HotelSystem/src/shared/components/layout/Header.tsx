@@ -1,44 +1,63 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { Menu, LogOut, User as UserIcon, X, ShoppingCart } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Bell, LogOut, Menu, ShoppingCart, User as UserIcon, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useCart } from '../../../contexts/CartContext';
 import logoTriStar from '../../../assets/hotel.png';
 import { getManagementHomeByRole } from '../../lib/roleRoute';
+import { notificationApi, type UserNotification } from '../../../services/api';
 
-const NavLink = ({
-  to,
-  label,
-}: {
-  to: string;
-  label: string;
-}) => {
+const NavLink = ({ to, label }: { to: string; label: string }) => {
+  const className = 'text-lg font-semibold transition-colors duration-300 text-white/80 hover:text-[#d4af37]';
+
   if (to.startsWith('/#')) {
     return (
-      <a
-        href={to}
-        className="text-lg font-semibold transition-colors duration-300 text-white/80 hover:text-[#d4af37]"
-      >
+      <a href={to} className={className}>
         {label}
       </a>
     );
   }
 
   return (
-    <Link
-      to={to}
-      className="text-lg font-semibold transition-colors duration-300 text-white/80 hover:text-[#d4af37]"
-    >
+    <Link to={to} className={className}>
       {label}
     </Link>
   );
+};
+
+const formatNotificationTime = (value: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.replace('T', ' ');
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const getNotificationLabel = (type: string) => {
+  const normalized = type.toUpperCase();
+  if (normalized.includes('REFUND')) return 'Hoàn tiền';
+  if (normalized.includes('PAYMENT')) return 'Thanh toán';
+  if (normalized.includes('CANCEL')) return 'Đã hủy';
+  if (normalized.includes('EXPIRED')) return 'Hết hạn';
+  return 'Đặt phòng';
+};
+
+const getNotificationTarget = (item: UserNotification) => {
+  if (item.type.toUpperCase().includes('REFUND')) return '/profile?tab=refunds';
+  return `/my-bookings?bookingId=${encodeURIComponent(item.bookingId)}`;
 };
 
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth();
   const { totalRooms } = useCart();
   const [open, setOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [isHidden, setIsHidden] = useState(false);
   const lastScrollYRef = useRef(0);
 
@@ -61,6 +80,34 @@ export default function Header() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadNotifications = async () => {
+      try {
+        const list = await notificationApi.getByUser(user.id);
+        if (!cancelled) setNotifications(list);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setNotifications([]);
+      }
+    };
+
+    loadNotifications();
+    const timer = window.setInterval(loadNotifications, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [user]);
+
+  const recentNotifications = notifications.slice(0, 5);
+  const refundCount = notifications.filter((item) => item.type.toUpperCase().includes('REFUND')).length;
 
   const navLinks = [
     { to: '/', label: 'Trang chủ' },
@@ -97,7 +144,75 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
-          {/* Cart Icon */}
+          {isAuthenticated && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setNotificationOpen((value) => !value)}
+                className="relative rounded-full p-2.5 text-white/80 transition-all duration-300 hover:bg-white/10 hover:text-[#d4af37]"
+                title="Thông báo"
+                aria-label="Thông báo"
+              >
+                <Bell size={20} />
+                {notifications.length > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#d4af37] px-1 text-[10px] font-black text-[#0f0f0f]">
+                    {Math.min(notifications.length, 9)}
+                  </span>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {notificationOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                    className="absolute right-0 top-full mt-3 w-[24rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-[#d4af37]/25 bg-[#151515] shadow-2xl"
+                  >
+                    <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                      <div>
+                        <div className="text-sm font-black text-white">Thông báo hệ thống</div>
+                        <div className="text-xs text-white/50">
+                          {refundCount > 0 ? `${refundCount} cập nhật hoàn tiền` : 'Đặt phòng, thanh toán và hủy phòng'}
+                        </div>
+                      </div>
+                      <Link
+                        to="/profile?tab=refunds"
+                        onClick={() => setNotificationOpen(false)}
+                        className="text-xs font-bold text-[#d4af37] hover:underline"
+                      >
+                        Xem hoàn tiền
+                      </Link>
+                    </div>
+
+                    <div className="max-h-96 overflow-y-auto">
+                      {recentNotifications.length === 0 ? (
+                        <div className="px-5 py-8 text-center text-sm font-semibold text-white/55">Chưa có thông báo mới</div>
+                      ) : (
+                        recentNotifications.map((item) => (
+                          <Link
+                            key={item.id}
+                            to={getNotificationTarget(item)}
+                            onClick={() => setNotificationOpen(false)}
+                            className="block border-b border-white/10 px-5 py-4 transition-colors last:border-0 hover:bg-white/5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="text-sm font-bold leading-snug text-white">{item.message}</div>
+                              <span className="shrink-0 rounded-full bg-[#d4af37]/15 px-2 py-1 text-[10px] font-black uppercase text-[#d4af37]">
+                                {getNotificationLabel(item.type)}
+                              </span>
+                            </div>
+                            <div className="mt-2 text-xs text-white/45">{formatNotificationTime(item.createdAt)}</div>
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           <Link
             to="/booking/cart"
             className="relative rounded-full p-2.5 text-white/80 transition-all duration-300 hover:bg-white/10 hover:text-[#d4af37]"
@@ -143,18 +258,12 @@ export default function Header() {
             </Link>
           )}
 
-          <button
-            type="button"
-            className="md:hidden p-2"
-            onClick={() => setOpen((v) => !v)}
-            aria-label="Menu"
-          >
+          <button type="button" className="md:hidden p-2" onClick={() => setOpen((value) => !value)} aria-label="Menu">
             {open ? <X size={22} className="text-white" /> : <Menu size={22} className="text-white" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu with Animation */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -176,27 +285,23 @@ export default function Header() {
             ))}
             <div className="flex flex-col gap-3 mt-2">
               {isAuthenticated ? (
-                <>
-                  <button
-                    onClick={() => {
-                      logout();
-                      setOpen(false);
-                    }}
-                    className="w-full rounded-xl bg-white/10 py-3 text-sm font-bold text-white"
-                  >
-                    Đăng xuất
-                  </button>
-                </>
+                <button
+                  onClick={() => {
+                    logout();
+                    setOpen(false);
+                  }}
+                  className="w-full rounded-xl bg-white/10 py-3 text-sm font-bold text-white"
+                >
+                  Đăng xuất
+                </button>
               ) : (
-                <>
-                  <Link
-                    onClick={() => setOpen(false)}
-                    to="/login"
-                    className="w-full rounded-xl bg-[#d4af37] py-10 text-center text-sm font-bold text-[#0f0f0f]"
-                  >
-                    Đăng nhập
-                  </Link>
-                </>
+                <Link
+                  onClick={() => setOpen(false)}
+                  to="/login"
+                  className="w-full rounded-xl bg-[#d4af37] py-10 text-center text-sm font-bold text-[#0f0f0f]"
+                >
+                  Đăng nhập
+                </Link>
               )}
             </div>
           </motion.div>

@@ -15,6 +15,7 @@ Service **tạo và quản lý booking**. Booking service phối hợp với ROO
 - `POST /bookings` — tạo booking
 - `GET /bookings/{id}` — lấy booking theo id
 - `GET /bookings/user/{userId}` — list booking theo userId
+- `POST /bookings/{id}/check-in` — nhận phòng theo rule status
 
 ### Body mẫu khi tạo booking
 
@@ -31,13 +32,28 @@ Backend hiện nhận entity `Booking` tối thiểu:
 
 `status` và `createdAt` được service tự set.
 
-## RabbitMQ flow (đặt phòng)
+## RabbitMQ flow (đặt phòng + thanh toán)
 
 - Khi `POST /bookings`: publish `room.hold`
-- Khi nhận `room.held`: publish `payment.request`
 - Khi nhận `payment.result`:
-  - SUCCESS: set booking CONFIRMED, publish `room.confirm` và `booking.confirmed`
-  - FAILED: publish `room.release` và `booking.cancelled`
+  - FULL_PAID: set booking `CONFIRMED`, publish `room.confirm` và `booking.confirmed`
+  - DEPOSIT_PAID: set booking `DEPOSIT_PAID`, publish `room.confirm` và `booking.confirmed`
+  - REMAINING_PAID: set booking `CHECKED_IN`
+  - FAILED: set booking `CANCELLED`, publish `room.release` và `booking.cancelled`
+
+## Booking status
+
+- `PENDING`
+- `DEPOSIT_PAID`
+- `CONFIRMED`
+- `CHECKED_IN`
+- `CANCELLED`
+
+## Rule nhận phòng
+
+- `CONFIRMED` -> được check-in trực tiếp
+- `DEPOSIT_PAID` -> cần gọi Payment Service tạo thanh toán `REMAINING` trước
+- `PENDING` hoặc `CANCELLED` -> không được check-in
 
 ## ENV / Config
 

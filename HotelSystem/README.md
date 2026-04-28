@@ -1,39 +1,20 @@
-# React + TypeScript + Vite
+# HotelSystem Frontend (React + Vite + TypeScript)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend của hệ thống quản lý khách sạn (QLKS). Được xây dựng bằng React, Vite, Tailwind CSS, và TypeScript.
 
-Currently, two official plugins are available:
+## 1) Chạy nhanh bằng Docker (khuyến nghị)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Chạy full stack (frontend + 6 backend + RabbitMQ + Postgres) ở thư mục root (bên ngoài thư mục này):
 
-## React Compiler
-
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-````js
-export default defineConfig([
-  # HotelSystem Frontend (React + Vite)
-
-  Frontend của hệ thống QLKS.
-
-  ## 1) Chạy nhanh bằng Docker (khuyến nghị)
-
-  Chạy full stack (frontend + 6 backend + RabbitMQ + Postgres) ở thư mục root:
-
-  ```bash
-  docker compose -f docker-compose.dev.yml up -d
-````
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
 
 Mở UI:
 
 - http://localhost:3000
 
-Frontend trong dev mode dùng Vite dev server và proxy API về các service backend.
+Frontend trong dev mode dùng Vite dev server và được cấu hình proxy tự động trỏ về các API backend.
 
 ## 2) Chạy frontend standalone (không dùng Docker)
 
@@ -43,19 +24,18 @@ npm install
 npm run dev -- --host
 ```
 
-Mặc định Vite chạy ở `http://localhost:5173` (tránh xung đột với Docker hay dùng port 3000).
-Nếu bạn muốn đổi port, có thể set biến môi trường `VITE_PORT` hoặc truyền `--port`:
+Mặc định Vite chạy ở `http://localhost:5173` (để tránh xung đột port 3000 của Docker nếu đang chạy).
+Nếu bạn muốn đổi port, có thể dùng:
 
 ```bash
-# ví dụ chạy port 3001
 VITE_PORT=3001 npm run dev -- --host
 ```
 
-Lưu ý: nếu không dùng Docker thì backend cần chạy sẵn trên máy (8081..8086) hoặc bạn cấu hình biến môi trường.
+_Lưu ý: Nếu không dùng Docker thì backend cần chạy từ port 8081..8086 hoặc bạn cần cấu hình lại các biến môi trường trỏ tới backend._
 
-## 3) API base paths
+## 3) Cấu trúc gọi API
 
-Trong code, frontend gọi API theo các base path dưới đây (được proxy bởi Vite hoặc Nginx):
+Frontend gọi API qua các proxy endpoints sau (giải quyết triệt để lỗi CORS):
 
 - `/auth-api/*`
 - `/user-api/*`
@@ -64,30 +44,21 @@ Trong code, frontend gọi API theo các base path dưới đây (được proxy
 - `/payment-api/*`
 - `/notification-api/*`
 
-Dev proxy cấu hình ở [vite.config.ts](vite.config.ts)
+Cấu hình Dev proxy nằm ở `vite.config.ts`.
+Cấu hình Prod proxy nằm ở `nginx.conf`.
 
-## 4) Cấu hình ENV (tuỳ chọn)
+## 4) Auth Token
 
-Frontend đọc các biến môi trường sau (nếu không set sẽ dùng các path `/xxx-api`):
-
-- `VITE_AUTH_API_URL`
-- `VITE_USER_API_URL`
-- `VITE_ROOM_API_URL`
-- `VITE_BOOKING_API_URL`
-- `VITE_PAYMENT_API_URL`
-- `VITE_NOTIFICATION_API_URL`
-
-Trong Docker dev stack, compose đã set `VITE_DOCKER=true` để Vite proxy trỏ vào tên service trong Docker network.
-
-## 5) Auth tokens
-
-Frontend lưu token trong `localStorage`:
+Hệ thống lưu trữ token tại `localStorage`:
 
 - `accessToken`
 - `refreshToken`
 
-Axios interceptor tự gắn `Authorization: Bearer <accessToken>` và tự refresh khi bị 401 (xem [src/services/api.ts](src/services/api.ts)).
+Axios Interceptor (`src/services/api.ts`) sẽ tự động lấy token và gửi lên server. Đồng thời, interceptor cũng xử lý luôn tính năng "tự động refresh token" khi nhận về lỗi 401 Unauthorized, giúp tạo trải nghiệm đăng nhập không đứt quãng.
 
-## 6) Production build
+## 5) Build Production
 
-Production build được đóng gói bằng Nginx theo [Dockerfile](Dockerfile) và reverse proxy theo [nginx.conf](nginx.conf).
+Build cho môi trường Production được đóng gói cùng **Nginx**:
+
+- Xem `Dockerfile` để biết chi tiết stage build bằng Node.js và stage run bằng Nginx.
+- Nginx sẽ host các file tĩnh và config thêm tính năng reverse-proxy cho API theo cấu hình trong file `nginx.conf`.

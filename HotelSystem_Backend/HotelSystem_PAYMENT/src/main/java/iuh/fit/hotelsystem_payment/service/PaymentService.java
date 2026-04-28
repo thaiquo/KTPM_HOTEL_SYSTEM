@@ -3,6 +3,7 @@ package iuh.fit.hotelsystem_payment.service;
 import iuh.fit.hotelsystem_payment.dto.PaymentResult;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
+import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
 import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -28,7 +29,10 @@ public class PaymentService {
 
         Payment payment = new Payment();
         payment.setBookingId(bookingId);
-        payment.setAmount(500.0); // giả lập
+        payment.setTotalAmount(500.0);
+        payment.setPaidAmount(500.0);
+        payment.setAmount(500.0); // legacy simulation path
+        payment.setPaymentType(PaymentType.FULL);
         payment.setMethod("VNPAY");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
@@ -46,7 +50,7 @@ public class PaymentService {
         // Gửi kết quả về Booking
         PaymentResult result = new PaymentResult();
         result.setBookingId(bookingId);
-        result.setStatus(payment.getStatus().name());
+        result.setStatus("FULL_PAID");
 
         rabbitTemplate.convertAndSend(
                 RabbitConfig.EXCHANGE,

@@ -6,6 +6,7 @@ import iuh.fit.hotelsystem_payment.dto.PaymentMessage;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
+import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
 
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -32,7 +33,12 @@ public class PaymentListener {
 
         Payment payment = new Payment();
         payment.setBookingId(msg.getBookingId());
+        payment.setUserId(msg.getUserId());
+        payment.setTotalAmount(msg.getAmount());
+        payment.setPaidAmount(msg.getAmount());
         payment.setAmount(msg.getAmount());
+        payment.setPaymentType(PaymentType.FULL);
+        payment.setMethod("VNPAY");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
 
@@ -53,7 +59,7 @@ public class PaymentListener {
         PaymentResultMessage result = new PaymentResultMessage();
         result.setBookingId(msg.getBookingId());
         result.setUserId(msg.getUserId());
-        result.setStatus(finalStatus.name());
+        result.setStatus(finalStatus == PaymentStatus.SUCCESS ? "FULL_PAID" : "FAILED");
 
         rabbitTemplate.convertAndSend(
                 RabbitConfig.EXCHANGE,

@@ -19,13 +19,22 @@ public class Payment {
     private Long id;
 
     private Long bookingId;
+    private Long userId;
+
+    private Double totalAmount;
+    private Double paidAmount;
     private Double amount;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentType paymentType;
 
     private String method; // CASH, BANK
     @Enumerated(EnumType.STRING)
     private PaymentStatus status; // PENDING, SUCCESS, FAILED
 
     private String transactionId;
+    private String vnpTransactionNo;
+    private String vnpResponseCode;
     private LocalDateTime createdAt;
 
 
@@ -53,6 +62,38 @@ public class Payment {
         this.amount = amount;
     }
 
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Double getTotalAmount() {
+        return totalAmount;
+    }
+
+    public void setTotalAmount(Double totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
+    public Double getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(Double paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
+    public PaymentType getPaymentType() {
+        return paymentType;
+    }
+
+    public void setPaymentType(PaymentType paymentType) {
+        this.paymentType = paymentType;
+    }
+
     public String getMethod() {
         return method;
     }
@@ -75,6 +116,22 @@ public class Payment {
 
     public void setTransactionId(String transactionId) {
         this.transactionId = transactionId;
+    }
+
+    public String getVnpTransactionNo() {
+        return vnpTransactionNo;
+    }
+
+    public void setVnpTransactionNo(String vnpTransactionNo) {
+        this.vnpTransactionNo = vnpTransactionNo;
+    }
+
+    public String getVnpResponseCode() {
+        return vnpResponseCode;
+    }
+
+    public void setVnpResponseCode(String vnpResponseCode) {
+        this.vnpResponseCode = vnpResponseCode;
     }
 
     public LocalDateTime getCreatedAt() {
