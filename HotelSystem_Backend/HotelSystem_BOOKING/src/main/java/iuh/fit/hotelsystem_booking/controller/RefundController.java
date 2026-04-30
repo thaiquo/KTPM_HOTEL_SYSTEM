@@ -82,17 +82,24 @@ public class RefundController {
 
     @PostMapping("/{id}/approve")
     public ResponseEntity<RefundTransaction> approve(@PathVariable Long id,
-                                                     @RequestBody(required = false) Map<String, String> body) {
-        String processedBy = body != null ? body.get("processedBy") : "admin";
-        return ResponseEntity.ok(refundService.approveRefund(id, processedBy));
+                                                     @RequestBody(required = false) Map<String, Object> body) {
+        Long staffId = parseLong(body != null ? body.get("staffId") : null);
+        return ResponseEntity.ok(refundService.approveRefundByStaff(id, staffId));
     }
 
     @PostMapping("/{id}/reject")
     public ResponseEntity<RefundTransaction> reject(@PathVariable Long id,
-                                                    @RequestBody(required = false) Map<String, String> body) {
-        String processedBy = body != null ? body.get("processedBy") : "admin";
-        String reason = body != null ? body.get("reason") : "Refund rejected by staff";
-        return ResponseEntity.ok(refundService.rejectRefund(id, processedBy, reason));
+                                                    @RequestBody(required = false) Map<String, Object> body) {
+        String reason = body != null && body.get("reason") != null ? String.valueOf(body.get("reason")) : "Refund rejected by staff";
+        Long staffId = parseLong(body != null ? body.get("staffId") : null);
+        return ResponseEntity.ok(refundService.rejectRefundByStaff(id, staffId, reason));
+    }
+
+    @PostMapping("/{id}/assign")
+    public ResponseEntity<RefundTransaction> assign(@PathVariable Long id,
+                                                    @RequestBody(required = false) Map<String, Object> body) {
+        Long staffId = parseLong(body != null ? body.get("staffId") : null);
+        return ResponseEntity.ok(assignmentService.assignToStaff(id, staffId));
     }
 
     @PostMapping("/{id}/reassign")
@@ -100,5 +107,12 @@ public class RefundController {
                                                       @RequestBody(required = false) Map<String, Long> body) {
         Long staffId = body != null ? body.get("staffId") : null;
         return ResponseEntity.ok(assignmentService.reassign(id, staffId));
+    }
+
+    private Long parseLong(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        return Long.parseLong(String.valueOf(value));
     }
 }

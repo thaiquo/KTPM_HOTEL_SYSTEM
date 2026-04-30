@@ -28,7 +28,7 @@ export interface Booking {
   checkIn: string;
   checkOut: string;
   totalPrice: number;
-  status: 'pending_payment' | 'pending' | 'deposit_paid' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled' | 'no_show';
+  status: 'pending_payment' | 'pending' | 'deposit_paid' | 'confirmed' | 'checked_in' | 'checkout_pending_payment' | 'checked_out' | 'completed' | 'cancel_requested' | 'cancelled' | 'no_show';
   guests: number;
   rooms: number;
   createdAt: string;

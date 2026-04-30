@@ -70,3 +70,13 @@ Nên nạp biến sandbox từ file `.env` mẫu, sau đó khởi chạy:
 ```bash
 docker compose -f docker-compose.dev.yml up -d payment-service
 ```
+
+## MoMo sandbox
+
+- Backend hỗ trợ thêm MoMo theo sample `momo_nodejs/MoMo.js`.
+- Mặc định dùng MoMo ATM (`requestType=payWithATM`) để nhập thẻ test/Napas trên web, không cần quét QR bằng app.
+- API tạo thanh toán: `POST /payments/momo/create` với `bookingId`, `userId`, `totalAmount`, `paymentType`, `requestType`.
+- API thanh toán phần còn lại: `POST /payments/momo/create-remaining`.
+- Callback: `GET /payments/momo-return` redirect về frontend và `POST /payments/momo-ipn` để xác nhận server-to-server.
+- ENV: `MOMO_PARTNER_CODE`, `MOMO_ACCESS_KEY`, `MOMO_SECRET_KEY`, `MOMO_PAY_URL`, `MOMO_REDIRECT_URL`, `MOMO_IPN_URL`, `MOMO_PARTNER_NAME`, `MOMO_STORE_ID`, `MOMO_FRONTEND_RETURN_URL`, `MOMO_EXPIRE_MINUTES`.
+- `MOMO_EXPIRE_MINUTES` mặc định `10`, đồng bộ với `vnpay.expireMinutes`; Booking hold đang dùng buffer thêm 1 phút.

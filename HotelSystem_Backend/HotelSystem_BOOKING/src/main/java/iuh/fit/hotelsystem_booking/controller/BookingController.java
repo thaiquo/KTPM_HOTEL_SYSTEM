@@ -103,12 +103,33 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/check-in")
-    public ResponseEntity<Booking> checkIn(@PathVariable Long id) {
-        return ResponseEntity.ok(bookingService.checkIn(id));
+    public ResponseEntity<Booking> checkIn(
+            @PathVariable Long id,
+            @RequestBody iuh.fit.hotelsystem_booking.dto.CheckInRequest request) {
+        return ResponseEntity.ok(bookingService.checkIn(id, request));
+    }
+
+    @PostMapping("/{id}/remaining-payment")
+    public ResponseEntity<Booking> collectRemainingPayment(
+            @PathVariable Long id,
+            @RequestBody iuh.fit.hotelsystem_booking.dto.RemainingPaymentRequest request) {
+        return ResponseEntity.ok(bookingService.collectRemainingPayment(id, request));
+    }
+
+    @PostMapping("/{id}/checkout")
+    public ResponseEntity<iuh.fit.hotelsystem_booking.dto.CheckoutResponse> checkout(
+            @PathVariable Long id,
+            @RequestBody iuh.fit.hotelsystem_booking.dto.CheckOutRequest request) {
+        return ResponseEntity.ok(bookingService.checkout(id, request));
+    }
+
+    @PostMapping("/{id}/complete-checkout")
+    public ResponseEntity<Booking> completeCheckout(@PathVariable Long id) {
+        return ResponseEntity.ok(bookingService.completeCheckout(id));
     }
 
     @PostMapping("/{id}/check-out")
-    public ResponseEntity<Booking> checkOut(@PathVariable Long id) {
+    public ResponseEntity<Booking> checkOutLegacy(@PathVariable Long id) {
         return ResponseEntity.ok(bookingService.checkOut(id));
     }
 
@@ -119,6 +140,13 @@ public class BookingController {
             @RequestBody(required = false) java.util.Map<String, String> body) {
         String reason = body != null ? body.get("reason") : "User requested cancellation";
         return ResponseEntity.ok(bookingCancelService.cancelBooking(id, reason));
+    }
+
+    @PostMapping("/{id}/refund-request")
+    public ResponseEntity<iuh.fit.hotelsystem_booking.entity.RefundTransaction> createRefundRequest(
+            @PathVariable Long id,
+            @RequestBody iuh.fit.hotelsystem_booking.dto.RefundRequest request) {
+        return ResponseEntity.ok(refundService.createRefundRequest(id, request));
     }
 
     // Xem chính sách hủy của một booking cụ thể

@@ -49,5 +49,7 @@ public interface RefundTransactionRepository extends JpaRepository<RefundTransac
 
     List<RefundTransaction> findByStatusOrderByCreatedAtAsc(RefundStatus status);
 
+    List<RefundTransaction> findByStatusInOrderByCreatedAtAsc(List<RefundStatus> statuses);
+
     List<RefundTransaction> findByStatusInAndDueAtBefore(List<RefundStatus> statuses, LocalDateTime dueAt);
 }
