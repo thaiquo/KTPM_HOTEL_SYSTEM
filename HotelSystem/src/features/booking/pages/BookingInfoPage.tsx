@@ -89,6 +89,7 @@ export default function BookingInfoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType>('DEPOSIT');
+  const [paymentProvider, setPaymentProvider] = useState<'VNPAY' | 'MOMO'>('VNPAY');
   const [ratePlan, setRatePlan] = useState<'FLEXIBLE' | 'NON_REFUNDABLE'>('FLEXIBLE');
   const [isSelfCheckIn, setIsSelfCheckIn] = useState(true);
   const [primaryGuest, setPrimaryGuest] = useState({
@@ -314,17 +315,24 @@ export default function BookingInfoPage() {
       
       const bookingId = Number(booking.id);
 
-      const payment = await paymentApi.createVNPay({
-        bookingId,
-        userId: userIdNum,
-        totalAmount: total,
-        paymentType,
-        bankCode: 'NCB',
-        locale: 'vn',
-      });
+      const payment = paymentProvider === 'MOMO'
+        ? await paymentApi.createMoMo({
+            bookingId,
+            userId: userIdNum,
+            totalAmount: total,
+            paymentType,
+            requestType: 'payWithATM',
+          })
+        : await paymentApi.createVNPay({
+            bookingId,
+            userId: userIdNum,
+            totalAmount: total,
+            paymentType,
+            locale: 'vn',
+          });
 
       if (!payment.paymentUrl) {
-        throw new Error('Payment service không trả về URL thanh toán VNPAY.');
+        throw new Error(`Payment service không trả về URL thanh toán ${paymentProvider}.`);
       }
 
       window.location.href = payment.paymentUrl;
@@ -684,6 +692,36 @@ export default function BookingInfoPage() {
                     </div>
                   </div>
 
+                  <div className="py-2 border-b border-black/10">
+                    <span className="text-[#777] font-bold text-sm tracking-wide">Phương thức thanh toán</span>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentProvider('VNPAY')}
+                        className={`rounded-2xl border px-3 py-3 text-left transition ${
+                          paymentProvider === 'VNPAY'
+                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
+                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
+                        }`}
+                      >
+                        <div className="text-xs font-black uppercase tracking-wider">VNPay</div>
+                        <div className="mt-1 text-xs font-bold">Tự chọn ngân hàng/ví ở cổng VNPAY</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentProvider('MOMO')}
+                        className={`rounded-2xl border px-3 py-3 text-left transition ${
+                          paymentProvider === 'MOMO'
+                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
+                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
+                        }`}
+                      >
+                        <div className="text-xs font-black uppercase tracking-wider">MoMo ATM</div>
+                        <div className="mt-1 text-xs font-bold">Nhập thẻ test/Napas, không cần app</div>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="pt-6 mt-4">
                     <div className="mb-3 flex items-center justify-between text-sm">
                       <span className="text-[#777] font-bold tracking-wide">Tổng chi phí đặt phòng</span>
@@ -699,7 +737,7 @@ export default function BookingInfoPage() {
                          <div className="text-3xl font-black tracking-tighter text-primary">
                            {money(payableAmount)}
                          </div>
-                         <div className="text-[10px] text-[#999] font-bold mt-1 uppercase tracking-widest">Số tiền gửi sang VNPAY</div>
+                         <div className="text-[10px] text-[#999] font-bold mt-1 uppercase tracking-widest">Số tiền gửi sang {paymentProvider}</div>
                       </div>
                     </div>
                     {fetchingPricing && <p className="mt-3 text-xs font-bold text-[#888]">Đang cập nhật giá...</p>}

@@ -2,7 +2,9 @@ package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.CancellationPolicyResult;
+import iuh.fit.hotelsystem_booking.dto.RefundRequest;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundPaymentTransaction;
 import iuh.fit.hotelsystem_booking.entity.RefundPaymentTransactionStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
@@ -12,10 +14,16 @@ import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class RefundService {
@@ -29,6 +37,10 @@ public class RefundService {
     private final RefundPaymentTransactionRepository paymentTransactionRepository;
     private final RefundAuditService refundAuditService;
     private final RefundNotificationService refundNotificationService;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @Value("${payment.service.url:http://payment-service:8085}")
+    private String paymentServiceUrl;
 
     public RefundService(RefundTransactionRepository refundRepository,
                          BookingRepository bookingRepository,
@@ -68,9 +80,125 @@ public class RefundService {
                     refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                             String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
                     refundNotificationService.notifyCreated(saved, booking);
-                    refundQueueProducer.publishRequested(saved);
                     return saved;
                 });
+    }
+
+    @Transactional
+    public RefundTransaction createRefundRequest(Long bookingId, RefundRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+        if (request == null || request.getCitizenId() == null || request.getCitizenId().isBlank()) {
+            throw new IllegalArgumentException("citizenId is required");
+        }
+        if (request.getReason() == null || request.getReason().isBlank()) {
+            throw new IllegalArgumentException("reason is required");
+        }
+        if (request.getUserId() != null && !request.getUserId().equals(booking.getUserId())) {
+            throw new IllegalArgumentException("User does not own this booking");
+        }
+
+        int refundPercent = calculateRefundPercent(booking, LocalDateTime.now());
+        double paidAmount = valueOrZero(booking.getPaidAmount());
+        double refundAmount = paidAmount * refundPercent / 100.0;
+        String idempotencyKey = BookingConstants.REFUND_IDEMPOTENCY_PREFIX + bookingId;
+
+        RefundTransaction refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(RefundTransaction::new);
+        refund.setBookingId(bookingId);
+        refund.setUserId(booking.getUserId());
+        refund.setCitizenId(request.getCitizenId());
+        refund.setPaymentTransactionId(resolvePaymentTransactionId(booking));
+        refund.setPaidAmount(paidAmount);
+        refund.setCancellationFee(Math.max(0.0, paidAmount - refundAmount));
+        refund.setRefundAmount(refundAmount);
+        refund.setRefundPercent(refundPercent);
+        refund.setRefundMethod(BookingConstants.REFUND_METHOD_VNPAY);
+        refund.setAmount(refundAmount);
+        refund.setReason(request.getReason());
+        refund.setStatus(RefundStatus.PENDING);
+        refund.setAssignedTo(null);
+        refund.setAssignedAt(null);
+        refund.setProcessedBy(null);
+        refund.setProcessedByStaffId(null);
+        refund.setProcessedAt(null);
+        refund.setCompletedAt(null);
+        refund.setRejectReason(null);
+        refund.setIdempotencyKey(idempotencyKey);
+        if (refund.getCreatedAt() == null) {
+            refund.setCreatedAt(LocalDateTime.now());
+        }
+        refund.setDueAt(LocalDateTime.now().plusHours(BookingConstants.REFUND_SLA_HOURS));
+        refund.setPriority(BookingConstants.REFUND_PRIORITY_NORMAL);
+        refund.setUpdatedAt(LocalDateTime.now());
+
+        booking.setStatus(BookingStatus.CANCEL_REQUESTED);
+        booking.setPaymentStatus(refundAmount > 0 ? BookingConstants.PAYMENT_STATUS_REFUND_PENDING
+                : BookingConstants.PAYMENT_STATUS_NO_REFUND);
+        bookingRepository.save(booking);
+
+        RefundTransaction saved = refundRepository.save(refund);
+        refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
+                String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
+        refundNotificationService.notifyCreated(saved, booking);
+        return saved;
+    }
+
+    @Transactional
+    public RefundTransaction approveRefundByStaff(Long refundId, Long staffId) {
+        RefundTransaction refund = refundRepository.findByIdForUpdate(refundId)
+                .orElseThrow(() -> new IllegalArgumentException("Refund request not found: " + refundId));
+        ensureAssignedToStaff(refund, staffId);
+        RefundStatus oldStatus = refund.getStatus();
+        refund.setStatus(RefundStatus.APPROVED);
+        refund.setProcessedByStaffId(staffId);
+        refund.setProcessedBy(String.valueOf(staffId));
+        refund.setProcessedAt(LocalDateTime.now());
+        refund.setUpdatedAt(LocalDateTime.now());
+        RefundTransaction approved = refundRepository.save(refund);
+
+        Map<String, Object> paymentRequest = new HashMap<>();
+        paymentRequest.put("refundRequestId", refundId);
+        paymentRequest.put("bookingId", refund.getBookingId());
+        paymentRequest.put("userId", refund.getUserId());
+        paymentRequest.put("amount", refund.getRefundAmount());
+        restTemplate.postForObject(paymentServiceUrl + "/payments/refunds/" + refundId, paymentRequest, Object.class);
+
+        approved.setStatus(RefundStatus.COMPLETED);
+        approved.setCompletedAt(LocalDateTime.now());
+        approved.setUpdatedAt(LocalDateTime.now());
+        bookingRepository.findById(approved.getBookingId()).ifPresent(booking -> {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setCancelledAt(LocalDateTime.now());
+            booking.setCancellationReason(approved.getReason());
+            booking.setPaymentStatus(valueOrZero(approved.getRefundAmount()) > 0
+                    ? BookingConstants.PAYMENT_STATUS_REFUNDED
+                    : BookingConstants.PAYMENT_STATUS_NO_REFUND);
+            bookingRepository.save(booking);
+        });
+        refundAuditService.log(refund.getId(), "APPROVED", oldStatus, RefundStatus.COMPLETED,
+                String.valueOf(staffId), "REFUND_STAFF", "Refund approved and completed");
+        return refundRepository.save(approved);
+    }
+
+    @Transactional
+    public RefundTransaction rejectRefundByStaff(Long refundId, Long staffId, String reason) {
+        RefundTransaction refund = refundRepository.findByIdForUpdate(refundId)
+                .orElseThrow(() -> new IllegalArgumentException("Refund request not found: " + refundId));
+        ensureAssignedToStaff(refund, staffId);
+        RefundStatus oldStatus = refund.getStatus();
+        refund.setStatus(RefundStatus.REJECTED);
+        refund.setProcessedByStaffId(staffId);
+        refund.setProcessedBy(String.valueOf(staffId));
+        refund.setProcessedAt(LocalDateTime.now());
+        refund.setRejectReason(reason);
+        refund.setUpdatedAt(LocalDateTime.now());
+        bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
+            booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_NO_REFUND);
+            bookingRepository.save(booking);
+        });
+        refundAuditService.log(refund.getId(), "REJECTED", oldStatus, RefundStatus.REJECTED,
+                String.valueOf(staffId), "REFUND_STAFF", reason);
+        return refundRepository.save(refund);
     }
 
     @Transactional
@@ -191,5 +319,32 @@ public class RefundService {
 
     private double valueOrZero(Double value) {
         return value != null ? value : 0.0;
+    }
+
+    private int calculateRefundPercent(Booking booking, LocalDateTime now) {
+        if (booking.isNonRefundable()) {
+            return 0;
+        }
+        LocalDateTime officialCheckIn = booking.getCheckIn().atTime(LocalTime.of(BookingConstants.CHECK_IN_HOUR, 0));
+        long hoursBeforeCheckIn = ChronoUnit.HOURS.between(now, officialCheckIn);
+        if (hoursBeforeCheckIn >= 72) {
+            return 100;
+        }
+        if (hoursBeforeCheckIn >= 24) {
+            return 50;
+        }
+        return 0;
+    }
+
+    private void ensureAssignedToStaff(RefundTransaction refund, Long staffId) {
+        if (staffId == null) {
+            throw new IllegalArgumentException("staffId is required");
+        }
+        if (refund.getStatus() != RefundStatus.ASSIGNED && refund.getStatus() != RefundStatus.PROCESSING) {
+            throw new IllegalStateException("Refund request must be assigned before processing");
+        }
+        if (!staffId.equals(refund.getAssignedTo())) {
+            throw new IllegalStateException("Refund request is not assigned to staff: " + staffId);
+        }
     }
 }

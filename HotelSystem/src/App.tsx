@@ -22,6 +22,9 @@ import RoomManagementPage from './features/dashboard/pages/RoomManagementPage';
 import InvoiceManagementPage from './features/dashboard/pages/InvoiceManagementPage';
 import EmployeeManagementPage from './features/dashboard/pages/EmployeeManagementPage';
 import RoomTypeManagementPage from './features/dashboard/pages/RoomTypeManagementPage';
+import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
+import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
+import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
 
 import { CartProvider } from './contexts/CartContext';
 
@@ -71,9 +74,12 @@ function App() {
           </Route>
 
           {/* Staff Dashboard Routes */}
-          <Route element={<ProtectedRoute allowedRoles={['STAFF']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['STAFF', 'ADMIN']} />}>
             <Route element={<StaffLayout />}>
               <Route path="/staff/rooms" element={<RoomManagementPage />} />
+              <Route path="/staff/check-in" element={<StaffCheckInPage />} />
+              <Route path="/staff/checkout" element={<StaffCheckoutPage />} />
+              <Route path="/staff/refunds" element={<StaffRefundPage />} />
               <Route path="/staff/invoices" element={<InvoiceManagementPage />} />
               <Route path="/staff" element={<Navigate to="/staff/rooms" replace />} />
             </Route>

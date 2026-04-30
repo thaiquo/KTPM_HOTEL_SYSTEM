@@ -21,9 +21,7 @@ public class RefundQueueConsumer {
     @RabbitListener(queues = RabbitConfig.REFUND_REQUESTED_QUEUE)
     public void consumeRefundRequested(RefundTaskEvent event) {
         log.info("Consume REFUND_REQUESTED. refundId={}", event.getRefundRequestId());
-        RefundAssignmentService.AssignmentResult result = assignmentService.assignRefund(event.getRefundRequestId());
-        if (result.retry()) {
-            assignmentService.retryLater(event);
-        }
+        log.info("Refund request stays in the common queue for manual staff assignment. refundId={}",
+                event.getRefundRequestId());
     }
 }

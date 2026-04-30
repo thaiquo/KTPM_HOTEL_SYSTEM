@@ -322,7 +322,7 @@ const mapBooking = (booking: BookingBackend): Booking => {
   const rawStatus = String(booking.status || 'pending_payment').toLowerCase();
   const status = ([
     'pending_payment', 'pending', 'deposit_paid', 'confirmed', 
-    'checked_in', 'completed', 'cancelled', 'no_show'
+    'checked_in', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
   ].includes(rawStatus) ? rawStatus : 'pending_payment') as Booking['status'];
 
   return {
@@ -600,6 +600,22 @@ const extractRefundList = (payload: unknown): RefundRecord[] => {
 
 export type PaymentType = 'DEPOSIT' | 'FULL' | 'REMAINING';
 
+export type CheckoutResponse = {
+  bookingId: string;
+  lateMinutes: number;
+  lateCheckoutFee: number;
+  paymentRequired: boolean;
+  bookingStatus: string;
+};
+
+export type InvoiceSummary = {
+  monthlyRevenue: number;
+  paidTotal: number;
+  pendingTotal: number;
+  paidCount: number;
+  pendingCount: number;
+};
+
 export const paymentApi = {
   createVNPay: async (paymentData: {
     bookingId: number;
@@ -616,11 +632,30 @@ export const paymentApi = {
     };
   },
 
+  createMoMo: async (paymentData: {
+    bookingId: number;
+    userId: number;
+    totalAmount: number;
+    paymentType: PaymentType;
+    requestType?: 'captureWallet' | 'payWithATM';
+  }): Promise<{ paymentUrl: string }> => {
+    const response = await paymentHttp.post<any>('/payments/momo/create', paymentData);
+    const payload = response.data?.data ?? response.data;
+    return {
+      paymentUrl: payload?.paymentUrl || payload?.payUrl || payload?.url || payload?.payment_url || '',
+    };
+  },
+
   getByBooking: async (bookingId: string, userId?: string): Promise<PaymentRecord[]> => {
     const response = await paymentHttp.get<unknown>(`/payments/booking/${bookingId}`, {
       params: userId ? { userId } : undefined,
     });
     return extractPaymentList(response.data);
+  },
+
+  markLateCheckoutPaid: async (bookingId: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/late-checkout-fee/paid`);
+    return mapPayment(response.data as PaymentBackend);
   },
 };
 
@@ -646,6 +681,108 @@ export const refundApi = {
     return extractRefundList(response.data).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+  },
+};
+
+export const staffBookingApi = {
+  getCheckInList: async (): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/check-in-list');
+    return extractBookingList(response.data);
+  },
+
+  getCheckoutList: async (): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/checkout-list');
+    return extractBookingList(response.data);
+  },
+
+  getBooking: async (bookingId: string): Promise<Booking> => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}`);
+    return extractSingleBooking(response.data);
+  },
+
+  checkIn: async (bookingId: string, representativeCccd: string): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/check-in`, { representativeCccd });
+    return extractSingleBooking(response.data);
+  },
+
+  collectRemainingPayment: async (
+    bookingId: string,
+    payload: { amount: number; userId?: number; method: 'CASH' | 'BANK_TRANSFER'; transactionId?: string }
+  ): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/remaining-payment`, payload);
+    return extractSingleBooking(response.data);
+  },
+
+  calculateCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/calculate`);
+    return {
+      bookingId: String(response.data.bookingId ?? bookingId),
+      lateMinutes: Number(response.data.lateMinutes || 0),
+      lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
+      paymentRequired: Boolean(response.data.paymentRequired),
+      bookingStatus: response.data.bookingStatus || '',
+    };
+  },
+
+  confirmCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/confirm`);
+    return {
+      bookingId: String(response.data.bookingId ?? bookingId),
+      lateMinutes: Number(response.data.lateMinutes || 0),
+      lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
+      paymentRequired: Boolean(response.data.paymentRequired),
+      bookingStatus: response.data.bookingStatus || '',
+    };
+  },
+
+  completeCheckout: async (bookingId: string): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/checkout/complete`);
+    return extractSingleBooking(response.data);
+  },
+};
+
+export const staffRefundApi = {
+  getAll: async (): Promise<RefundRecord[]> => {
+    const response = await api.get<unknown>('/api/staff/refund-requests');
+    return extractRefundList(response.data);
+  },
+
+  assign: async (id: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/assign`);
+    return mapRefund(response.data as RefundBackend);
+  },
+
+  approve: async (id: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/approve`);
+    return mapRefund(response.data as RefundBackend);
+  },
+
+  reject: async (id: string, reason: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/reject`, { reason });
+    return mapRefund(response.data as RefundBackend);
+  },
+};
+
+export const staffInvoiceApi = {
+  getSummary: async (): Promise<InvoiceSummary> => {
+    const response = await paymentHttp.get<any>('/api/staff/invoices/summary');
+    return {
+      monthlyRevenue: Number(response.data.monthlyRevenue || 0),
+      paidTotal: Number(response.data.paidTotal || 0),
+      pendingTotal: Number(response.data.pendingTotal || 0),
+      paidCount: Number(response.data.paidCount || 0),
+      pendingCount: Number(response.data.pendingCount || 0),
+    };
+  },
+
+  getAll: async (): Promise<PaymentRecord[]> => {
+    const response = await paymentHttp.get<unknown>('/api/staff/invoices');
+    return extractPaymentList(response.data);
+  },
+
+  getById: async (id: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.get<unknown>(`/api/staff/invoices/${id}`);
+    return mapPayment(response.data as PaymentBackend);
   },
 };
 

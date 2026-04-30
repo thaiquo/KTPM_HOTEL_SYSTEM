@@ -18,6 +18,10 @@ public class RefundTransaction {
 
     private Long bookingId;
 
+    private Long userId;
+
+    private String citizenId;
+
     /** Transaction ID gốc từ VNPAY / PAYMENT service */
     private String paymentTransactionId;
 
@@ -26,6 +30,8 @@ public class RefundTransaction {
     private Double cancellationFee;
 
     private Double refundAmount;
+
+    private Integer refundPercent;
 
     private String refundMethod;
 
@@ -37,6 +43,14 @@ public class RefundTransaction {
     private String reason;
 
     private String processedBy;
+
+    private Long processedByStaffId;
+
+    private LocalDateTime processedAt;
+
+    private LocalDateTime completedAt;
+
+    private String rejectReason;
 
     private Long assignedTo;
 
@@ -66,6 +80,12 @@ public class RefundTransaction {
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
 
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getCitizenId() { return citizenId; }
+    public void setCitizenId(String citizenId) { this.citizenId = citizenId; }
+
     public String getPaymentTransactionId() { return paymentTransactionId; }
     public void setPaymentTransactionId(String paymentTransactionId) { this.paymentTransactionId = paymentTransactionId; }
 
@@ -77,6 +97,9 @@ public class RefundTransaction {
 
     public Double getRefundAmount() { return refundAmount; }
     public void setRefundAmount(Double refundAmount) { this.refundAmount = refundAmount; }
+
+    public Integer getRefundPercent() { return refundPercent; }
+    public void setRefundPercent(Integer refundPercent) { this.refundPercent = refundPercent; }
 
     public String getRefundMethod() { return refundMethod; }
     public void setRefundMethod(String refundMethod) { this.refundMethod = refundMethod; }
@@ -92,6 +115,18 @@ public class RefundTransaction {
 
     public String getProcessedBy() { return processedBy; }
     public void setProcessedBy(String processedBy) { this.processedBy = processedBy; }
+
+    public Long getProcessedByStaffId() { return processedByStaffId; }
+    public void setProcessedByStaffId(Long processedByStaffId) { this.processedByStaffId = processedByStaffId; }
+
+    public LocalDateTime getProcessedAt() { return processedAt; }
+    public void setProcessedAt(LocalDateTime processedAt) { this.processedAt = processedAt; }
+
+    public LocalDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
 
     public Long getAssignedTo() { return assignedTo; }
     public void setAssignedTo(Long assignedTo) { this.assignedTo = assignedTo; }

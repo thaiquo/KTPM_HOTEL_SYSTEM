@@ -1,10 +1,18 @@
 package iuh.fit.hotelsystem_payment.controller;
 
+import iuh.fit.hotelsystem_payment.config.MoMoConfig;
 import iuh.fit.hotelsystem_payment.config.VNPayConfig;
+import iuh.fit.hotelsystem_payment.dto.CreateMoMoRequest;
 import iuh.fit.hotelsystem_payment.dto.CreateVNPayRequest;
+import iuh.fit.hotelsystem_payment.dto.MoMoResponse;
+import iuh.fit.hotelsystem_payment.dto.OperationalPaymentRequest;
+import iuh.fit.hotelsystem_payment.dto.PaymentStatusResponse;
+import iuh.fit.hotelsystem_payment.dto.RefundPaymentRequest;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import iuh.fit.hotelsystem_payment.service.MoMoService;
+import iuh.fit.hotelsystem_payment.service.PaymentService;
 import iuh.fit.hotelsystem_payment.service.VNPayService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -26,15 +34,24 @@ import java.util.Map;
 public class PaymentController {
 
     private final VNPayService vnPayService;
+    private final MoMoService moMoService;
     private final VNPayConfig vnPayConfig;
+    private final MoMoConfig moMoConfig;
     private final PaymentRepository paymentRepository;
+    private final PaymentService paymentService;
 
     public PaymentController(VNPayService vnPayService,
+                             MoMoService moMoService,
                              VNPayConfig vnPayConfig,
-                             PaymentRepository paymentRepository) {
+                             MoMoConfig moMoConfig,
+                             PaymentRepository paymentRepository,
+                             PaymentService paymentService) {
         this.vnPayService = vnPayService;
+        this.moMoService = moMoService;
         this.vnPayConfig = vnPayConfig;
+        this.moMoConfig = moMoConfig;
         this.paymentRepository = paymentRepository;
+        this.paymentService = paymentService;
     }
 
     @PostMapping("/vnpay/create")
@@ -60,6 +77,29 @@ public class PaymentController {
         return ResponseEntity.ok(vnPayService.handleIpn(params));
     }
 
+    @PostMapping("/momo/create")
+    public ResponseEntity<MoMoResponse> createMoMoPayment(@RequestBody CreateMoMoRequest request) {
+        return ResponseEntity.ok(moMoService.createPayment(request));
+    }
+
+    @PostMapping("/momo/create-remaining")
+    public ResponseEntity<MoMoResponse> createRemainingMoMoPayment(@RequestBody CreateMoMoRequest request) {
+        return ResponseEntity.ok(moMoService.createRemainingPayment(request));
+    }
+
+    @GetMapping("/momo-return")
+    public RedirectView momoReturn(@RequestParam Map<String, String> params) {
+        Map<String, String> result = moMoService.handleReturn(params);
+        return new RedirectView(buildFrontendReturnUrl(result, moMoConfig.getFrontendReturnUrl()));
+    }
+
+    @PostMapping("/momo-ipn")
+    public ResponseEntity<Map<String, String>> momoIpn(@RequestBody Map<String, Object> body) {
+        Map<String, String> params = new java.util.HashMap<>();
+        body.forEach((key, value) -> params.put(key, value == null ? "" : String.valueOf(value)));
+        return ResponseEntity.ok(moMoService.handleIpn(params));
+    }
+
     @GetMapping("/booking/{bookingId}")
     public ResponseEntity<List<Payment>> getPaymentsByBooking(@RequestParam(required = false) Long userId,
                                                               @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
@@ -72,6 +112,45 @@ public class PaymentController {
         return ResponseEntity.ok(payments);
     }
 
+    @GetMapping("/invoices/booking/{bookingId}/status")
+    public ResponseEntity<PaymentStatusResponse> getInvoiceStatus(@org.springframework.web.bind.annotation.PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.getInvoiceStatus(bookingId));
+    }
+
+    @PostMapping("/bookings/{bookingId}/remaining-payment")
+    public ResponseEntity<Payment> remainingPayment(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestBody OperationalPaymentRequest request) {
+        return ResponseEntity.ok(paymentService.recordRemainingPayment(bookingId, request));
+    }
+
+    @PostMapping("/bookings/{bookingId}/late-checkout-fee")
+    public ResponseEntity<Payment> lateCheckoutFee(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestBody OperationalPaymentRequest request) {
+        return ResponseEntity.ok(paymentService.createLateCheckoutFee(bookingId, request));
+    }
+
+    @PostMapping("/bookings/{bookingId}/late-checkout-fee/paid")
+    public ResponseEntity<Payment> markLateCheckoutFeePaid(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.markLateCheckoutFeePaid(bookingId));
+    }
+
+    @GetMapping("/bookings/{bookingId}/late-checkout-fee/status")
+    public ResponseEntity<PaymentStatusResponse> lateCheckoutFeeStatus(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.getLateCheckoutFeeStatus(bookingId));
+    }
+
+    @PostMapping("/refunds/{refundRequestId}")
+    public ResponseEntity<Payment> createRefund(
+            @org.springframework.web.bind.annotation.PathVariable Long refundRequestId,
+            @RequestBody RefundPaymentRequest request) {
+        request.setRefundRequestId(refundRequestId);
+        return ResponseEntity.ok(paymentService.createRefundPayment(request));
+    }
+
     private String extractClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
@@ -81,7 +160,11 @@ public class PaymentController {
     }
 
     private String buildFrontendReturnUrl(Map<String, String> result) {
-        StringBuilder url = new StringBuilder(vnPayConfig.getFrontendReturnUrl());
+        return buildFrontendReturnUrl(result, vnPayConfig.getFrontendReturnUrl());
+    }
+
+    private String buildFrontendReturnUrl(Map<String, String> result, String frontendReturnUrl) {
+        StringBuilder url = new StringBuilder(frontendReturnUrl);
         appendQueryParam(url, "code", result.getOrDefault("code", "99"));
         appendQueryParam(url, "message", result.getOrDefault("message", ""));
         appendQueryParam(url, "bookingId", result.getOrDefault("bookingId", ""));

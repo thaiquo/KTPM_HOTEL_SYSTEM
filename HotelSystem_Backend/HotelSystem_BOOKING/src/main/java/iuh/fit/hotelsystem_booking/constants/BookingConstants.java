@@ -34,7 +34,6 @@ public final class BookingConstants {
     // QUY ĐỊNH ĐẶT PHÒNG
     // ============================================================
     /** Phải đặt trước ít nhất bao nhiêu giờ */
-    public static final int MIN_ADVANCE_BOOKING_HOURS = 1;
 
     /** Không được đặt quá bao nhiêu ngày trong tương lai */
     public static final int MAX_ADVANCE_BOOKING_DAYS = 90;
@@ -56,7 +55,7 @@ public final class BookingConstants {
     // ============================================================
     // RULE NGÀY LỄ
     // ============================================================
-    public static final int    HOLIDAY_MIN_STAY_NIGHTS      = 2;
+    public static final int    HOLIDAY_MIN_STAY_NIGHTS      = 1;
     public static final int    HOLIDAY_DEPOSIT_PERCENT      = 50;
     public static final double HOLIDAY_PRICE_MULTIPLIER     = 1.3;
     public static final int    HOLIDAY_FREE_CANCEL_HOURS    = 72;

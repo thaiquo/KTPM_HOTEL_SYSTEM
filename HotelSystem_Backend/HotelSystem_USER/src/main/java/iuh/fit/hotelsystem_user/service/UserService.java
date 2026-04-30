@@ -40,6 +40,10 @@ public class UserService {
         return new UserDto(user);
     }
 
+    public boolean isActiveStaffOrAdmin(Long userId) {
+        return userRepository.isActiveStaffOrAdmin(userId);
+    }
+
     @Transactional
     public UserDto updateProfile(Long userId, UserDto updated) {
         User user = userRepository.findById(userId)

@@ -25,6 +25,11 @@ public class UserController {
         return ResponseEntity.ok(userService.getProfile(userId));
     }
 
+    @GetMapping("/{userId}/staff-or-admin")
+    public ResponseEntity<Boolean> isStaffOrAdmin(@PathVariable Long userId) {
+        return ResponseEntity.ok(userService.isActiveStaffOrAdmin(userId));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<UserDto> getMe(Principal principal) {
         Long userId = Long.parseLong(principal.getName());
