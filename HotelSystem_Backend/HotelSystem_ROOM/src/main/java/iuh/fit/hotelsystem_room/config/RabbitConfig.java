@@ -38,6 +38,7 @@ public class RabbitConfig {
         return new Queue(ROOM_RELEASE_QUEUE);
     }
 
+
     @Bean
     public Binding holdBinding() {
         return BindingBuilder.bind(holdQueue())
@@ -58,6 +59,7 @@ public class RabbitConfig {
                 .to(exchange())
                 .with("room.release");
     }
+
     @Bean
     public JacksonJsonMessageConverter jsonMessageConverter() {
         JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();

@@ -1,13 +1,34 @@
 package iuh.fit.hotelsystem_booking.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 public class CheckoutResponse {
     private Long bookingId;
+    private String checkoutType;
+    private Integer totalNights;
     private Integer lateMinutes;
     private BigDecimal lateCheckoutFee;
+    private BigDecimal lateFee;
+
+    private boolean earlyCheckout;
+    private Integer usedNights;
+    private Integer chargeNights;
+    private Integer unusedNights;
+    private BigDecimal refundRate;
+    private BigDecimal refundAmount;
+
+    private BigDecimal finalAmount;
+    private String roomNextStatus;
+    private String message;
+
+    private LocalDateTime actualCheckoutAt;
     private boolean paymentRequired;
     private String bookingStatus;
+    private Long representativeGuestId;
+    private String representativeFullName;
+    private String representativePhone;
+    private String representativeCccd;
 
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
@@ -18,9 +39,60 @@ public class CheckoutResponse {
     public BigDecimal getLateCheckoutFee() { return lateCheckoutFee; }
     public void setLateCheckoutFee(BigDecimal lateCheckoutFee) { this.lateCheckoutFee = lateCheckoutFee; }
 
+    public String getCheckoutType() { return checkoutType; }
+    public void setCheckoutType(String checkoutType) { this.checkoutType = checkoutType; }
+
+    public Integer getTotalNights() { return totalNights; }
+    public void setTotalNights(Integer totalNights) { this.totalNights = totalNights; }
+
+    public BigDecimal getLateFee() { return lateFee != null ? lateFee : lateCheckoutFee; }
+    public void setLateFee(BigDecimal lateFee) { this.lateFee = lateFee; }
+
+    public boolean isEarlyCheckout() { return earlyCheckout; }
+    public void setEarlyCheckout(boolean earlyCheckout) { this.earlyCheckout = earlyCheckout; }
+
+    public Integer getUsedNights() { return usedNights; }
+    public void setUsedNights(Integer usedNights) { this.usedNights = usedNights; }
+
+    public Integer getChargeNights() { return chargeNights; }
+    public void setChargeNights(Integer chargeNights) { this.chargeNights = chargeNights; }
+
+    public Integer getUnusedNights() { return unusedNights; }
+    public void setUnusedNights(Integer unusedNights) { this.unusedNights = unusedNights; }
+
+    public BigDecimal getRefundRate() { return refundRate; }
+    public void setRefundRate(BigDecimal refundRate) { this.refundRate = refundRate; }
+
+    public BigDecimal getRefundAmount() { return refundAmount; }
+    public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
+
+    public BigDecimal getFinalAmount() { return finalAmount; }
+    public void setFinalAmount(BigDecimal finalAmount) { this.finalAmount = finalAmount; }
+
+    public String getRoomNextStatus() { return roomNextStatus; }
+    public void setRoomNextStatus(String roomNextStatus) { this.roomNextStatus = roomNextStatus; }
+
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+
+    public LocalDateTime getActualCheckoutAt() { return actualCheckoutAt; }
+    public void setActualCheckoutAt(LocalDateTime actualCheckoutAt) { this.actualCheckoutAt = actualCheckoutAt; }
+
     public boolean isPaymentRequired() { return paymentRequired; }
     public void setPaymentRequired(boolean paymentRequired) { this.paymentRequired = paymentRequired; }
 
     public String getBookingStatus() { return bookingStatus; }
     public void setBookingStatus(String bookingStatus) { this.bookingStatus = bookingStatus; }
+
+    public Long getRepresentativeGuestId() { return representativeGuestId; }
+    public void setRepresentativeGuestId(Long representativeGuestId) { this.representativeGuestId = representativeGuestId; }
+
+    public String getRepresentativeFullName() { return representativeFullName; }
+    public void setRepresentativeFullName(String representativeFullName) { this.representativeFullName = representativeFullName; }
+
+    public String getRepresentativePhone() { return representativePhone; }
+    public void setRepresentativePhone(String representativePhone) { this.representativePhone = representativePhone; }
+
+    public String getRepresentativeCccd() { return representativeCccd; }
+    public void setRepresentativeCccd(String representativeCccd) { this.representativeCccd = representativeCccd; }
 }

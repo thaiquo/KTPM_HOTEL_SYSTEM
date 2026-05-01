@@ -24,6 +24,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
+import java.math.BigDecimal;
 
 @Service
 public class RefundService {
@@ -80,6 +81,43 @@ public class RefundService {
                     refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                             String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
                     refundNotificationService.notifyCreated(saved, booking);
+                    refundQueueProducer.publishRequested(saved);
+                    return saved;
+                });
+    }
+
+    @Transactional
+    public RefundTransaction createEarlyCheckoutRefundTransaction(Booking booking, iuh.fit.hotelsystem_booking.dto.EarlyCheckoutRefundResult early) {
+        if (booking == null) {
+            throw new IllegalArgumentException("booking must not be null");
+        }
+        if (early == null) {
+            throw new IllegalArgumentException("early must not be null");
+        }
+
+        BigDecimal refundAmount = early.getRefundAmount() != null ? early.getRefundAmount() : BigDecimal.ZERO;
+        if (refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        String idempotencyKey = buildEarlyCheckoutIdempotencyKey(booking);
+        return refundRepository.findByIdempotencyKey(idempotencyKey)
+                .orElseGet(() -> {
+                    RefundTransaction refund = RefundTransaction.create(
+                            booking.getId(),
+                            resolvePaymentTransactionId(booking),
+                            valueOrZero(booking.getPaidAmount()),
+                            0.0,
+                            refundAmount.doubleValue(),
+                            BookingConstants.REFUND_METHOD_VNPAY,
+                            "EARLY_CHECKOUT_REFUND",
+                            idempotencyKey
+                    );
+                    RefundTransaction saved = refundRepository.save(refund);
+                    refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
+                            String.valueOf(booking.getUserId()), "CUSTOMER", "Early checkout refund request created");
+                    refundNotificationService.notifyCreated(saved, booking);
+                    refundQueueProducer.publishRequested(saved);
                     return saved;
                 });
     }
@@ -140,6 +178,7 @@ public class RefundService {
         refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                 String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
         refundNotificationService.notifyCreated(saved, booking);
+        refundQueueProducer.publishRequested(saved);
         return saved;
     }
 
@@ -308,6 +347,10 @@ public class RefundService {
 
     private String buildIdempotencyKey(Booking booking) {
         return BookingConstants.REFUND_IDEMPOTENCY_PREFIX + booking.getId();
+    }
+
+    private String buildEarlyCheckoutIdempotencyKey(Booking booking) {
+        return BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX + booking.getId();
     }
 
     private String resolvePaymentTransactionId(Booking booking) {

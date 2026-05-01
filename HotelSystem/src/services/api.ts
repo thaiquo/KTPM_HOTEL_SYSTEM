@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Room, Booking, User, UserProfile, SearchFilters } from '../types';
+import type { Room, Booking, BookingGuest, User, UserProfile, SearchFilters } from '../types';
 
 export interface EmployeeBackend {
   id: number;
@@ -70,6 +70,22 @@ type BookingBackend = {
   paymentTransactionId?: string;
   cancelledAt?: string;
   cancellationReason?: string;
+  actualCheckInAt?: string;
+  actualCheckOutAt?: string;
+};
+
+type BookingGuestBackend = {
+  id?: number | string;
+  bookingId?: number | string;
+  fullName?: string;
+  dateOfBirth?: string;
+  phone?: string;
+  email?: string;
+  cccd?: string;
+  note?: string;
+  type?: string;
+  primaryGuest?: boolean;
+  checkInPerson?: boolean;
 };
 
 type PaymentBackend = {
@@ -344,6 +360,8 @@ const mapBooking = (booking: BookingBackend): Booking => {
     paymentTransactionId: booking.paymentTransactionId,
     cancelledAt: booking.cancelledAt,
     cancellationReason: booking.cancellationReason,
+    actualCheckInAt: booking.actualCheckInAt,
+    actualCheckOutAt: booking.actualCheckOutAt,
   };
 };
 
@@ -606,6 +624,48 @@ export type CheckoutResponse = {
   lateCheckoutFee: number;
   paymentRequired: boolean;
   bookingStatus: string;
+  checkoutType?: string;
+  totalNights?: number;
+  refundAmount?: number;
+  refundRate?: number;
+  finalAmount?: number;
+  usedNights?: number;
+  chargeNights?: number;
+  unusedNights?: number;
+  representativeGuestId?: string;
+  representativeFullName?: string;
+  representativePhone?: string;
+  representativeCccd?: string;
+  message?: string;
+};
+
+const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
+  id: String(guest.id ?? ''),
+  bookingId: String(guest.bookingId ?? ''),
+  fullName: guest.fullName || '',
+  dateOfBirth: guest.dateOfBirth,
+  phone: guest.phone,
+  email: guest.email,
+  cccd: guest.cccd,
+  note: guest.note,
+  type: (guest.type || undefined) as BookingGuest['type'],
+  primaryGuest: Boolean(guest.primaryGuest),
+  checkInPerson: Boolean(guest.checkInPerson),
+});
+
+const extractBookingGuestList = (payload: unknown): BookingGuest[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapBookingGuest(item as BookingGuestBackend));
+  }
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: BookingGuestBackend[] }).data.map((item) => mapBookingGuest(item));
+  }
+  return [];
 };
 
 export type InvoiceSummary = {
@@ -657,6 +717,11 @@ export const paymentApi = {
     const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/late-checkout-fee/paid`);
     return mapPayment(response.data as PaymentBackend);
   },
+
+  markEarlyCheckinPaid: async (bookingId: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/early-checkin-fee/paid`);
+    return mapPayment(response.data as PaymentBackend);
+  },
 };
 
 export const notificationApi = {
@@ -705,9 +770,46 @@ export const staffBookingApi = {
     return extractSingleBooking(response.data);
   },
 
+  checkInWithRepresentative: async (
+    bookingId: string,
+    payload: { representativeGuestId: string; representativeCccd: string; representativePhone?: string }
+  ): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/check-in`, {
+      representativeGuestId: Number(payload.representativeGuestId),
+      representativeCccd: payload.representativeCccd,
+      representativePhone: payload.representativePhone,
+    });
+    return extractSingleBooking(response.data);
+  },
+
+  updateCheckInRepresentative: async (
+    bookingId: string,
+    payload: { representativeGuestId: string; representativeCccd: string; representativePhone?: string }
+  ): Promise<Booking> => {
+    const response = await api.put<unknown>(`/api/staff/bookings/${bookingId}/check-in-representative`, {
+      representativeGuestId: Number(payload.representativeGuestId),
+      representativeCccd: payload.representativeCccd,
+      representativePhone: payload.representativePhone,
+    });
+    return extractSingleBooking(response.data);
+  },
+
+  getGuests: async (bookingId: string): Promise<BookingGuest[]> => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/guests`);
+    return extractBookingGuestList(response.data);
+  },
+
   collectRemainingPayment: async (
     bookingId: string,
-    payload: { amount: number; userId?: number; method: 'CASH' | 'BANK_TRANSFER'; transactionId?: string }
+    payload: {
+      amount: number;
+      userId?: number;
+      payerGuestId?: number;
+      payerName?: string;
+      payerPhone?: string;
+      method: 'CASH' | 'BANK_TRANSFER';
+      transactionId?: string;
+    }
   ): Promise<Booking> => {
     const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/remaining-payment`, payload);
     return extractSingleBooking(response.data);
@@ -721,6 +823,19 @@ export const staffBookingApi = {
       lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
       paymentRequired: Boolean(response.data.paymentRequired),
       bookingStatus: response.data.bookingStatus || '',
+      checkoutType: response.data.checkoutType || undefined,
+      totalNights: response.data.totalNights != null ? Number(response.data.totalNights) : undefined,
+      refundAmount: response.data.refundAmount != null ? Number(response.data.refundAmount) : undefined,
+      refundRate: response.data.refundRate != null ? Number(response.data.refundRate) : undefined,
+      finalAmount: response.data.finalAmount != null ? Number(response.data.finalAmount) : undefined,
+      usedNights: response.data.usedNights != null ? Number(response.data.usedNights) : undefined,
+      chargeNights: response.data.chargeNights != null ? Number(response.data.chargeNights) : undefined,
+      unusedNights: response.data.unusedNights != null ? Number(response.data.unusedNights) : undefined,
+      representativeGuestId: response.data.representativeGuestId != null ? String(response.data.representativeGuestId) : undefined,
+      representativeFullName: response.data.representativeFullName || undefined,
+      representativePhone: response.data.representativePhone || undefined,
+      representativeCccd: response.data.representativeCccd || undefined,
+      message: response.data.message || undefined,
     };
   },
 
@@ -732,6 +847,19 @@ export const staffBookingApi = {
       lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
       paymentRequired: Boolean(response.data.paymentRequired),
       bookingStatus: response.data.bookingStatus || '',
+      checkoutType: response.data.checkoutType || undefined,
+      totalNights: response.data.totalNights != null ? Number(response.data.totalNights) : undefined,
+      refundAmount: response.data.refundAmount != null ? Number(response.data.refundAmount) : undefined,
+      refundRate: response.data.refundRate != null ? Number(response.data.refundRate) : undefined,
+      finalAmount: response.data.finalAmount != null ? Number(response.data.finalAmount) : undefined,
+      usedNights: response.data.usedNights != null ? Number(response.data.usedNights) : undefined,
+      chargeNights: response.data.chargeNights != null ? Number(response.data.chargeNights) : undefined,
+      unusedNights: response.data.unusedNights != null ? Number(response.data.unusedNights) : undefined,
+      representativeGuestId: response.data.representativeGuestId != null ? String(response.data.representativeGuestId) : undefined,
+      representativeFullName: response.data.representativeFullName || undefined,
+      representativePhone: response.data.representativePhone || undefined,
+      representativeCccd: response.data.representativeCccd || undefined,
+      message: response.data.message || undefined,
     };
   },
 

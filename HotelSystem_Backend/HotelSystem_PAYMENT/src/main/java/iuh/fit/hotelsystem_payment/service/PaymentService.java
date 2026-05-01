@@ -5,6 +5,7 @@ import iuh.fit.hotelsystem_payment.dto.InvoiceSummaryResponse;
 import iuh.fit.hotelsystem_payment.dto.PaymentStatusResponse;
 import iuh.fit.hotelsystem_payment.dto.OperationalPaymentRequest;
 import iuh.fit.hotelsystem_payment.dto.RefundPaymentRequest;
+import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutRefundRequest;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -90,6 +93,9 @@ public class PaymentService {
         Payment payment = new Payment();
         payment.setBookingId(bookingId);
         payment.setUserId(request.getUserId());
+        payment.setPayerGuestId(request.getPayerGuestId());
+        payment.setPayerName(request.getPayerName());
+        payment.setPayerPhone(request.getPayerPhone());
         payment.setAmount(request.getAmount());
         payment.setPaidAmount(request.getAmount());
         payment.setTotalAmount(resolveBookingTotalAfterRemainingPayment(bookingId, request.getAmount()));
@@ -130,6 +136,51 @@ public class PaymentService {
                     payment.setCreatedAt(LocalDateTime.now());
                     return paymentRepository.save(payment);
                 });
+    }
+
+    public Payment createEarlyCheckinFee(Long bookingId, OperationalPaymentRequest request) {
+        return paymentRepository.findTopByBookingIdAndPaymentTypeOrderByCreatedAtDesc(
+                bookingId, PaymentType.EARLY_CHECKIN_FEE)
+                .orElseGet(() -> {
+                    Payment payment = new Payment();
+                    payment.setBookingId(bookingId);
+                    payment.setUserId(request.getUserId());
+                    payment.setAmount(request.getAmount());
+                    payment.setTotalAmount(request.getAmount());
+                    payment.setPaidAmount(0.0);
+                    payment.setPaymentType(PaymentType.EARLY_CHECKIN_FEE);
+                    payment.setMethod("STAFF_COLLECTED");
+                    payment.setStatus(PaymentStatus.PENDING);
+                    payment.setTransactionId(resolveTransactionId(request.getTransactionId()));
+                    payment.setCreatedAt(LocalDateTime.now());
+                    return paymentRepository.save(payment);
+                });
+    }
+
+    public Payment markEarlyCheckinFeePaid(Long bookingId) {
+        Payment payment = paymentRepository.findTopByBookingIdAndPaymentTypeOrderByCreatedAtDesc(
+                bookingId, PaymentType.EARLY_CHECKIN_FEE)
+                .orElseThrow(() -> new IllegalArgumentException("Early check-in fee not found for booking: " + bookingId));
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaidAmount(payment.getAmount());
+        return paymentRepository.save(payment);
+    }
+
+    public PaymentStatusResponse getEarlyCheckinFeeStatus(Long bookingId) {
+        PaymentStatusResponse response = new PaymentStatusResponse();
+        Payment payment = paymentRepository.findTopByBookingIdAndPaymentTypeOrderByCreatedAtDesc(
+                bookingId, PaymentType.EARLY_CHECKIN_FEE).orElse(null);
+        if (payment == null) {
+            response.setStatus("NONE");
+            response.setPaidAmount(0.0);
+            response.setRemainingAmount(0.0);
+            return response;
+        }
+        boolean paid = payment.getStatus() == PaymentStatus.SUCCESS;
+        response.setStatus(paid ? "PAID" : "PENDING");
+        response.setPaidAmount(paid ? valueOrZero(payment.getAmount()) : 0.0);
+        response.setRemainingAmount(paid ? 0.0 : valueOrZero(payment.getAmount()));
+        return response;
     }
 
     public Payment markLateCheckoutFeePaid(Long bookingId) {
@@ -173,6 +224,68 @@ public class PaymentService {
         return paymentRepository.save(payment);
     }
 
+    public Payment createEarlyCheckoutRefund(EarlyCheckoutRefundRequest request) {
+        double remainingRefund = valueOrZero(request.getAmount());
+        if (remainingRefund <= 0.0) {
+            throw new IllegalArgumentException("Refund amount must be greater than zero");
+        }
+
+        List<Payment> sourcePayments = paymentRepository.findByBookingId(request.getBookingId()).stream()
+                .filter(payment -> payment.getStatus() == PaymentStatus.SUCCESS)
+                .filter(payment -> payment.getPaymentType() == PaymentType.REMAINING
+                        || payment.getPaymentType() == PaymentType.FULL
+                        || payment.getPaymentType() == PaymentType.DEPOSIT)
+                .sorted(Comparator
+                        .comparingInt((Payment payment) -> refundPriority(payment.getPaymentType()))
+                        .thenComparing(Payment::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+
+        List<Payment> refunds = new ArrayList<>();
+        for (Payment source : sourcePayments) {
+            if (remainingRefund <= 0.01) {
+                break;
+            }
+            double sourcePaid = source.getPaidAmount() != null ? source.getPaidAmount() : valueOrZero(source.getAmount());
+            double amount = Math.min(remainingRefund, sourcePaid);
+            if (amount <= 0.0) {
+                continue;
+            }
+            Payment refund = new Payment();
+            refund.setBookingId(request.getBookingId());
+            refund.setUserId(source.getUserId());
+            refund.setPayerGuestId(source.getPayerGuestId());
+            refund.setPayerName(source.getPayerName());
+            refund.setPayerPhone(source.getPayerPhone());
+            refund.setAmount(amount);
+            refund.setTotalAmount(amount);
+            refund.setPaidAmount(0.0);
+            refund.setPaymentType(PaymentType.REFUND);
+            refund.setMethod("REFUND_TO_" + source.getPaymentType().name());
+            refund.setStatus(PaymentStatus.PENDING);
+            refund.setTransactionId("early_refund_" + request.getBookingId()
+                    + "_" + source.getTransactionId() + "_" + UUID.randomUUID());
+            refund.setCreatedAt(LocalDateTime.now());
+            refunds.add(paymentRepository.save(refund));
+            remainingRefund -= amount;
+        }
+
+        if (refunds.isEmpty()) {
+            Payment fallback = new Payment();
+            fallback.setBookingId(request.getBookingId());
+            fallback.setUserId(request.getUserId());
+            fallback.setAmount(request.getAmount());
+            fallback.setTotalAmount(request.getAmount());
+            fallback.setPaidAmount(0.0);
+            fallback.setPaymentType(PaymentType.REFUND);
+            fallback.setMethod("REFUND");
+            fallback.setStatus(PaymentStatus.PENDING);
+            fallback.setTransactionId("early_refund_" + request.getBookingId() + "_" + UUID.randomUUID());
+            fallback.setCreatedAt(LocalDateTime.now());
+            return paymentRepository.save(fallback);
+        }
+        return refunds.get(0);
+    }
+
     public List<Payment> getStaffInvoices() {
         return paymentRepository.findAllByOrderByCreatedAtDesc();
     }
@@ -211,5 +324,12 @@ public class PaymentService {
 
     private double valueOrZero(Double value) {
         return value != null ? value : 0.0;
+    }
+
+    private int refundPriority(PaymentType paymentType) {
+        if (paymentType == PaymentType.REMAINING) return 0;
+        if (paymentType == PaymentType.FULL) return 1;
+        if (paymentType == PaymentType.DEPOSIT) return 2;
+        return 3;
     }
 }

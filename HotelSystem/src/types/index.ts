@@ -40,6 +40,22 @@ export interface Booking {
   paymentTransactionId?: string;
   cancelledAt?: string;
   cancellationReason?: string;
+  actualCheckInAt?: string;
+  actualCheckOutAt?: string;
+}
+
+export interface BookingGuest {
+  id: string;
+  bookingId: string;
+  fullName: string;
+  dateOfBirth?: string;
+  phone?: string;
+  email?: string;
+  cccd?: string;
+  note?: string;
+  type?: 'ADULT' | 'CHILD';
+  primaryGuest?: boolean;
+  checkInPerson?: boolean;
 }
 
 export interface User {

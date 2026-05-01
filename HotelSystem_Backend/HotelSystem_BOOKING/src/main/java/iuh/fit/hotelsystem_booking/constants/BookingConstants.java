@@ -55,7 +55,7 @@ public final class BookingConstants {
     // ============================================================
     // RULE NGÀY LỄ
     // ============================================================
-    public static final int    HOLIDAY_MIN_STAY_NIGHTS      = 1;
+    public static final int    HOLIDAY_MIN_STAY_NIGHTS      = 2;
     public static final int    HOLIDAY_DEPOSIT_PERCENT      = 50;
     public static final double HOLIDAY_PRICE_MULTIPLIER     = 1.3;
     public static final int    HOLIDAY_FREE_CANCEL_HOURS    = 72;
@@ -102,11 +102,11 @@ public final class BookingConstants {
     // EARLY CHECK-IN FEE (% giá 1 đêm)
     // ============================================================
     /** Trước 06:00 → tính 1 đêm (100%) */
-    public static final double EARLY_BEFORE_6_FEE_PERCENT   = 100.0;
+    public static final double EARLY_BEFORE_7_FEE_PERCENT   = 100.0;
     /** 06:00 – 10:00 → 50% */
-    public static final double EARLY_6_TO_10_FEE_PERCENT    = 50.0;
+    public static final double EARLY_7_TO_12_FEE_PERCENT    = 50.0;
     /** 10:00 – 14:00 → 20% */
-    public static final double EARLY_10_TO_14_FEE_PERCENT   = 20.0;
+    public static final double EARLY_12_TO_14_FEE_PERCENT   = 0.0;
 
     // ============================================================
     // LATE CHECK-OUT FEE (% giá 1 đêm)
@@ -117,4 +117,16 @@ public final class BookingConstants {
     public static final double LATE_14_TO_18_FEE_PERCENT    = 50.0;
     /** Sau 18:00 → 1 đêm (100%) */
     public static final double LATE_AFTER_18_FEE_PERCENT    = 100.0;
+
+    // ============================================================
+    // EARLY CHECK-OUT POLICY
+    // ============================================================
+    /** Flexible early checkout: tối thiểu tính bao nhiêu đêm */
+    public static final int EARLY_CHECKOUT_MIN_CHARGE_NIGHTS = 2;
+
+    /** Flexible early checkout: refund rate trên số đêm unused */
+    public static final double EARLY_CHECKOUT_REFUND_RATE = 0.8;
+
+    /** Prefix riêng cho refund do early checkout để không đụng cancellation refund */
+    public static final String EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX = "refund_early_checkout_";
 }

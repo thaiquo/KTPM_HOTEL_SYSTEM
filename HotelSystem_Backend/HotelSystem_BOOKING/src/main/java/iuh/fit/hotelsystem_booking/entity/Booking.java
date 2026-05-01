@@ -94,6 +94,12 @@ public class Booking {
     private LocalDateTime cancelledAt;
     private String cancellationReason;
 
+    @Transient
+    private LocalDateTime actualCheckInAt;
+
+    @Transient
+    private LocalDateTime actualCheckOutAt;
+
     // ════════════════════════════════════════════════════════════
     // Getters / Setters
     // ════════════════════════════════════════════════════════════
@@ -187,6 +193,12 @@ public class Booking {
 
     public String getCancellationReason() { return cancellationReason; }
     public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
+
+    public LocalDateTime getActualCheckInAt() { return actualCheckInAt; }
+    public void setActualCheckInAt(LocalDateTime actualCheckInAt) { this.actualCheckInAt = actualCheckInAt; }
+
+    public LocalDateTime getActualCheckOutAt() { return actualCheckOutAt; }
+    public void setActualCheckOutAt(LocalDateTime actualCheckOutAt) { this.actualCheckOutAt = actualCheckOutAt; }
 
     // ─── Helper ──────────────────────────────────────────────────
     public boolean isHoliday() {
