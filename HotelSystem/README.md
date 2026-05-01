@@ -1,64 +1,46 @@
-# HotelSystem Frontend (React + Vite + TypeScript)
+# 💻 HotelSystem Frontend
 
-Frontend của hệ thống quản lý khách sạn (QLKS). Được xây dựng bằng React, Vite, Tailwind CSS, và TypeScript.
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Framer Motion](https://img.shields.io/badge/Framer_Motion-Animations-0055FF?style=for-the-badge&logo=framer&logoColor=white)](https://www.framer.com/motion/)
 
-## 1) Chạy nhanh bằng Docker (khuyến nghị)
+Giao diện người dùng của hệ thống quản lý khách sạn. Được thiết kế với phong cách hiện đại, trải nghiệm mượt mà và tối ưu trên mọi thiết bị.
 
-Chạy full stack (frontend + 6 backend + RabbitMQ + Postgres) ở thư mục root (bên ngoài thư mục này):
+## 🚀 Tính năng chính
+- **Đặt phòng trực tuyến**: Tìm kiếm phòng, xem chi tiết và thực hiện đặt phòng với luồng thanh toán VNPAY.
+- **Quản lý đặt phòng**: Theo dõi lịch sử, trạng thái thanh toán và thực hiện hủy phòng.
+- **Dashboard Nhân viên**: Xử lý Check-in/Check-out chuyên nghiệp với giao diện tối ưu.
+- **Quản lý hồ sơ**: Cập nhật thông tin cá nhân và xem lịch sử tích lũy.
+- **Hiệu ứng mượt mà**: Sử dụng Framer Motion cho các chuyển động premium.
 
+## 🛠️ Công nghệ sử dụng
+- **Core**: React 19, TypeScript
+- **Styling**: Tailwind CSS
+- **State Management**: React Hooks (Context API)
+- **Routing**: React Router Dom
+- **Icons**: React Icons (Hi, Lu)
+- **API Client**: Axios với Interceptors cho Auth/Refresh Token.
+
+## 📦 Hướng dẫn cài đặt
+
+### 1) Chạy bằng Docker (Khuyến nghị)
+Chạy stack dev từ thư mục gốc của project:
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
+Truy cập: `http://localhost:3000`
 
-Mở UI:
-
-- http://localhost:3000
-
-Frontend trong dev mode dùng Vite dev server và được cấu hình proxy tự động trỏ về các API backend.
-
-## 2) Chạy frontend standalone (không dùng Docker)
-
+### 2) Chạy Standalone
 ```bash
 cd HotelSystem
 npm install
-npm run dev -- --host
+npm run dev
 ```
 
-Mặc định Vite chạy ở `http://localhost:5173` (để tránh xung đột port 3000 của Docker nếu đang chạy).
-Nếu bạn muốn đổi port, có thể dùng:
-
-```bash
-VITE_PORT=3001 npm run dev -- --host
-```
-
-_Lưu ý: Nếu không dùng Docker thì backend cần chạy từ port 8081..8086 hoặc bạn cần cấu hình lại các biến môi trường trỏ tới backend._
-
-## 3) Cấu trúc gọi API
-
-Frontend gọi API qua các proxy endpoints sau (giải quyết triệt để lỗi CORS):
-
-- `/auth-api/*`
-- `/user-api/*`
-- `/room-api/*`
-- `/booking-api/*`
-- `/payment-api/*`
-- `/notification-api/*`
-
-Cấu hình Dev proxy nằm ở `vite.config.ts`.
-Cấu hình Prod proxy nằm ở `nginx.conf`.
-
-## 4) Auth Token
-
-Hệ thống lưu trữ token tại `localStorage`:
-
-- `accessToken`
-- `refreshToken`
-
-Axios Interceptor (`src/services/api.ts`) sẽ tự động lấy token và gửi lên server. Đồng thời, interceptor cũng xử lý luôn tính năng "tự động refresh token" khi nhận về lỗi 401 Unauthorized, giúp tạo trải nghiệm đăng nhập không đứt quãng.
-
-## 5) Build Production
-
-Build cho môi trường Production được đóng gói cùng **Nginx**:
-
-- Xem `Dockerfile` để biết chi tiết stage build bằng Node.js và stage run bằng Nginx.
-- Nginx sẽ host các file tĩnh và config thêm tính năng reverse-proxy cho API theo cấu hình trong file `nginx.conf`.
+## 🏗️ Cấu trúc thư mục
+- `src/features/`: Chứa các module nghiệp vụ chính (room, booking, auth, dashboard).
+- `src/shared/`: Các component, layout và hook dùng chung.
+- `src/services/`: Cấu hình API và các hàm gọi backend.
+- `src/types/`: Định nghĩa kiểu dữ liệu TypeScript.

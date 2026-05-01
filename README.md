@@ -1,14 +1,66 @@
-# QLKS / HotelSystem (Microservices)
+# 🏨 QLKS / HotelSystem (Microservices)
 
-Project quản lý khách sạn (QLKS) gồm:
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Multi_DB-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: 6 microservice Spring Boot (AUTH, USER, ROOM, BOOKING, PAYMENT, NOTIFICATION)
-- **Hạ tầng**: RabbitMQ + PostgreSQL riêng cho từng service + pgAdmin
+Hệ thống quản lý khách sạn (QLKS) hiện đại được xây dựng trên kiến trúc Microservices, tập trung vào tính mở rộng, xử lý bất đồng bộ và quy tắc nghiệp vụ thực tế tại Việt Nam.
 
-Mục tiêu của README này là để người mới clone về chỉ cần đọc là:
+## 🏗️ Kiến trúc hệ thống
 
-1. hiểu kiến trúc tổng quan, 2) chạy được dev/prod nhanh, 3) biết port/API chính.
+```mermaid
+graph TD
+    User((Khách hàng)) --> Frontend[Frontend - React/Vite]
+    Staff((Nhân viên)) --> Frontend
+    
+    subgraph "API Gateway (Vite/Nginx Proxy)"
+        Frontend
+    end
+
+    subgraph "Backend Microservices (Spring Boot)"
+        AUTH[Auth Service]
+        USER[User Service]
+        ROOM[Room Service]
+        BOOKING[Booking Service]
+        PAYMENT[Payment Service]
+        NOTIF[Notification Service]
+    end
+
+    subgraph "Message Broker"
+        MQ[RabbitMQ]
+    end
+
+    subgraph "Storage (PostgreSQL)"
+        DB_AUTH[(DB Auth/User)]
+        DB_ROOM[(DB Room)]
+        DB_BOOKING[(DB Booking)]
+        DB_PAYMENT[(DB Payment)]
+    end
+
+    Frontend --> AUTH
+    Frontend --> USER
+    Frontend --> ROOM
+    Frontend --> BOOKING
+    Frontend --> PAYMENT
+    
+    BOOKING <--> MQ
+    ROOM <--> MQ
+    PAYMENT <--> MQ
+    NOTIF <--> MQ
+
+    AUTH --- DB_AUTH
+    USER --- DB_AUTH
+    ROOM --- DB_ROOM
+    BOOKING --- DB_BOOKING
+    PAYMENT --- DB_PAYMENT
+```
+
+Mục tiêu của tài liệu này là giúp bạn:
+1. Hiểu kiến trúc tổng quan của hệ thống.
+2. Triển khai môi trường phát triển (Dev) và vận hành (Prod) nhanh chóng.
+3. Nắm vững luồng nghiệp vụ và danh sách các API chính.
 
 ## Cấu trúc thư mục
 

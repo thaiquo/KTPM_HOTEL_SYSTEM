@@ -1,42 +1,27 @@
-# HotelSystem_ROOM (Room Service)
+# 🏨 HotelSystem_ROOM (Room Service)
 
-Service **quản lý phòng** + xử lý trạng thái phòng qua RabbitMQ (AVAILABLE/HOLD/BOOKED).
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Multi_DB-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 
-## Port
+Service **quản lý phòng và hạng phòng**. Xử lý trạng thái phòng và đồng bộ với hệ thống đặt phòng.
 
-- `8083`
+## 🚀 Tính năng chính
+- Quản lý danh mục hạng phòng (Room Types).
+- Quản lý danh sách phòng (Rooms).
+- Xử lý trạng thái phòng (AVAILABLE, HELD, OCCUPIED, CLEANING).
+- Lắng nghe sự kiện từ BOOKING để giữ chỗ (Hold) hoặc giải phóng (Release) phòng.
+- Tìm kiếm phòng trống theo thời gian.
 
-## Base path
+## 🔌 Cấu hình kết nối
+- **Port**: `8083`
+- **Base Path**: `/rooms`
 
-- `/rooms`
+## 📡 REST API Endpoints
 
-## REST endpoints
-
-- `GET /rooms` — list tất cả phòng
-- `GET /rooms/{id}` — lấy phòng theo id
-- `GET /rooms/available` — list phòng AVAILABLE
-- `POST /rooms` — tạo phòng
-- `PUT /rooms/{id}/status?status=AVAILABLE|HOLD|BOOKED` — cập nhật trạng thái
-
-## RabbitMQ
-
-Room service lắng nghe các routing keys để đổi trạng thái phòng:
-
-- `room.hold` → giữ phòng (AVAILABLE → HOLD) và publish `room.held`
-- `room.confirm` → xác nhận phòng (HOLD → BOOKED)
-- `room.release` → trả phòng về AVAILABLE
-
-Exchange/queue cụ thể nằm trong phần config RabbitMQ của service.
-
-## ENV / Config
-
-- `DB_URL` (default: `jdbc:postgresql://localhost:5432/hotel_room`)
-- `DB_USERNAME` / `DB_PASSWORD`
-- `RABBIT_HOST` / `RABBIT_USERNAME` / `RABBIT_PASSWORD`
-- `jwt.secret` / `jwt.expiration`
-
-## Chạy service
-
-```bash
-docker compose -f docker-compose.dev.yml up -d room-service
-```
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/rooms/available` | Tìm kiếm phòng trống |
+| `GET` | `/rooms/{id}` | Chi tiết phòng |
+| `GET` | `/rooms/types` | Danh sách hạng phòng |
+| `PUT` | `/rooms/{id}/status` | Cập nhật trạng thái phòng |

@@ -1,37 +1,16 @@
-# HotelSystem_NOTIFICATION (Notification Service)
+# 🔔 HotelSystem_NOTIFICATION (Notification Service)
 
-Service **thông báo**: lưu và truy vấn các notification khi booking/payment thành công.
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 
-## Port
+Service **gửi thông báo**. Lắng nghe các sự kiện từ hệ thống để gửi thông báo đến người dùng qua các kênh khác nhau.
 
-- `8086`
+## 🚀 Tính năng chính
+- Lắng nghe sự kiện `booking.confirmed`, `booking.cancelled`, `payment.success`.
+- Gửi thông báo xác nhận đặt phòng thành công.
+- Gửi thông báo nhắc lịch Check-in.
+- (Mở rộng) Gửi Email hoặc Push Notification.
 
-## Base path
-
-- `/notifications`
-
-## REST endpoints
-
-- `GET /notifications` — list notifications
-- `GET /notifications?userId={userId}` — list theo userId
-- `GET /notifications?bookingId={bookingId}` — list theo bookingId
-
-## RabbitMQ
-
-Notification service lắng nghe:
-
-- `booking.confirmed` → tạo notification loại BOOKING_SUCCESS
-- `payment.result` → nếu SUCCESS tạo notification loại PAYMENT_SUCCESS
-
-## ENV / Config
-
-- `DB_URL` (default: `jdbc:postgresql://localhost:5432/hotel_notification`)
-- `DB_USERNAME` / `DB_PASSWORD`
-- `RABBIT_HOST` / `RABBIT_USERNAME` / `RABBIT_PASSWORD`
-- `jwt.secret` / `jwt.expiration`
-
-## Chạy service
-
-```bash
-docker compose -f docker-compose.dev.yml up -d notification-service
-```
+## 🔌 Cấu hình kết nối
+- **Port**: `8086`
+- **Base Path**: `/notifications`

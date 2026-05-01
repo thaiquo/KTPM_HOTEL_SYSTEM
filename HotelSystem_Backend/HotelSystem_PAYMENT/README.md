@@ -1,10 +1,21 @@
-# HotelSystem_PAYMENT (Payment Service)
+# 💳 HotelSystem_PAYMENT (Payment Service)
 
-Service quản lý và xử lý giao dịch thanh toán qua cổng VNPAY (sandbox).
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![VNPAY](https://img.shields.io/badge/Payment-VNPAY-003399?style=for-the-badge)](https://sandbox.vnpayment.vn/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 
-## Port
+Service **xử lý thanh toán**. Tích hợp với VNPAY Sandbox để xử lý các giao dịch đặt phòng và hoàn tiền.
 
-- `8085`
+## 🚀 Tính năng chính
+- Tạo link thanh toán VNPAY (QR Code / Thẻ nội địa / Quốc tế).
+- Xử lý Callback (IPN) từ VNPAY để cập nhật trạng thái thanh toán.
+- Ghi nhận thanh toán bằng tiền mặt hoặc chuyển khoản tại quầy.
+- Quản lý giao dịch hoàn tiền (Refund).
+- Publish kết quả thanh toán lên RabbitMQ để BOOKING cập nhật trạng thái.
+
+## 🔌 Cấu hình kết nối
+- **Port**: `8085`
+- **Base Path**: `/payments`
 
 ## API endpoints chính
 

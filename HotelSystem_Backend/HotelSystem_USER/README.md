@@ -1,38 +1,25 @@
-# HotelSystem_USER (User Service)
+# 👤 HotelSystem_USER (User Service)
 
-Service **quản lý thông tin hồ sơ người dùng**, lịch sử hoạt động, lấy danh sách khách hàng.
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Multi_DB-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-## Port
+Service **quản lý người dùng**. Lưu trữ và quản lý thông tin hồ sơ, phân quyền và lịch sử hoạt động.
 
-- `8082`
+## 🚀 Tính năng chính
+- Quản lý thông tin hồ sơ (Profile Management).
+- Đăng ký tài khoản mới (Registration).
+- Phân quyền người dùng (Role Management: ADMIN, STAFF, USER).
+- Quản lý thông tin khách hàng cho mục đích Check-in.
 
-## Base path
+## 🔌 Cấu hình kết nối
+- **Port**: `8082`
+- **Base Path**: `/users`
 
-- `/users`
+## 📡 REST API Endpoints
 
-## Mối quan hệ
-
-- Giao tiếp bảo mật với `HotelSystem_AUTH` để tạo User mới sau khi Authentication cung cấp Identity id.
-- Liên kết với PostgreSQL database (dễ dàng chia sẻ cơ sở dữ liệu chung hoặc kết nối JDBC qua `.env`).
-
-## API endpoints chính
-
-- `GET /users/profile` — Lấy thông tin cá nhân hiện tại từ Token.
-- `GET /users/{id}` — Lấy công khai User từ id khách/người dùng.
-- `GET /users` — Admin endpoints: Phân trang/liệt kê danh sách users nền tảng.
-- `PUT /users/profile` — Sửa, cập nhật tên hoặc avatar...
-
-## Cấu hình chạy và Môi trường (.properties)
-
-Xác định biến ở root (`.env` trên dev):
-
-- `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` (mặc định trỏ đến PostgeSQL: `jdbc:postgresql://localhost:5432/hotel_auth` hoặc database độc lập của User).
-- Thiết lập JWT Secrets trùng khớp hệ thống.
-
-## Lệnh Start
-
-Sử dụng Docker compose cho đồng bộ hạ tầng:
-
-```bash
-docker compose -f docker-compose.dev.yml up -d user-service
-```
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/users/me` | Lấy thông tin cá nhân |
+| `PUT` | `/users/profile` | Cập nhật hồ sơ |
+| `GET` | `/users/{id}` | Lấy thông tin user theo ID (Staff/Admin) |
+| `POST` | `/users` | Tạo user mới |
