@@ -6,6 +6,7 @@ import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.entity.RatePlan;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
@@ -21,14 +22,17 @@ class BookingModificationServiceTest {
     @Test
     void flexibleBookingCanBeModified() {
         BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository bookingStayRepository = mock(BookingStayRepository.class);
         PricingService pricingService = mock(PricingService.class);
         BookingService bookingService = new BookingService(
                 bookingRepository,
+                bookingStayRepository,
                 mock(RabbitTemplate.class),
                 mock(BookingValidator.class),
                 pricingService,
                 mock(CheckInOutService.class),
-                mock(BookingGuestService.class));
+                mock(BookingGuestService.class),
+                mock(CheckoutService.class));
 
         Booking booking = booking(RatePlan.FLEXIBLE, true);
         PricingResult pricing = new PricingResult();
@@ -57,13 +61,16 @@ class BookingModificationServiceTest {
     @Test
     void nonRefundableBookingCannotBeModified() {
         BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository bookingStayRepository = mock(BookingStayRepository.class);
         BookingService bookingService = new BookingService(
                 bookingRepository,
+                bookingStayRepository,
                 mock(RabbitTemplate.class),
                 mock(BookingValidator.class),
                 mock(PricingService.class),
                 mock(CheckInOutService.class),
-                mock(BookingGuestService.class));
+                mock(BookingGuestService.class),
+                mock(CheckoutService.class));
 
         when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking(RatePlan.NON_REFUNDABLE, false)));
 

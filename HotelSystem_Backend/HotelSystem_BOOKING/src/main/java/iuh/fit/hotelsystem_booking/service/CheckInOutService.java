@@ -20,12 +20,12 @@ public class CheckInOutService {
         LocalTime time = checkInTime.toLocalTime();
         double oneNightPrice = booking.getPricePerNight() * (booking.getPriceMultiplier() != null ? booking.getPriceMultiplier() : 1.0);
 
-        if (time.isBefore(LocalTime.of(6, 0))) {
-            return oneNightPrice * (BookingConstants.EARLY_BEFORE_6_FEE_PERCENT / 100.0);
-        } else if (time.isBefore(LocalTime.of(10, 0))) {
-            return oneNightPrice * (BookingConstants.EARLY_6_TO_10_FEE_PERCENT / 100.0);
+        if (time.isBefore(LocalTime.of(7, 0))) {
+            return oneNightPrice * (BookingConstants.EARLY_BEFORE_7_FEE_PERCENT / 100.0);
+        } else if (time.isBefore(LocalTime.of(12, 0))) {
+            return oneNightPrice * (BookingConstants.EARLY_7_TO_12_FEE_PERCENT / 100.0);
         } else if (time.isBefore(LocalTime.of(14, 0))) {
-            return oneNightPrice * (BookingConstants.EARLY_10_TO_14_FEE_PERCENT / 100.0);
+            return oneNightPrice * (BookingConstants.EARLY_12_TO_14_FEE_PERCENT / 100.0);
         }
         
         return 0.0;
@@ -57,7 +57,7 @@ public class CheckInOutService {
         BigDecimal oneNightPrice = BigDecimal.valueOf(booking.getPricePerNight() != null ? booking.getPricePerNight() : 0.0)
                 .multiply(BigDecimal.valueOf(booking.getPriceMultiplier() != null ? booking.getPriceMultiplier() : 1.0));
         BigDecimal percent;
-        if (lateMinutes <= 120) {
+        if (lateMinutes < 120) {
             percent = BigDecimal.valueOf(BookingConstants.LATE_12_TO_14_FEE_PERCENT);
         } else if (lateMinutes <= 360) {
             percent = BigDecimal.valueOf(BookingConstants.LATE_14_TO_18_FEE_PERCENT);

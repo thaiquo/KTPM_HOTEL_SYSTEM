@@ -8,6 +8,7 @@ import iuh.fit.hotelsystem_booking.dto.StaffCheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffRejectRefundRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
@@ -62,6 +63,13 @@ public class StaffBookingController {
         return bookingService.getBooking(bookingId);
     }
 
+    @GetMapping("/bookings/{bookingId}/guests")
+    public List<BookingGuest> guests(@RequestHeader("Authorization") String authorization,
+                                     @PathVariable Long bookingId) {
+        staffAuthService.requireStaffOrAdmin(authorization);
+        return bookingService.getGuests(bookingId);
+    }
+
     @PostMapping("/bookings/{bookingId}/check-in")
     public ResponseEntity<Booking> checkIn(@RequestHeader("Authorization") String authorization,
                                            @PathVariable Long bookingId,
@@ -69,8 +77,23 @@ public class StaffBookingController {
         StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
         CheckInRequest checkInRequest = new CheckInRequest();
         checkInRequest.setStaffId(staff.getStaffId());
+        checkInRequest.setRepresentativeGuestId(request.getRepresentativeGuestId());
+        checkInRequest.setRepresentativePhone(request.getRepresentativePhone());
         checkInRequest.setRepresentativeCccd(request.getRepresentativeCccd());
         return ResponseEntity.ok(bookingService.checkIn(bookingId, checkInRequest));
+    }
+
+    @PutMapping("/bookings/{bookingId}/check-in-representative")
+    public ResponseEntity<Booking> updateCheckInRepresentative(@RequestHeader("Authorization") String authorization,
+                                                               @PathVariable Long bookingId,
+                                                               @RequestBody StaffCheckInRequest request) {
+        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+        CheckInRequest checkInRequest = new CheckInRequest();
+        checkInRequest.setStaffId(staff.getStaffId());
+        checkInRequest.setRepresentativeGuestId(request.getRepresentativeGuestId());
+        checkInRequest.setRepresentativePhone(request.getRepresentativePhone());
+        checkInRequest.setRepresentativeCccd(request.getRepresentativeCccd());
+        return ResponseEntity.ok(bookingService.updateCheckInRepresentative(bookingId, checkInRequest));
     }
 
     @GetMapping("/bookings/{bookingId}/check-in")

@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
+import iuh.fit.hotelsystem_booking.config.TimeConfig;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.BookingCreateRequest;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
@@ -33,7 +34,10 @@ import org.springframework.web.client.RestTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Comparator;
 
 @Service
 public class BookingService {
@@ -47,6 +51,7 @@ public class BookingService {
     private final PricingService pricingService;
     private final CheckInOutService checkInOutService;
     private final BookingGuestService bookingGuestService;
+    private final CheckoutService checkoutService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${payment.service.url:http://payment-service:8085}")
@@ -58,7 +63,8 @@ public class BookingService {
                           BookingValidator bookingValidator,
                           PricingService pricingService,
                           CheckInOutService checkInOutService,
-                          BookingGuestService bookingGuestService) {
+                          BookingGuestService bookingGuestService,
+                          CheckoutService checkoutService) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
         this.rabbitTemplate = rabbitTemplate;
@@ -66,6 +72,7 @@ public class BookingService {
         this.pricingService = pricingService;
         this.checkInOutService = checkInOutService;
         this.bookingGuestService = bookingGuestService;
+        this.checkoutService = checkoutService;
     }
 
     public Booking createBooking(Booking booking) {
@@ -212,7 +219,9 @@ public class BookingService {
     }
 
     public List<Booking> getStaffCheckoutList() {
-        return bookingRepository.findByStatusInOrderByCheckInAsc(List.of(BookingStatus.CHECKED_IN));
+        return bookingRepository.findByStatusInOrderByCheckInAsc(List.of(BookingStatus.CHECKED_IN)).stream()
+                .map(this::withStayTimes)
+                .toList();
     }
 
     public Booking checkIn(Long bookingId) {
@@ -229,16 +238,20 @@ public class BookingService {
         if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.DEPOSIT_PAID) {
             throw new IllegalStateException("Booking cannot be checked in with current status: " + booking.getStatus());
         }
+
+        LocalDateTime now = ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime();
+        if (booking.getCheckIn() != null && now.toLocalDate().isBefore(booking.getCheckIn())) {
+            throw new IllegalStateException("Booking cannot be checked in before check-in date");
+        }
+
         LocalDateTime standardCheckoutDateTime = booking.getCheckOut().atTime(BookingConstants.CHECK_OUT_HOUR, 0);
-        if (!LocalDateTime.now().isBefore(standardCheckoutDateTime)) {
+        if (!now.isBefore(standardCheckoutDateTime)) {
             throw new IllegalStateException("Booking can no longer be checked in after the standard check-out time");
         }
         if (request == null || request.getStaffId() == null) {
             throw new IllegalArgumentException("staffId is required");
         }
-        if (request.getRepresentativeCccd() == null || request.getRepresentativeCccd().isBlank()) {
-            throw new IllegalArgumentException("representativeCccd is required");
-        }
+        BookingGuest representative = resolveCheckInRepresentative(booking, request, now.toLocalDate());
 
         PaymentStatusResponse paymentStatus = getPaymentStatus(bookingId);
         double localPaidAmount = valueOrZero(booking.getPaidAmount());
@@ -252,10 +265,33 @@ public class BookingService {
             throw new IllegalStateException("Invoice is not PAID. Remaining amount: " + remaining);
         }
 
+        if (booking.getCheckIn() != null
+                && now.toLocalDate().isEqual(booking.getCheckIn())
+                && now.toLocalTime().isBefore(LocalTime.of(BookingConstants.CHECK_IN_HOUR, 0))) {
+            double fee = checkInOutService.calculateEarlyCheckInFee(booking, now);
+            if (fee > 0.01) {
+                PaymentStatusResponse earlyFeeStatus = restTemplate.getForObject(
+                        paymentServiceUrl + "/payments/bookings/" + bookingId + "/early-checkin-fee/status",
+                        PaymentStatusResponse.class);
+                boolean earlyFeePaid = earlyFeeStatus != null && "PAID".equalsIgnoreCase(earlyFeeStatus.getStatus());
+                if (!earlyFeePaid) {
+                    LateCheckoutPaymentRequest feeRequest = new LateCheckoutPaymentRequest();
+                    feeRequest.setBookingId(bookingId);
+                    feeRequest.setUserId(booking.getUserId());
+                    feeRequest.setAmount(fee);
+                    restTemplate.postForObject(
+                            paymentServiceUrl + "/payments/bookings/" + bookingId + "/early-checkin-fee",
+                            feeRequest,
+                            Object.class);
+                    throw new IllegalStateException("Early check-in fee payment is required. Amount: " + fee);
+                }
+            }
+        }
+
         BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
         stay.setBookingId(bookingId);
-        stay.setRepresentativeCccd(request.getRepresentativeCccd());
-        stay.setActualCheckInAt(LocalDateTime.now());
+        applyRepresentativeToStay(stay, representative, request);
+        stay.setActualCheckInAt(now);
         stay.setCheckedInByStaffId(request.getStaffId());
         stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
         bookingStayRepository.save(stay);
@@ -264,6 +300,21 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         publishBookingEvent(saved, "BookingCheckedInEvent");
         return saved;
+    }
+
+    @Transactional
+    public Booking updateCheckInRepresentative(Long bookingId, CheckInRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+        if (booking.getStatus() != BookingStatus.CHECKED_IN) {
+            throw new IllegalStateException("Check-in representative can only be changed after check-in");
+        }
+        BookingStay stay = bookingStayRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new IllegalStateException("Booking stay not found for booking: " + bookingId));
+        BookingGuest representative = resolveCheckInRepresentative(booking, request, LocalDate.now());
+        applyRepresentativeToStay(stay, representative, request);
+        bookingStayRepository.save(stay);
+        return withStayTimes(booking);
     }
 
     @Transactional
@@ -294,101 +345,22 @@ public class BookingService {
     public Booking checkOut(Long bookingId) {
         CheckOutRequest request = new CheckOutRequest();
         request.setStaffId(0L);
-        checkout(bookingId, request);
+        checkoutService.checkout(bookingId, request);
         return bookingRepository.findById(bookingId).orElseThrow();
     }
 
     @Transactional
     public CheckoutResponse checkout(Long bookingId, CheckOutRequest request) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-        if (booking.getStatus() != BookingStatus.CHECKED_IN) {
-            throw new IllegalStateException("Booking cannot be checked out with current status: " + booking.getStatus());
-        }
-        if (request == null || request.getStaffId() == null) {
-            throw new IllegalArgumentException("staffId is required");
-        }
-
-        LocalDateTime actualCheckOutAt = LocalDateTime.now();
-        int lateMinutes = checkInOutService.calculateLateCheckoutMinutes(booking, actualCheckOutAt);
-        BigDecimal lateFee = checkInOutService.calculateLateCheckoutFee(booking, lateMinutes);
-
-        BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
-        stay.setBookingId(bookingId);
-        stay.setActualCheckOutAt(actualCheckOutAt);
-        stay.setCheckedOutByStaffId(request.getStaffId());
-        stay.setLateCheckoutMinutes(lateMinutes);
-        stay.setLateCheckoutFee(lateFee);
-
-        boolean paymentRequired = lateFee.compareTo(BigDecimal.ZERO) > 0;
-        if (paymentRequired) {
-            stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.PENDING);
-            booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
-            LateCheckoutPaymentRequest paymentRequest = new LateCheckoutPaymentRequest();
-            paymentRequest.setBookingId(bookingId);
-            paymentRequest.setUserId(booking.getUserId());
-            paymentRequest.setAmount(lateFee.doubleValue());
-            restTemplate.postForObject(paymentServiceUrl + "/payments/bookings/" + bookingId + "/late-checkout-fee",
-                    paymentRequest, Object.class);
-            publishBookingEvent(booking, "LateCheckoutPaymentRequiredEvent");
-        } else {
-            stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
-            booking.setStatus(BookingStatus.CHECKED_OUT);
-            publishBookingEvent(booking, "BookingCheckedOutEvent");
-        }
-
-        bookingStayRepository.save(stay);
-        Booking saved = bookingRepository.save(booking);
-
-        CheckoutResponse response = new CheckoutResponse();
-        response.setBookingId(bookingId);
-        response.setLateMinutes(lateMinutes);
-        response.setLateCheckoutFee(lateFee);
-        response.setPaymentRequired(paymentRequired);
-        response.setBookingStatus(saved.getStatus().name());
-        return response;
+        return checkoutService.checkout(bookingId, request);
     }
 
     public CheckoutResponse calculateCheckout(Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-        if (booking.getStatus() != BookingStatus.CHECKED_IN) {
-            throw new IllegalStateException("Booking cannot be checked out with current status: " + booking.getStatus());
-        }
-        LocalDateTime actualCheckOutAt = LocalDateTime.now();
-        int lateMinutes = checkInOutService.calculateLateCheckoutMinutes(booking, actualCheckOutAt);
-        BigDecimal lateFee = checkInOutService.calculateLateCheckoutFee(booking, lateMinutes);
-
-        CheckoutResponse response = new CheckoutResponse();
-        response.setBookingId(bookingId);
-        response.setLateMinutes(lateMinutes);
-        response.setLateCheckoutFee(lateFee);
-        response.setPaymentRequired(lateFee.compareTo(BigDecimal.ZERO) > 0);
-        response.setBookingStatus(booking.getStatus().name());
-        return response;
+        return checkoutService.calculateCheckout(bookingId);
     }
 
     @Transactional
     public Booking completeCheckout(Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-        BookingStay stay = bookingStayRepository.findByBookingId(bookingId)
-                .orElseThrow(() -> new IllegalStateException("Checkout has not been started for booking: " + bookingId));
-        BigDecimal lateFee = stay.getLateCheckoutFee() != null ? stay.getLateCheckoutFee() : BigDecimal.ZERO;
-        if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
-            PaymentStatusResponse paymentStatus = restTemplate.getForObject(paymentServiceUrl
-                    + "/payments/bookings/" + bookingId + "/late-checkout-fee/status", PaymentStatusResponse.class);
-            if (paymentStatus == null || !"PAID".equalsIgnoreCase(paymentStatus.getStatus())) {
-                throw new IllegalStateException("Late checkout fee is not PAID");
-            }
-            stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.PAID);
-            bookingStayRepository.save(stay);
-        }
-
-        booking.setStatus(BookingStatus.CHECKED_OUT);
-        Booking saved = bookingRepository.save(booking);
-        publishBookingEvent(saved, "BookingCheckedOutEvent");
-        return saved;
+        return checkoutService.completeCheckout(bookingId);
     }
 
     private Booking normalizePaidBooking(Booking booking) {
@@ -417,6 +389,72 @@ public class BookingService {
         }
 
         return booking;
+    }
+
+    private Booking withStayTimes(Booking booking) {
+        if (booking == null || booking.getId() == null) {
+            return booking;
+        }
+        bookingStayRepository.findByBookingId(booking.getId()).ifPresent(stay -> {
+            booking.setActualCheckInAt(stay.getActualCheckInAt());
+            booking.setActualCheckOutAt(stay.getActualCheckOutAt());
+        });
+        return booking;
+    }
+
+    private BookingGuest resolveCheckInRepresentative(Booking booking, CheckInRequest request, LocalDate checkInDate) {
+        if (request == null || request.getRepresentativeGuestId() == null) {
+            throw new IllegalArgumentException("representativeGuestId is required");
+        }
+        String cccd = clean(request.getRepresentativeCccd());
+        if (!cccd.matches("\\d{12}")) {
+            throw new IllegalArgumentException("representativeCccd must contain exactly 12 digits");
+        }
+        BookingGuest representative = bookingGuestService.getGuests(booking.getId()).stream()
+                .filter(guest -> request.getRepresentativeGuestId().equals(guest.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Check-in representative must be one of booking guests"));
+        if (!representative.isAdultOn(checkInDate)) {
+            throw new IllegalArgumentException("Check-in representative must be at least 18 years old");
+        }
+        String phone = clean(request.getRepresentativePhone());
+        if (phone.isBlank()) {
+            phone = clean(representative.getPhone());
+        }
+        if (phone.isBlank()) {
+            throw new IllegalArgumentException("representativePhone is required when selected guest has no phone");
+        }
+        List<BookingGuest> guests = bookingGuestService.getGuests(booking.getId());
+        for (BookingGuest guest : guests) {
+            boolean selected = guest.getId().equals(representative.getId());
+            guest.setCheckInPerson(selected);
+            if (selected) {
+                guest.setPhone(phone);
+                guest.setCccd(cccd);
+            }
+        }
+        representative.setPhone(phone);
+        representative.setCccd(cccd);
+        representative.setCheckInPerson(true);
+        bookingGuestService.saveGuests(booking.getId(), guests.stream()
+                .sorted(Comparator.comparing(BookingGuest::getId))
+                .toList());
+        return representative;
+    }
+
+    private void applyRepresentativeToStay(BookingStay stay, BookingGuest representative, CheckInRequest request) {
+        String phone = clean(request.getRepresentativePhone());
+        if (phone.isBlank()) {
+            phone = clean(representative.getPhone());
+        }
+        stay.setRepresentativeGuestId(representative.getId());
+        stay.setRepresentativeFullName(representative.getFullName());
+        stay.setRepresentativePhone(phone);
+        stay.setRepresentativeCccd(clean(request.getRepresentativeCccd()));
+    }
+
+    private String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private PaymentStatusResponse getPaymentStatus(Long bookingId) {

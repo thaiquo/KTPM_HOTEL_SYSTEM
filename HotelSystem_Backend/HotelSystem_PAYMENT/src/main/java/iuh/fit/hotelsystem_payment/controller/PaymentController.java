@@ -8,6 +8,7 @@ import iuh.fit.hotelsystem_payment.dto.MoMoResponse;
 import iuh.fit.hotelsystem_payment.dto.OperationalPaymentRequest;
 import iuh.fit.hotelsystem_payment.dto.PaymentStatusResponse;
 import iuh.fit.hotelsystem_payment.dto.RefundPaymentRequest;
+import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutRefundRequest;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
@@ -131,6 +132,25 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.createLateCheckoutFee(bookingId, request));
     }
 
+    @PostMapping("/bookings/{bookingId}/early-checkin-fee")
+    public ResponseEntity<Payment> earlyCheckinFee(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestBody OperationalPaymentRequest request) {
+        return ResponseEntity.ok(paymentService.createEarlyCheckinFee(bookingId, request));
+    }
+
+    @PostMapping("/bookings/{bookingId}/early-checkin-fee/paid")
+    public ResponseEntity<Payment> markEarlyCheckinFeePaid(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.markEarlyCheckinFeePaid(bookingId));
+    }
+
+    @GetMapping("/bookings/{bookingId}/early-checkin-fee/status")
+    public ResponseEntity<PaymentStatusResponse> earlyCheckinFeeStatus(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
+        return ResponseEntity.ok(paymentService.getEarlyCheckinFeeStatus(bookingId));
+    }
+
     @PostMapping("/bookings/{bookingId}/late-checkout-fee/paid")
     public ResponseEntity<Payment> markLateCheckoutFeePaid(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
@@ -141,6 +161,14 @@ public class PaymentController {
     public ResponseEntity<PaymentStatusResponse> lateCheckoutFeeStatus(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
         return ResponseEntity.ok(paymentService.getLateCheckoutFeeStatus(bookingId));
+    }
+
+    @PostMapping("/bookings/{bookingId}/early-checkout-refund")
+    public ResponseEntity<Payment> earlyCheckoutRefund(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestBody EarlyCheckoutRefundRequest request) {
+        request.setBookingId(bookingId);
+        return ResponseEntity.ok(paymentService.createEarlyCheckoutRefund(request));
     }
 
     @PostMapping("/refunds/{refundRequestId}")

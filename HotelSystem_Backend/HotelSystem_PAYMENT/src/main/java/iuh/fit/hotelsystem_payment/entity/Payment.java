@@ -20,6 +20,9 @@ public class Payment {
 
     private Long bookingId;
     private Long userId;
+    private Long payerGuestId;
+    private String payerName;
+    private String payerPhone;
 
     private Double totalAmount;
     private Double paidAmount;
@@ -69,6 +72,15 @@ public class Payment {
     public void setUserId(Long userId) {
         this.userId = userId;
     }
+
+    public Long getPayerGuestId() { return payerGuestId; }
+    public void setPayerGuestId(Long payerGuestId) { this.payerGuestId = payerGuestId; }
+
+    public String getPayerName() { return payerName; }
+    public void setPayerName(String payerName) { this.payerName = payerName; }
+
+    public String getPayerPhone() { return payerPhone; }
+    public void setPayerPhone(String payerPhone) { this.payerPhone = payerPhone; }
 
     public Double getTotalAmount() {
         return totalAmount;

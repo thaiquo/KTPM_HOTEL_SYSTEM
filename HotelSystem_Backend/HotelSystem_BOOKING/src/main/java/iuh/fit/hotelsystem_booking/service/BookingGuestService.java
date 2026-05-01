@@ -79,6 +79,8 @@ public class BookingGuestService {
         guest.setDateOfBirth(request.getDateOfBirth());
         guest.setPhone(clean(request.getPhone()));
         guest.setEmail(clean(request.getEmail()));
+        guest.setCccd(clean(request.getCccd()));
+        guest.setNote(clean(request.getNote()));
         guest.setType(resolveType(request.getDateOfBirth(), LocalDate.now()));
         return guestRepository.save(guest);
     }
@@ -89,6 +91,8 @@ public class BookingGuestService {
         guest.setDateOfBirth(request.getDateOfBirth());
         guest.setPhone(clean(request.getPhone()));
         guest.setEmail(clean(request.getEmail()));
+        guest.setCccd(clean(request.getCccd()));
+        guest.setNote(clean(request.getNote()));
         guest.setPrimaryGuest(Boolean.TRUE.equals(request.getPrimary()));
         guest.setCheckInPerson(Boolean.TRUE.equals(request.getCheckInPerson()));
         guest.setType(resolveType(request.getDateOfBirth(), checkIn));
