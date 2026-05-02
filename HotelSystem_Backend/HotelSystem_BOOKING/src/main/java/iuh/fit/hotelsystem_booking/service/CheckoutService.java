@@ -8,27 +8,36 @@ import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
 import iuh.fit.hotelsystem_booking.dto.EarlyCheckoutRefundResult;
+import iuh.fit.hotelsystem_booking.dto.RefundAllocationLineDto;
 import iuh.fit.hotelsystem_booking.entity.CheckoutType;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
+import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingStay;
 import iuh.fit.hotelsystem_booking.entity.LateCheckoutPaymentStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 @Service
 public class CheckoutService {
 
+    private static final Logger log = LoggerFactory.getLogger(CheckoutService.class);
+
     private final BookingRepository bookingRepository;
     private final BookingStayRepository bookingStayRepository;
+    private final BookingGuestService bookingGuestService;
     private final CheckInOutService checkInOutService;
     private final RefundCalculationService refundCalculationService;
     private final RabbitTemplate rabbitTemplate;
@@ -37,6 +46,7 @@ public class CheckoutService {
 
     public CheckoutService(BookingRepository bookingRepository,
                            BookingStayRepository bookingStayRepository,
+                           BookingGuestService bookingGuestService,
                            CheckInOutService checkInOutService,
                            RefundCalculationService refundCalculationService,
                            RabbitTemplate rabbitTemplate,
@@ -44,6 +54,7 @@ public class CheckoutService {
                            ObjectProvider<Clock> clockProvider) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
+        this.bookingGuestService = bookingGuestService;
         this.checkInOutService = checkInOutService;
         this.refundCalculationService = refundCalculationService;
         this.rabbitTemplate = rabbitTemplate;
@@ -65,9 +76,24 @@ public class CheckoutService {
         int lateMinutes = calculateLateMinutesForCheckout(booking, actualCheckOutAt, early.isEarlyCheckout());
         BigDecimal lateFee = checkInOutService.calculateLateCheckoutFee(booking, lateMinutes);
 
-        CheckoutResponse response = buildResponse(bookingId, actualCheckOutAt, booking.getStatus(), lateMinutes, lateFee, early, booking);
-        applyRepresentative(response, stay);
+        CheckoutResponse response = buildResponse(bookingId, actualCheckOutAt, booking.getStatus(), lateMinutes, lateFee, early, booking, true);
+        RepresentativeView rep = resolveRepresentative(bookingId, stay);
+        applyRepresentativeToResponse(response, rep);
+        attachRefundAllocationPreview(bookingId, early, response);
         return response;
+    }
+
+    private void attachRefundAllocationPreview(Long bookingId, EarlyCheckoutRefundResult early, CheckoutResponse response) {
+        if (early.getRefundAmount() == null || early.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        try {
+            List<RefundAllocationLineDto> lines = paymentClient.previewRefundAllocation(bookingId, early.getRefundAmount());
+            response.setRefundAllocations(lines != null ? lines : Collections.emptyList());
+        } catch (Exception ex) {
+            log.warn("Could not load refund allocation preview for booking {}: {}", bookingId, ex.getMessage());
+            response.setRefundAllocations(Collections.emptyList());
+        }
     }
 
     @Transactional
@@ -81,7 +107,11 @@ public class CheckoutService {
             throw new IllegalArgumentException("staffId is required");
         }
 
-        BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
+        BookingStay stayExisting = bookingStayRepository.findByBookingId(bookingId).orElse(null);
+        RepresentativeView rep = resolveRepresentative(bookingId, stayExisting);
+        validateCheckoutVerifier(rep, request);
+
+        BookingStay stay = stayExisting != null ? stayExisting : new BookingStay();
         LocalDateTime actualCheckOutAt = LocalDateTime.now(clock);
         EarlyCheckoutRefundResult early = refundCalculationService.calculateEarlyCheckoutRefund(booking, stay, actualCheckOutAt);
 
@@ -100,9 +130,17 @@ public class CheckoutService {
         stay.setRefundRate(early.getRefundRate());
         stay.setRefundAmount(early.getRefundAmount());
 
+        if (Boolean.TRUE.equals(request.getVerificationOverride())) {
+            stay.setCheckoutVerifiedManualOverride(true);
+            stay.setCheckoutVerificationOverrideReason(request.getOverrideReason());
+        } else {
+            stay.setCheckoutVerifiedManualOverride(false);
+            stay.setCheckoutVerificationOverrideReason(null);
+        }
+
         if (early.getRefundAmount() != null && early.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
             booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUND_PENDING);
-            paymentClient.requestEarlyCheckoutRefund(bookingId, booking.getUserId(), early.getRefundAmount());
+            paymentClient.requestEarlyCheckoutRefund(bookingId, early.getRefundAmount(), "EARLY_CHECKOUT", request.getStaffId());
         }
 
         boolean paymentRequired = lateFee.compareTo(BigDecimal.ZERO) > 0;
@@ -120,9 +158,9 @@ public class CheckoutService {
         bookingStayRepository.save(stay);
         Booking saved = bookingRepository.save(booking);
 
-        CheckoutResponse response = buildResponse(bookingId, actualCheckOutAt, saved.getStatus(), lateMinutes, lateFee, early, booking);
+        CheckoutResponse response = buildResponse(bookingId, actualCheckOutAt, saved.getStatus(), lateMinutes, lateFee, early, booking, false);
         response.setPaymentRequired(paymentRequired);
-        applyRepresentative(response, stay);
+        applyRepresentativeToResponse(response, rep);
         return response;
     }
 
@@ -154,7 +192,8 @@ public class CheckoutService {
                                           int lateMinutes,
                                           BigDecimal lateFee,
                                           EarlyCheckoutRefundResult early,
-                                          Booking booking) {
+                                          Booking booking,
+                                          boolean preview) {
         CheckoutResponse response = new CheckoutResponse();
         response.setBookingId(bookingId);
         response.setActualCheckoutAt(actualCheckoutAt);
@@ -169,11 +208,17 @@ public class CheckoutService {
         response.setUnusedNights(early.getUnusedNights());
         response.setRefundRate(early.getRefundRate());
         response.setRefundAmount(early.getRefundAmount());
+        response.setEffectivePricePerNight(early.getEffectivePricePerNight());
         response.setPaymentRequired(lateFee != null && lateFee.compareTo(BigDecimal.ZERO) > 0);
         response.setCheckoutType(resolveCheckoutType(early.isEarlyCheckout(), lateFee));
         response.setFinalAmount(resolveFinalAmount(lateFee, early.getRefundAmount()));
         response.setRoomNextStatus(null);
-        response.setMessage(buildMessage(response, booking));
+        if (booking != null && booking.getRatePlan() != null) {
+            response.setRateType(booking.getRatePlan().name());
+        }
+        boolean refundRequired = early.getRefundAmount() != null && early.getRefundAmount().compareTo(BigDecimal.ZERO) > 0;
+        response.setRefundRequired(refundRequired);
+        response.setMessage(buildMessage(response, booking, preview));
         return response;
     }
 
@@ -191,16 +236,108 @@ public class CheckoutService {
         return fee.subtract(refund);
     }
 
-    private String buildMessage(CheckoutResponse response, Booking booking) {
+    private String buildMessage(CheckoutResponse response, Booking booking, boolean preview) {
         if (response == null) return null;
         if (response.isPaymentRequired()) {
-            return "Late checkout fee payment is required to complete checkout.";
+            return "Cần thu phí checkout trễ trước khi hoàn tất checkout.";
         }
-        if (booking != null && booking.getPaymentStatus() != null
+        if (preview && CheckoutType.EARLY.name().equals(response.getCheckoutType())
+                && Boolean.TRUE.equals(response.getRefundRequired())) {
+            return "Checkout sớm. Hệ thống sẽ tạo yêu cầu hoàn tiền theo giao dịch thanh toán gốc.";
+        }
+        if (!preview && booking != null && booking.getPaymentStatus() != null
                 && BookingConstants.PAYMENT_STATUS_REFUND_PENDING.equalsIgnoreCase(booking.getPaymentStatus())) {
-            return "Early checkout refund request has been created and is pending.";
+            return "Đã gửi yêu cầu hoàn tiền sang Payment Service (theo người đã thanh toán từng khoản).";
         }
         return "Checkout calculated successfully.";
+    }
+
+    /**
+     * Một lần resolve + tái dùng cho xác minh và response (tránh gọi {@code getGuests} hai lần).
+     */
+    private RepresentativeView resolveRepresentative(Long bookingId, BookingStay stay) {
+        if (stay != null && hasText(stay.getRepresentativeFullName())) {
+            return new RepresentativeView(
+                    stay.getRepresentativeGuestId(),
+                    stay.getRepresentativeFullName(),
+                    stay.getRepresentativePhone(),
+                    stay.getRepresentativeCccd());
+        }
+        List<BookingGuest> guests = bookingGuestService.getGuests(bookingId);
+        BookingGuest guest = pickRepresentativeGuest(guests);
+        if (guest != null && hasText(guest.getFullName())) {
+            return new RepresentativeView(guest.getId(), guest.getFullName(), guest.getPhone(), guest.getCccd());
+        }
+        if (stay != null) {
+            return new RepresentativeView(
+                    stay.getRepresentativeGuestId(),
+                    stay.getRepresentativeFullName(),
+                    stay.getRepresentativePhone(),
+                    stay.getRepresentativeCccd());
+        }
+        return RepresentativeView.EMPTY;
+    }
+
+    /** Một vòng lặp: ưu tiên người check-in, không thì khách chính. */
+    private static BookingGuest pickRepresentativeGuest(List<BookingGuest> guests) {
+        BookingGuest primary = null;
+        for (BookingGuest g : guests) {
+            if (Boolean.TRUE.equals(g.getCheckInPerson())) {
+                return g;
+            }
+            if (primary == null && Boolean.TRUE.equals(g.getPrimaryGuest())) {
+                primary = g;
+            }
+        }
+        return primary;
+    }
+
+    /**
+     * Staff đối chiếu người đứng quầy với thông tin đại diện đã lưu lúc check-in (hiển thị read-only trên UI).
+     * Không bắt nhập lại họ tên/SĐT/CCCD — chỉ xử lý override có lý do khi cần ngoại lệ.
+     */
+    private void validateCheckoutVerifier(RepresentativeView rep, CheckOutRequest request) {
+        if (!rep.requiresVerification()) {
+            return;
+        }
+        if (Boolean.TRUE.equals(request.getVerificationOverride())) {
+            if (request.getOverrideReason() == null || request.getOverrideReason().isBlank()) {
+                throw new IllegalArgumentException("overrideReason is required when verificationOverride is true");
+            }
+        }
+    }
+
+    private void applyRepresentativeToResponse(CheckoutResponse response, RepresentativeView rep) {
+        if (!rep.hasRepresentativeInfo()) {
+            return;
+        }
+        response.setRepresentativeGuestId(rep.guestId());
+        response.setRepresentativeFullName(rep.fullName());
+        response.setRepresentativePhone(rep.phone());
+        response.setRepresentativeCccd(rep.cccd());
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /**
+     * Snapshot đại diện — dùng chung cho modal staff và rule xác minh.
+     */
+    private record RepresentativeView(Long guestId, String fullName, String phone, String cccd) {
+        static final RepresentativeView EMPTY = new RepresentativeView(null, null, null, null);
+
+        boolean hasRepresentativeInfo() {
+            return guestId != null || hasText(fullName) || hasText(phone) || hasText(cccd);
+        }
+
+        boolean requiresVerification() {
+            return hasText(fullName);
+        }
+
+        private static boolean hasText(String s) {
+            return s != null && !s.isBlank();
+        }
     }
 
     private int calculateLateMinutesForCheckout(Booking booking, LocalDateTime actualCheckOutAt, boolean earlyCheckout) {
@@ -214,15 +351,5 @@ public class CheckoutService {
     private void publishBookingEvent(Booking booking, String status) {
         BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), status);
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "booking.status", event);
-    }
-
-    private void applyRepresentative(CheckoutResponse response, BookingStay stay) {
-        if (response == null || stay == null) {
-            return;
-        }
-        response.setRepresentativeGuestId(stay.getRepresentativeGuestId());
-        response.setRepresentativeFullName(stay.getRepresentativeFullName());
-        response.setRepresentativePhone(stay.getRepresentativePhone());
-        response.setRepresentativeCccd(stay.getRepresentativeCccd());
     }
 }

@@ -104,6 +104,13 @@ type PaymentBackend = {
   createdAt?: string;
 };
 
+type CheckinQrBackend = {
+  paymentCode?: string;
+  amount?: number;
+  confirmUrl?: string;
+  expiredAt?: string;
+};
+
 type NotificationBackend = {
   id?: number | string;
   bookingId?: number | string;
@@ -146,6 +153,21 @@ export type PaymentRecord = {
   vnpTransactionNo?: string;
   vnpResponseCode?: string;
   createdAt: string;
+};
+
+export type CheckinQrPayment = {
+  paymentCode: string;
+  amount: number;
+  confirmUrl: string;
+  expiredAt: string;
+};
+
+export type CheckinPaymentStatus = {
+  paymentCode: string;
+  bookingId: string;
+  bookingCode: string;
+  amount: number;
+  status: string;
 };
 
 export type UserNotification = {
@@ -537,6 +559,48 @@ const mapPayment = (payment: PaymentBackend): PaymentRecord => ({
   createdAt: payment.createdAt || '',
 });
 
+/**
+ * URL trong QR phải là địa chỉ laptop trên LAN (vd. http://192.168.1.5:3000), không dùng localhost —
+ * điện thoại quét QR sẽ mở trên chính máy điện thoại nếu dùng localhost.
+ * - Đặt VITE_PUBLIC_APP_ORIGIN=http://<LAN-IP>:3000 khi nhân viên mở staff bằng http://localhost:3000
+ * - Hoặc mở staff trực tiếp bằng http://<LAN-IP>:3000 (không cần env nếu backend confirmUrl vẫn là localhost)
+ */
+const normalizeConfirmUrl = (confirmUrl: string, paymentCode: string) => {
+  const path = `/payment/confirm?code=${encodeURIComponent(paymentCode)}`;
+  const envOrigin = (import.meta.env.VITE_PUBLIC_APP_ORIGIN as string | undefined)?.trim().replace(/\/$/, '');
+  if (envOrigin) {
+    return `${envOrigin}${path}`;
+  }
+  if (confirmUrl && !confirmUrl.includes('localhost') && !confirmUrl.includes('127.0.0.1')) {
+    return confirmUrl;
+  }
+  const origin = window.location.origin.replace(/\/$/, '');
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.warn(
+      '[HotelSystem] QR thanh toán: điện thoại không truy cập được localhost. Thêm VITE_PUBLIC_APP_ORIGIN=http://<IP-LAN>:3000 vào .env hoặc mở trang nhân viên qua IP LAN.'
+    );
+  }
+  return `${origin}${path}`;
+};
+
+const mapCheckinQr = (payment: CheckinQrBackend): CheckinQrPayment => {
+  const paymentCode = payment.paymentCode || '';
+  return {
+    paymentCode,
+    amount: Number(payment.amount || 0),
+    confirmUrl: normalizeConfirmUrl(payment.confirmUrl || '', paymentCode),
+    expiredAt: payment.expiredAt || '',
+  };
+};
+
+const mapCheckinPaymentStatus = (payment: any): CheckinPaymentStatus => ({
+  paymentCode: String(payment?.paymentCode || ''),
+  bookingId: String(payment?.bookingId || ''),
+  bookingCode: String(payment?.bookingCode || payment?.bookingId || ''),
+  amount: Number(payment?.amount || 0),
+  status: String(payment?.status || ''),
+});
+
 const extractPaymentList = (payload: unknown): PaymentRecord[] => {
   if (Array.isArray(payload)) {
     return payload.map((item) => mapPayment(item as PaymentBackend));
@@ -618,6 +682,19 @@ const extractRefundList = (payload: unknown): RefundRecord[] => {
 
 export type PaymentType = 'DEPOSIT' | 'FULL' | 'REMAINING';
 
+export type RefundAllocationLine = {
+  amount?: number;
+  receiverType?: string;
+  receiverUserId?: number;
+  receiverGuestId?: number;
+  receiverName?: string;
+  receiverPhone?: string;
+  sourcePaymentPurpose?: string;
+  refundChannel?: string;
+  /** Dòng mô tả đầy đủ từ backend */
+  recipientSummaryVi?: string;
+};
+
 export type CheckoutResponse = {
   bookingId: string;
   lateMinutes: number;
@@ -628,6 +705,8 @@ export type CheckoutResponse = {
   totalNights?: number;
   refundAmount?: number;
   refundRate?: number;
+  /** Giá 1 đêm tham chiếu từ backend (công thức hoàn tiền) */
+  effectivePricePerNight?: number;
   finalAmount?: number;
   usedNights?: number;
   chargeNights?: number;
@@ -637,6 +716,7 @@ export type CheckoutResponse = {
   representativePhone?: string;
   representativeCccd?: string;
   message?: string;
+  refundAllocations?: RefundAllocationLine[];
 };
 
 const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
@@ -722,6 +802,43 @@ export const paymentApi = {
     const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/early-checkin-fee/paid`);
     return mapPayment(response.data as PaymentBackend);
   },
+
+  createCheckinQr: async (payload: {
+    bookingId: string;
+    amount: number;
+    method: 'BANK_TRANSFER';
+    type: 'CHECKIN_REMAINING_PAYMENT';
+  }): Promise<CheckinQrPayment> => {
+    const response = await paymentHttp.post<unknown>('/payments/checkin-qr', {
+      bookingId: Number(payload.bookingId),
+      amount: payload.amount,
+      method: payload.method,
+      type: payload.type,
+    });
+    return mapCheckinQr(response.data as CheckinQrBackend);
+  },
+
+  getCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.get<unknown>('/payments/checkin-qr', { params: { code: paymentCode } });
+    return mapCheckinPaymentStatus(response.data);
+  },
+
+  confirmCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.post<unknown>(`/payments/${paymentCode}/confirm`);
+    return mapCheckinPaymentStatus(response.data);
+  },
+
+  cancelCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.post<unknown>(`/payments/${paymentCode}/cancel`);
+    return mapCheckinPaymentStatus(response.data);
+  },
+};
+
+export const buildPaymentSocketUrl = () => {
+  const configured = import.meta.env.VITE_PAYMENT_WS_URL as string | undefined;
+  if (configured) return configured;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/payment-api/ws/payments`;
 };
 
 export const notificationApi = {
@@ -748,6 +865,51 @@ export const refundApi = {
     );
   },
 };
+
+function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): CheckoutResponse {
+  const rawLines = data?.refundAllocations;
+  let refundAllocations: RefundAllocationLine[] | undefined;
+  if (Array.isArray(rawLines)) {
+    refundAllocations = rawLines.map((line: Record<string, unknown>) => ({
+      amount: line.amount != null ? Number(line.amount) : undefined,
+      receiverType: line.receiverType != null ? String(line.receiverType) : undefined,
+      receiverUserId: line.receiverUserId != null ? Number(line.receiverUserId) : undefined,
+      receiverGuestId: line.receiverGuestId != null ? Number(line.receiverGuestId) : undefined,
+      receiverName: line.receiverName != null ? String(line.receiverName) : undefined,
+      receiverPhone: line.receiverPhone != null ? String(line.receiverPhone) : undefined,
+      sourcePaymentPurpose:
+        line.sourcePaymentPurpose != null ? String(line.sourcePaymentPurpose) : undefined,
+      refundChannel: line.refundChannel != null ? String(line.refundChannel) : undefined,
+      recipientSummaryVi:
+        line.recipientSummaryVi != null ? String(line.recipientSummaryVi) : undefined,
+    }));
+  }
+  return {
+    bookingId: String(data?.bookingId ?? bookingId),
+    lateMinutes: Number(data?.lateMinutes || 0),
+    lateCheckoutFee: Number(data?.lateCheckoutFee || 0),
+    paymentRequired: Boolean(data?.paymentRequired),
+    bookingStatus: String(data?.bookingStatus || ''),
+    checkoutType: data?.checkoutType != null ? String(data.checkoutType) : undefined,
+    totalNights: data?.totalNights != null ? Number(data.totalNights) : undefined,
+    refundAmount: data?.refundAmount != null ? Number(data.refundAmount) : undefined,
+    refundRate: data?.refundRate != null ? Number(data.refundRate) : undefined,
+    finalAmount: data?.finalAmount != null ? Number(data.finalAmount) : undefined,
+    usedNights: data?.usedNights != null ? Number(data.usedNights) : undefined,
+    chargeNights: data?.chargeNights != null ? Number(data.chargeNights) : undefined,
+    unusedNights: data?.unusedNights != null ? Number(data.unusedNights) : undefined,
+    effectivePricePerNight:
+      data?.effectivePricePerNight != null ? Number(data.effectivePricePerNight) : undefined,
+    representativeGuestId:
+      data?.representativeGuestId != null ? String(data.representativeGuestId) : undefined,
+    representativeFullName:
+      data?.representativeFullName != null ? String(data.representativeFullName) : undefined,
+    representativePhone: data?.representativePhone != null ? String(data.representativePhone) : undefined,
+    representativeCccd: data?.representativeCccd != null ? String(data.representativeCccd) : undefined,
+    message: data?.message != null ? String(data.message) : undefined,
+    refundAllocations,
+  };
+}
 
 export const staffBookingApi = {
   getCheckInList: async (): Promise<Booking[]> => {
@@ -817,50 +979,22 @@ export const staffBookingApi = {
 
   calculateCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
     const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/calculate`);
-    return {
-      bookingId: String(response.data.bookingId ?? bookingId),
-      lateMinutes: Number(response.data.lateMinutes || 0),
-      lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
-      paymentRequired: Boolean(response.data.paymentRequired),
-      bookingStatus: response.data.bookingStatus || '',
-      checkoutType: response.data.checkoutType || undefined,
-      totalNights: response.data.totalNights != null ? Number(response.data.totalNights) : undefined,
-      refundAmount: response.data.refundAmount != null ? Number(response.data.refundAmount) : undefined,
-      refundRate: response.data.refundRate != null ? Number(response.data.refundRate) : undefined,
-      finalAmount: response.data.finalAmount != null ? Number(response.data.finalAmount) : undefined,
-      usedNights: response.data.usedNights != null ? Number(response.data.usedNights) : undefined,
-      chargeNights: response.data.chargeNights != null ? Number(response.data.chargeNights) : undefined,
-      unusedNights: response.data.unusedNights != null ? Number(response.data.unusedNights) : undefined,
-      representativeGuestId: response.data.representativeGuestId != null ? String(response.data.representativeGuestId) : undefined,
-      representativeFullName: response.data.representativeFullName || undefined,
-      representativePhone: response.data.representativePhone || undefined,
-      representativeCccd: response.data.representativeCccd || undefined,
-      message: response.data.message || undefined,
-    };
+    return mapCheckoutResponse(response.data, bookingId);
   },
 
-  confirmCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
-    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/confirm`);
-    return {
-      bookingId: String(response.data.bookingId ?? bookingId),
-      lateMinutes: Number(response.data.lateMinutes || 0),
-      lateCheckoutFee: Number(response.data.lateCheckoutFee || 0),
-      paymentRequired: Boolean(response.data.paymentRequired),
-      bookingStatus: response.data.bookingStatus || '',
-      checkoutType: response.data.checkoutType || undefined,
-      totalNights: response.data.totalNights != null ? Number(response.data.totalNights) : undefined,
-      refundAmount: response.data.refundAmount != null ? Number(response.data.refundAmount) : undefined,
-      refundRate: response.data.refundRate != null ? Number(response.data.refundRate) : undefined,
-      finalAmount: response.data.finalAmount != null ? Number(response.data.finalAmount) : undefined,
-      usedNights: response.data.usedNights != null ? Number(response.data.usedNights) : undefined,
-      chargeNights: response.data.chargeNights != null ? Number(response.data.chargeNights) : undefined,
-      unusedNights: response.data.unusedNights != null ? Number(response.data.unusedNights) : undefined,
-      representativeGuestId: response.data.representativeGuestId != null ? String(response.data.representativeGuestId) : undefined,
-      representativeFullName: response.data.representativeFullName || undefined,
-      representativePhone: response.data.representativePhone || undefined,
-      representativeCccd: response.data.representativeCccd || undefined,
-      message: response.data.message || undefined,
-    };
+  confirmCheckout: async (
+    bookingId: string,
+    payload?: {
+      verifierFullName?: string;
+      verifierPhone?: string;
+      verifierCccd?: string;
+      earlyCheckoutReason?: string;
+      verificationOverride?: boolean;
+      overrideReason?: string;
+    }
+  ): Promise<CheckoutResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/confirm`, payload ?? {});
+    return mapCheckoutResponse(response.data, bookingId);
   },
 
   completeCheckout: async (bookingId: string): Promise<Booking> => {

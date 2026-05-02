@@ -32,6 +32,9 @@ public class RefundCalculationService {
 
         int totalNights = resolveTotalNights(booking);
         result.setTotalNights(totalNights);
+        BigDecimal nightlyReference = totalNights > 0 ? resolveEffectivePricePerNight(booking, totalNights) : BigDecimal.ZERO;
+        result.setEffectivePricePerNight(nightlyReference);
+
         if (!early || totalNights <= 0) {
             result.setUsedNights(totalNights > 0 ? totalNights : 0);
             result.setChargeNights(totalNights > 0 ? totalNights : 0);
@@ -55,7 +58,7 @@ public class RefundCalculationService {
             return result;
         }
 
-        BigDecimal pricePerNight = resolveEffectivePricePerNight(booking, totalNights);
+        BigDecimal pricePerNight = nightlyReference;
         BigDecimal refundRate = BigDecimal.valueOf(BookingConstants.EARLY_CHECKOUT_REFUND_RATE);
         BigDecimal refundAmount = BigDecimal.valueOf(unusedNights).multiply(pricePerNight).multiply(refundRate)
                 .setScale(2, RoundingMode.HALF_UP);

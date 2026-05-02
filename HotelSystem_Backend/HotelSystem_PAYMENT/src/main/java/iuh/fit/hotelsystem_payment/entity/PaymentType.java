@@ -4,6 +4,7 @@ public enum PaymentType {
     DEPOSIT,
     FULL,
     REMAINING,
+    CHECKIN_REMAINING_PAYMENT,
     EARLY_CHECKIN_FEE,
     LATE_CHECKOUT_FEE,
     REFUND

@@ -9,6 +9,7 @@ import iuh.fit.hotelsystem_booking.dto.BookingModificationRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
+import iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.GuestRequest;
 import iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.PaymentStatusResponse;
@@ -340,6 +341,46 @@ public class BookingService {
             booking.setPaymentTransactionId(request.getTransactionId());
         }
         return bookingRepository.save(booking);
+    }
+
+    @Transactional
+    public Booking confirmCheckinPayment(Long bookingId, ConfirmCheckinPaymentRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+        if (request == null || request.getPaymentCode() == null || request.getPaymentCode().isBlank()) {
+            throw new IllegalArgumentException("paymentCode is required");
+        }
+        if (request.getAmount() == null || request.getAmount() <= 0) {
+            throw new IllegalArgumentException("amount must be greater than zero");
+        }
+        if (booking.getStatus() == BookingStatus.CHECKED_IN) {
+            return withStayTimes(booking);
+        }
+        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.DEPOSIT_PAID) {
+            throw new IllegalStateException("Booking cannot be checked in with current status: " + booking.getStatus());
+        }
+
+        double paid = valueOrZero(booking.getPaidAmount()) + request.getAmount();
+        double total = valueOrZero(booking.getFinalTotal());
+        booking.setPaidAmount(paid);
+        booking.setPaymentStatus("PAID");
+        booking.setPaymentTransactionId(request.getPaymentCode());
+        booking.setStatus(BookingStatus.CHECKED_IN);
+
+        BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
+        stay.setBookingId(bookingId);
+        stay.setActualCheckInAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime());
+        stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
+        bookingStayRepository.save(stay);
+
+        if (paid + 0.01 < total) {
+            log.warn("Check-in payment confirmed but booking still appears underpaid. bookingId={}, paid={}, total={}",
+                    bookingId, paid, total);
+        }
+
+        Booking saved = bookingRepository.save(booking);
+        publishBookingEvent(saved, "BookingCheckedInEvent");
+        return withStayTimes(saved);
     }
 
     public Booking checkOut(Long bookingId) {

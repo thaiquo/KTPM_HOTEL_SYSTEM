@@ -10,6 +10,8 @@ public class EarlyCheckoutRefundResult {
     private int unusedNights;
     private BigDecimal refundRate;
     private BigDecimal refundAmount;
+    /** Giá một đêm tham chiếu (hiển thị công thức), luôn gửi khi tính được từ booking */
+    private BigDecimal effectivePricePerNight;
 
     public boolean isEarlyCheckout() { return earlyCheckout; }
     public void setEarlyCheckout(boolean earlyCheckout) { this.earlyCheckout = earlyCheckout; }
@@ -31,5 +33,10 @@ public class EarlyCheckoutRefundResult {
 
     public BigDecimal getRefundAmount() { return refundAmount; }
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
+
+    public BigDecimal getEffectivePricePerNight() { return effectivePricePerNight; }
+    public void setEffectivePricePerNight(BigDecimal effectivePricePerNight) {
+        this.effectivePricePerNight = effectivePricePerNight;
+    }
 }
 

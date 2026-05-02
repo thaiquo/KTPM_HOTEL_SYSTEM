@@ -4,27 +4,29 @@ import iuh.fit.hotelsystem_payment.config.MoMoConfig;
 import iuh.fit.hotelsystem_payment.config.VNPayConfig;
 import iuh.fit.hotelsystem_payment.dto.CreateMoMoRequest;
 import iuh.fit.hotelsystem_payment.dto.CreateVNPayRequest;
+import iuh.fit.hotelsystem_payment.dto.CheckinPaymentConfirmResponse;
+import iuh.fit.hotelsystem_payment.dto.CheckinQrRequest;
+import iuh.fit.hotelsystem_payment.dto.CheckinQrResponse;
 import iuh.fit.hotelsystem_payment.dto.MoMoResponse;
 import iuh.fit.hotelsystem_payment.dto.OperationalPaymentRequest;
 import iuh.fit.hotelsystem_payment.dto.PaymentStatusResponse;
 import iuh.fit.hotelsystem_payment.dto.RefundPaymentRequest;
 import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutRefundRequest;
+import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutPreviewRequest;
+import iuh.fit.hotelsystem_payment.dto.RefundAllocationPreviewDto;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
 import iuh.fit.hotelsystem_payment.entity.Payment;
+import iuh.fit.hotelsystem_payment.entity.RefundTransaction;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
 import iuh.fit.hotelsystem_payment.service.MoMoService;
 import iuh.fit.hotelsystem_payment.service.PaymentService;
 import iuh.fit.hotelsystem_payment.service.VNPayService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.view.RedirectView;
 
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -163,8 +165,18 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.getLateCheckoutFeeStatus(bookingId));
     }
 
+    @PostMapping("/bookings/{bookingId}/early-checkout-refund/preview")
+    public ResponseEntity<List<RefundAllocationPreviewDto>> previewEarlyCheckoutRefund(
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestBody EarlyCheckoutPreviewRequest body) {
+        if (body == null || body.getAmount() == null || body.getAmount() <= 0) {
+            throw new IllegalArgumentException("amount must be greater than zero");
+        }
+        return ResponseEntity.ok(paymentService.previewEarlyCheckoutRefund(bookingId, BigDecimal.valueOf(body.getAmount())));
+    }
+
     @PostMapping("/bookings/{bookingId}/early-checkout-refund")
-    public ResponseEntity<Payment> earlyCheckoutRefund(
+    public ResponseEntity<List<RefundTransaction>> earlyCheckoutRefund(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId,
             @RequestBody EarlyCheckoutRefundRequest request) {
         request.setBookingId(bookingId);
@@ -177,6 +189,26 @@ public class PaymentController {
             @RequestBody RefundPaymentRequest request) {
         request.setRefundRequestId(refundRequestId);
         return ResponseEntity.ok(paymentService.createRefundPayment(request));
+    }
+    
+    @PostMapping("/checkin-qr")
+    public ResponseEntity<CheckinQrResponse> createCheckinQr(@RequestBody CheckinQrRequest request) {
+        return ResponseEntity.ok(paymentService.createCheckinQr(request));
+    }
+
+    @GetMapping("/checkin-qr")
+    public ResponseEntity<CheckinPaymentConfirmResponse> getCheckinQr(@RequestParam String code) {
+        return ResponseEntity.ok(paymentService.getCheckinPayment(code));
+    }
+
+    @PostMapping("/{paymentCode}/confirm")
+    public ResponseEntity<CheckinPaymentConfirmResponse> confirmCheckinQr(@PathVariable String paymentCode) {
+        return ResponseEntity.ok(paymentService.confirmCheckinPayment(paymentCode));
+    }
+
+    @PostMapping("/{paymentCode}/cancel")
+    public ResponseEntity<CheckinPaymentConfirmResponse> cancelCheckinQr(@PathVariable String paymentCode) {
+        return ResponseEntity.ok(paymentService.cancelCheckinPayment(paymentCode));
     }
 
     private String extractClientIp(HttpServletRequest request) {

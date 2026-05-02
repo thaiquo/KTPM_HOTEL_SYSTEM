@@ -2,10 +2,13 @@ package iuh.fit.hotelsystem_booking.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class CheckoutResponse {
     private Long bookingId;
     private String checkoutType;
+    /** FLEXIBLE | NON_REFUNDABLE — mirrors rate plan for clients */
+    private String rateType;
     private Integer totalNights;
     private Integer lateMinutes;
     private BigDecimal lateCheckoutFee;
@@ -17,6 +20,7 @@ public class CheckoutResponse {
     private Integer unusedNights;
     private BigDecimal refundRate;
     private BigDecimal refundAmount;
+    private BigDecimal effectivePricePerNight;
 
     private BigDecimal finalAmount;
     private String roomNextStatus;
@@ -24,11 +28,16 @@ public class CheckoutResponse {
 
     private LocalDateTime actualCheckoutAt;
     private boolean paymentRequired;
+    /** True when flexible early checkout yields a positive refundAmount */
+    private Boolean refundRequired;
     private String bookingStatus;
     private Long representativeGuestId;
     private String representativeFullName;
     private String representativePhone;
     private String representativeCccd;
+
+    /** Preview phân bổ hoàn tiền theo người đã thanh toán (Payment Service). */
+    private List<RefundAllocationLineDto> refundAllocations;
 
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
@@ -41,6 +50,9 @@ public class CheckoutResponse {
 
     public String getCheckoutType() { return checkoutType; }
     public void setCheckoutType(String checkoutType) { this.checkoutType = checkoutType; }
+
+    public String getRateType() { return rateType; }
+    public void setRateType(String rateType) { this.rateType = rateType; }
 
     public Integer getTotalNights() { return totalNights; }
     public void setTotalNights(Integer totalNights) { this.totalNights = totalNights; }
@@ -66,6 +78,11 @@ public class CheckoutResponse {
     public BigDecimal getRefundAmount() { return refundAmount; }
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
 
+    public BigDecimal getEffectivePricePerNight() { return effectivePricePerNight; }
+    public void setEffectivePricePerNight(BigDecimal effectivePricePerNight) {
+        this.effectivePricePerNight = effectivePricePerNight;
+    }
+
     public BigDecimal getFinalAmount() { return finalAmount; }
     public void setFinalAmount(BigDecimal finalAmount) { this.finalAmount = finalAmount; }
 
@@ -81,6 +98,9 @@ public class CheckoutResponse {
     public boolean isPaymentRequired() { return paymentRequired; }
     public void setPaymentRequired(boolean paymentRequired) { this.paymentRequired = paymentRequired; }
 
+    public Boolean getRefundRequired() { return refundRequired; }
+    public void setRefundRequired(Boolean refundRequired) { this.refundRequired = refundRequired; }
+
     public String getBookingStatus() { return bookingStatus; }
     public void setBookingStatus(String bookingStatus) { this.bookingStatus = bookingStatus; }
 
@@ -95,4 +115,9 @@ public class CheckoutResponse {
 
     public String getRepresentativeCccd() { return representativeCccd; }
     public void setRepresentativeCccd(String representativeCccd) { this.representativeCccd = representativeCccd; }
+
+    public List<RefundAllocationLineDto> getRefundAllocations() { return refundAllocations; }
+    public void setRefundAllocations(List<RefundAllocationLineDto> refundAllocations) {
+        this.refundAllocations = refundAllocations;
+    }
 }

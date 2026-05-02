@@ -13,6 +13,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByTransactionId(String transactionId);
 
+    Optional<Payment> findByPaymentCode(String paymentCode);
+
     List<Payment> findByBookingId(Long bookingId);
 
     List<Payment> findAllByOrderByCreatedAtDesc();
@@ -26,4 +28,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     );
 
     boolean existsByBookingIdAndPaymentTypeAndStatus(Long bookingId, PaymentType paymentType, PaymentStatus status);
+
+    boolean existsByBookingIdAndStatus(Long bookingId, PaymentStatus status);
 }

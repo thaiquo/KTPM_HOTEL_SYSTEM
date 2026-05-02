@@ -36,9 +36,12 @@ public class Payment {
     private PaymentStatus status; // PENDING, SUCCESS, FAILED
 
     private String transactionId;
+    private String paymentCode;
     private String vnpTransactionNo;
     private String vnpResponseCode;
     private LocalDateTime createdAt;
+    private LocalDateTime expiredAt;
+    private LocalDateTime paidAt;
 
 
     public Long getId() {
@@ -130,6 +133,14 @@ public class Payment {
         this.transactionId = transactionId;
     }
 
+    public String getPaymentCode() {
+        return paymentCode;
+    }
+
+    public void setPaymentCode(String paymentCode) {
+        this.paymentCode = paymentCode;
+    }
+
     public String getVnpTransactionNo() {
         return vnpTransactionNo;
     }
@@ -152,6 +163,22 @@ public class Payment {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getExpiredAt() {
+        return expiredAt;
+    }
+
+    public void setExpiredAt(LocalDateTime expiredAt) {
+        this.expiredAt = expiredAt;
+    }
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
     }
 }
 

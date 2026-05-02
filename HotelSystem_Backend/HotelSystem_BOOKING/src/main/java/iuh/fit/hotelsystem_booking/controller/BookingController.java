@@ -184,4 +184,10 @@ public class BookingController {
         String reason = body != null ? body.get("reason") : "Refund rejected by admin";
         return ResponseEntity.ok(refundService.rejectRefund(refundId, processedBy, reason));
     }
+    @PostMapping("/{id}/confirm-checkin-payment")
+    public ResponseEntity<Booking> confirmCheckinPayment(
+            @PathVariable Long id,
+            @RequestBody iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest request) {
+        return ResponseEntity.ok(bookingService.confirmCheckinPayment(id, request));
+    }
 }

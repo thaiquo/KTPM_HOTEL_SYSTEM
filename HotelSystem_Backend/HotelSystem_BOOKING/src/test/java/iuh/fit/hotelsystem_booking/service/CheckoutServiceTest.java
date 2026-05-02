@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Collections;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,9 +48,12 @@ class CheckoutServiceTest {
         Clock clock = fixedClock("2026-05-01T04:00:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
+                bookingGuestService,
                 new CheckInOutService(),
                 new RefundCalculationService(),
                 rabbitTemplate,
@@ -65,7 +69,7 @@ class CheckoutServiceTest {
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
         assertFalse(response.isEarlyCheckout());
         verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
-        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), anyLong(), any());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any(), anyString(), any());
 
         verify(rabbitTemplate, never()).convertAndSend(eq(RabbitConfig.EXCHANGE), eq("room.checkout"), any(Object.class));
     }
@@ -90,9 +94,12 @@ class CheckoutServiceTest {
         Clock clock = fixedClock("2026-05-03T03:00:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
+                bookingGuestService,
                 new CheckInOutService(),
                 new RefundCalculationService(),
                 rabbitTemplate,
@@ -108,7 +115,7 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(booking.getUserId()), eq(new BigDecimal("2400.00")));
+        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
         verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
     }
 
@@ -130,9 +137,12 @@ class CheckoutServiceTest {
         Clock clock = fixedClock("2026-05-01T06:00:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
+                bookingGuestService,
                 new CheckInOutService(),
                 new RefundCalculationService(),
                 rabbitTemplate,
@@ -169,9 +179,12 @@ class CheckoutServiceTest {
         Clock clock = fixedClock("2026-05-03T06:00:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
+                bookingGuestService,
                 new CheckInOutService(),
                 new RefundCalculationService(),
                 rabbitTemplate,
@@ -186,7 +199,7 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(booking.getUserId()), eq(new BigDecimal("2400.00")));
+        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
         verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
     }
 
@@ -204,6 +217,51 @@ class CheckoutServiceTest {
         booking.setPaidAmount(pricePerNight * nights);
         booking.setRatePlan(RatePlan.FLEXIBLE);
         return booking;
+    }
+
+    @Test
+    void checkoutProceedsWhenRepresentativeOnFileStaffDoesNotRetypeVerifier() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentClient paymentClient = mock(PaymentClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 6), 5, 1000.0);
+        booking.setStatus(BookingStatus.CHECKED_IN);
+        booking.setRatePlan(RatePlan.FLEXIBLE);
+        booking.setPaidAmount(5000.0);
+
+        BookingStay stay = new BookingStay();
+        stay.setRepresentativeFullName("Nguyen Van B");
+        stay.setRepresentativePhone("0909123456");
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+        when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Clock clock = fixedClock("2026-05-03T06:00:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckOutRequest request = new CheckOutRequest();
+        request.setStaffId(1L);
+
+        CheckoutResponse response = service.checkout(1L, request);
+        assertTrue(response.isEarlyCheckout());
+        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
     }
 
     private Clock fixedClock(String isoInstant) {

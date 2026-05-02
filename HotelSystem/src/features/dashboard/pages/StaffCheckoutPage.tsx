@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { HiOutlineCash, HiOutlineCreditCard } from 'react-icons/hi';
-import { paymentApi, roomApi, staffBookingApi, type CheckoutResponse } from '../../../services/api';
+import {
+  paymentApi,
+  roomApi,
+  staffBookingApi,
+  type CheckoutResponse,
+  type RefundAllocationLine,
+} from '../../../services/api';
 import type { Booking, Room } from '../../../types';
 
 type BookingRow = Booking & { room?: Room };
@@ -42,6 +48,32 @@ const lateCheckoutPercent = (minutes: number) => {
 };
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`;
 
+const receiverTypeVi = (t?: string) => {
+  switch (t) {
+    case 'USER':
+      return 'Người đặt (User)';
+    case 'REPRESENTATIVE_GUEST':
+      return 'Khách / đại diện đã thanh toán';
+    case 'WALK_IN_GUEST':
+      return 'Khách tại quầy';
+    default:
+      return t || '-';
+  }
+};
+
+const purposeVi = (p?: string) => {
+  switch (p) {
+    case 'DEPOSIT':
+      return 'Cọc';
+    case 'FULL_PAYMENT':
+      return 'Thanh toán 100%';
+    case 'REMAINING':
+      return 'Phần còn lại';
+    default:
+      return p || '-';
+  }
+};
+
 const StaffCheckoutPage: React.FC = () => {
   const [items, setItems] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +106,7 @@ const StaffCheckoutPage: React.FC = () => {
   }, []);
 
   const activeResult = activeBooking ? checkoutResult[String(activeBooking.id)] : undefined;
+
   const lateFeeAmount = Number(activeResult?.lateCheckoutFee || 0);
   const lateFeeMinutes = Number(activeResult?.lateMinutes || 0);
   const hasLateCheckout = lateFeeAmount > 0 || lateFeeMinutes > 0;
@@ -81,9 +114,15 @@ const StaffCheckoutPage: React.FC = () => {
   const refundRate = Number(activeResult?.refundRate ?? 0);
   const unusedNights = Number(activeResult?.unusedNights ?? 0);
   const refundAmount = Number(activeResult?.refundAmount ?? 0);
+  const apiNightly = Number(activeResult?.effectivePricePerNight ?? 0);
+  const refundNightlyAmount =
+    apiNightly > 0
+      ? apiNightly
+      : unusedNights > 0 && refundRate > 0
+        ? refundAmount / unusedNights / refundRate
+        : 0;
   const latePercent = lateCheckoutPercent(lateFeeMinutes);
   const lateBaseAmount = latePercent > 0 ? lateFeeAmount / (latePercent / 100) : 0;
-  const refundNightlyAmount = unusedNights > 0 && refundRate > 0 ? refundAmount / unusedNights / refundRate : 0;
 
   const lateFeeChangeDue = useMemo(() => {
     if (lateFeeMethod !== 'CASH') return 0;
@@ -214,26 +253,84 @@ const StaffCheckoutPage: React.FC = () => {
       </div>
 
       {activeBooking && activeStep && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-            <h2 className="text-xl font-black text-gray-900">
-              {activeStep === 'PAYMENT' ? 'Thu phí checkout trễ' : 'Xác nhận Checkout'}
-            </h2>
-            <p className="mt-1 text-sm text-gray-500">Booking #{activeBooking.id} · Phòng {activeBooking.room?.roomNumber || activeBooking.roomId}</p>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4 py-5">
+          <div
+            className="flex max-h-[min(92vh,100dvh)] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="shrink-0 border-b border-gray-100 px-5 pb-3 pt-5">
+              <h2 className="text-xl font-black text-gray-900">
+                {activeStep === 'PAYMENT' ? 'Thu phí checkout trễ' : 'Xác nhận Checkout'}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Booking #{activeBooking.id} · Phòng {activeBooking.room?.roomNumber || activeBooking.roomId}
+              </p>
+            </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
             {activeResult && (
-              <div className="mt-5 rounded-2xl bg-gray-50 p-4 text-sm space-y-2">
+              <div className="rounded-2xl bg-gray-50 p-4 text-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-gray-400 font-bold">Loại checkout</div>
                   <div className="font-black text-gray-900">{checkoutTypeLabel(activeResult.checkoutType)}</div>
                 </div>
-                <div className="rounded-xl border border-gray-100 bg-white p-3">
-                  <div className="text-gray-400 font-bold">Người xác minh checkout</div>
-                  <div className="mt-1 font-black text-gray-900">{activeResult.representativeFullName || '-'}</div>
-                  <div className="text-xs font-bold text-gray-500">
-                    {activeResult.representativePhone || '-'} · CCCD {activeResult.representativeCccd || '-'}
-                  </div>
+                <div className="rounded-xl border border-gray-100 bg-white p-3 space-y-2">
+                  <div className="text-gray-400 font-bold">Người đại diện lưu trú (theo check-in)</div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Dữ liệu chỉ đọc từ hồ sơ check-in. Staff đối chiếu trực tiếp với giấy tờ khách.{' '}
+                    <span className="font-bold text-gray-700">
+                      Hoàn tiền không căn cứ vào người này — xem phân bổ theo người đã thanh toán bên dưới.
+                    </span>
+                  </p>
+                  <dl className="grid gap-2 sm:grid-cols-1">
+                    <div className="rounded-lg bg-gray-50/80 px-3 py-2">
+                      <dt className="text-[11px] font-bold uppercase text-gray-400">Họ tên</dt>
+                      <dd className="mt-0.5 font-bold text-gray-900">{activeResult.representativeFullName || '—'}</dd>
+                    </div>
+                    <div className="rounded-lg bg-gray-50/80 px-3 py-2">
+                      <dt className="text-[11px] font-bold uppercase text-gray-400">Số điện thoại</dt>
+                      <dd className="mt-0.5 font-bold text-gray-900">{activeResult.representativePhone || '—'}</dd>
+                    </div>
+                    <div className="rounded-lg bg-gray-50/80 px-3 py-2">
+                      <dt className="text-[11px] font-bold uppercase text-gray-400">CCCD</dt>
+                      <dd className="mt-0.5 font-bold text-gray-900">{activeResult.representativeCccd || '—'}</dd>
+                    </div>
+                  </dl>
                 </div>
+                {activeResult.refundAllocations && activeResult.refundAllocations.length > 0 && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 space-y-2">
+                    <div className="text-emerald-900 font-black text-sm">Phân bổ hoàn tiền (theo giao dịch thanh toán gốc)</div>
+                    <ul className="space-y-2">
+                      {activeResult.refundAllocations.map((line: RefundAllocationLine, idx: number) => (
+                        <li
+                          key={idx}
+                          className="rounded-lg bg-white/90 border border-emerald-100 px-3 py-2 text-xs text-gray-800"
+                        >
+                          {line.recipientSummaryVi ? (
+                            <div className="font-bold leading-snug">{line.recipientSummaryVi}</div>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="font-black text-emerald-800">
+                                {formatCurrency(Number(line.amount || 0))}
+                              </div>
+                              <div>
+                                → {receiverTypeVi(line.receiverType)}
+                                {line.receiverUserId != null ? ` #${line.receiverUserId}` : ''}
+                                {line.receiverName ? ` · ${line.receiverName}` : ''}
+                                {line.receiverPhone ? ` · ${line.receiverPhone}` : ''}
+                              </div>
+                              <div className="text-gray-500">
+                                Khoản gốc: {purposeVi(line.sourcePaymentPurpose)} · Kênh hoàn:{' '}
+                                {line.refundChannel || '-'}
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="text-gray-400 font-bold">Số đêm đã ở</div>
                   <div className="font-black text-gray-900">{activeResult.usedNights ?? '-'}</div>
@@ -278,10 +375,25 @@ const StaffCheckoutPage: React.FC = () => {
                     <div>
                       {activeResult.unusedNights ?? 0} = {activeResult.totalNights ?? '-'} - {activeResult.chargeNights ?? '-'}
                     </div>
-                    <div>Hoàn tiền = Số đêm không dùng x Giá 1 đêm x Tỷ lệ hoàn</div>
-                    <div>
-                      {formatCurrency(refundAmount)} = {unusedNights} x {formatCurrency(refundNightlyAmount)} x {formatPercent(refundRate)}
-                    </div>
+                    {unusedNights > 0 ? (
+                      <>
+                        <div>Hoàn tiền = Số đêm không dùng x Giá 1 đêm x Tỷ lệ hoàn</div>
+                        <div>
+                          {formatCurrency(refundAmount)} = {unusedNights} x {formatCurrency(refundNightlyAmount)} x{' '}
+                          {formatPercent(refundRate)}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-gray-500">
+                          Không còn đêm hoàn — quy tính phí tối thiểu đã lấy hết các đêm chưa sử dụng trong booking này.
+                        </div>
+                        <div>Hoàn tiền: {formatCurrency(refundAmount)}</div>
+                        {refundNightlyAmount > 0 && (
+                          <div>Giá tham chiếu 1 đêm: {formatCurrency(refundNightlyAmount)}</div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
                 {hasLateCheckout && (
@@ -343,8 +455,9 @@ const StaffCheckoutPage: React.FC = () => {
                 )}
               </>
             )}
+            </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="flex shrink-0 justify-end gap-3 border-t border-gray-100 bg-white px-5 py-4">
               <button
                 type="button"
                 onClick={() => {

@@ -39,6 +39,9 @@ public class BookingStay {
     private BigDecimal refundRate;
     private BigDecimal refundAmount;
 
+    private Boolean checkoutVerifiedManualOverride;
+    private String checkoutVerificationOverrideReason;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -97,4 +100,14 @@ public class BookingStay {
 
     public BigDecimal getRefundAmount() { return refundAmount; }
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
+
+    public Boolean getCheckoutVerifiedManualOverride() { return checkoutVerifiedManualOverride; }
+    public void setCheckoutVerifiedManualOverride(Boolean checkoutVerifiedManualOverride) {
+        this.checkoutVerifiedManualOverride = checkoutVerifiedManualOverride;
+    }
+
+    public String getCheckoutVerificationOverrideReason() { return checkoutVerificationOverrideReason; }
+    public void setCheckoutVerificationOverrideReason(String checkoutVerificationOverrideReason) {
+        this.checkoutVerificationOverrideReason = checkoutVerificationOverrideReason;
+    }
 }

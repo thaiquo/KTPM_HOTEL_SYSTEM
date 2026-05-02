@@ -124,9 +124,10 @@ public class StaffBookingController {
 
     @PostMapping("/bookings/{bookingId}/checkout/confirm")
     public CheckoutResponse confirmCheckout(@RequestHeader("Authorization") String authorization,
-                                            @PathVariable Long bookingId) {
+                                            @PathVariable Long bookingId,
+                                            @RequestBody(required = false) CheckOutRequest body) {
         StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
-        CheckOutRequest request = new CheckOutRequest();
+        CheckOutRequest request = body != null ? body : new CheckOutRequest();
         request.setStaffId(staff.getStaffId());
         return bookingService.checkout(bookingId, request);
     }

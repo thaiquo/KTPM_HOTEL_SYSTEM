@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { HiOutlineSearch, HiOutlineClipboardCheck, HiOutlineCash, HiOutlineCreditCard, HiOutlineUserGroup, HiOutlineIdentification, HiOutlinePhone, HiX } from 'react-icons/hi';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { paymentApi, roomApi, staffBookingApi } from '../../../services/api';
+import * as QRCode from 'qrcode';
+import { buildPaymentSocketUrl, paymentApi, roomApi, staffBookingApi, type CheckinQrPayment } from '../../../services/api';
 import type { Booking, BookingGuest, Room } from '../../../types';
 
 type BookingRow = Booking & { room?: Room; guestList?: BookingGuest[]; remainingAmount: number };
@@ -37,6 +38,10 @@ const StaffCheckInPage: React.FC = () => {
   const [earlyFeeAmount, setEarlyFeeAmount] = useState<number>(0);
   const [earlyFeeMethod, setEarlyFeeMethod] = useState<PaymentMethod>('BANK_TRANSFER');
   const [earlyFeeCashReceived, setEarlyFeeCashReceived] = useState('');
+  const [qrPayment, setQrPayment] = useState<CheckinQrPayment | null>(null);
+  const [qrStatus, setQrStatus] = useState<'PENDING' | 'SUCCESS'>('PENDING');
+  const [nowTick, setNowTick] = useState(Date.now());
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const fetchData = async () => {
     try {
@@ -81,6 +86,55 @@ const StaffCheckInPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!qrPayment) return;
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [qrPayment]);
+
+  useEffect(() => {
+    if (!qrPayment?.confirmUrl || !qrCanvasRef.current) return;
+    QRCode.toCanvas(qrCanvasRef.current, qrPayment.confirmUrl, {
+      width: 220,
+      margin: 2,
+      color: {
+        dark: '#111827',
+        light: '#ffffff',
+      },
+    }).catch(() => toast.error('Không thể tạo mã QR'));
+  }, [qrPayment?.confirmUrl]);
+
+  useEffect(() => {
+    if (!qrPayment?.paymentCode) return;
+    const socket = new WebSocket(buildPaymentSocketUrl());
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ event: 'payment:join', paymentCode: qrPayment.paymentCode }));
+    };
+    socket.onmessage = (message) => {
+      try {
+        const data = JSON.parse(message.data);
+        if (data?.payload?.paymentCode !== qrPayment.paymentCode) return;
+        if (data.event === 'payment:success') {
+          setQrStatus('SUCCESS');
+          toast.success('Check-in thành công');
+          window.setTimeout(() => {
+            setQrPayment(null);
+            setSelectedBooking(null);
+            fetchData();
+          }, 1500);
+        }
+        if (data.event === 'payment:cancelled') {
+          setQrPayment(null);
+          setQrStatus('PENDING');
+          toast.error('Giao dịch đã hủy');
+        }
+      } catch {
+        // Ignore invalid socket messages.
+      }
+    };
+    return () => socket.close();
+  }, [qrPayment?.paymentCode]);
 
   const filteredItems = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -180,24 +234,49 @@ const StaffCheckInPage: React.FC = () => {
     }
     try {
       setProcessing(true);
-      await staffBookingApi.collectRemainingPayment(selectedBooking.id, {
+      if (paymentMethod === 'CASH') {
+        await staffBookingApi.collectRemainingPayment(selectedBooking.id, {
+          amount: requiredAmount,
+          userId: Number(selectedBooking.userId),
+          payerGuestId: Number(getSelectedRepresentative(selectedBooking)?.id || 0),
+          payerName: getSelectedRepresentative(selectedBooking)?.fullName,
+          payerPhone: getRepresentativePhone(selectedBooking),
+          method: 'CASH',
+          transactionId: `CASH_${selectedBooking.id}_${Date.now()}`,
+        });
+        toast.success('Đã ghi nhận thanh toán phần còn lại');
+        await doCheckIn({ ...selectedBooking, remainingAmount: 0, paidAmount: selectedBooking.totalPrice });
+        return;
+      }
+
+      const qr = await paymentApi.createCheckinQr({
+        bookingId: selectedBooking.id,
         amount: requiredAmount,
-        userId: Number(selectedBooking.userId),
-        payerGuestId: Number(getSelectedRepresentative(selectedBooking)?.id || 0),
-        payerName: getSelectedRepresentative(selectedBooking)?.fullName,
-        payerPhone: getRepresentativePhone(selectedBooking),
-        method: paymentMethod,
-        transactionId: `${paymentMethod}_${selectedBooking.id}_${Date.now()}`,
+        method: 'BANK_TRANSFER',
+        type: 'CHECKIN_REMAINING_PAYMENT',
       });
-      toast.success('Đã ghi nhận thanh toán phần còn lại');
-      await doCheckIn({ ...selectedBooking, remainingAmount: 0, paidAmount: selectedBooking.totalPrice });
+      setQrPayment(qr);
+      setQrStatus('PENDING');
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể ghi nhận thanh toán');
+      toast.error(error?.response?.data?.message || 'Không thể tạo giao dịch QR');
     } finally {
       setProcessing(false);
     }
   };
 
+  const cancelQrPayment = async () => {
+    if (!qrPayment) return;
+    try {
+      setProcessing(true);
+      await paymentApi.cancelCheckinQr(qrPayment.paymentCode);
+      setQrPayment(null);
+      setQrStatus('PENDING');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Không thể hủy giao dịch');
+    } finally {
+      setProcessing(false);
+    }
+  };
   const confirmEarlyCheckinFee = async () => {
     if (!earlyFeeBooking) return;
     const requiredAmount = earlyFeeAmount;
@@ -218,13 +297,23 @@ const StaffCheckInPage: React.FC = () => {
     }
   };
 
+  const earlyFeeChangeDue = earlyFeeMethod === 'CASH'
+    ? Math.max(0, Number(earlyFeeCashReceived || 0) - earlyFeeAmount)
+    : 0;
+
   const changeDue = selectedBooking && paymentMethod === 'CASH'
     ? Math.max(0, Number(cashReceived || 0) - selectedBooking.remainingAmount)
     : 0;
 
-  const earlyFeeChangeDue = earlyFeeMethod === 'CASH'
-    ? Math.max(0, Number(earlyFeeCashReceived || 0) - earlyFeeAmount)
+  const qrRemainingSeconds = qrPayment
+    ? Math.max(0, Math.floor((new Date(qrPayment.expiredAt).getTime() - nowTick) / 1000))
     : 0;
+  const qrCountdown = `${String(Math.floor(qrRemainingSeconds / 60)).padStart(2, '0')}:${String(qrRemainingSeconds % 60).padStart(2, '0')}`;
+  const missingCheckInInfo = selectedBooking
+    ? !getSelectedRepresentative(selectedBooking)
+      || !getRepresentativePhone(selectedBooking)
+      || !isValidCccd(cccdByBooking[selectedBooking.id])
+    : true;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -452,7 +541,7 @@ const StaffCheckInPage: React.FC = () => {
                       Thông tin thanh toán
                     </h3>
 
-                    <div className="rounded-2xl border border-gray-100 p-5 bg-gray-50 space-y-4">
+                    <div className="rounded-[24px] border border-gray-100 p-6 bg-gradient-to-br from-gray-50 to-white shadow-sm space-y-5">
                       <div className="flex justify-between items-end">
                         <div>
                           <div className="text-[10px] font-bold text-gray-400 uppercase">Tổng tiền</div>
@@ -529,9 +618,7 @@ const StaffCheckInPage: React.FC = () => {
                     type="button"
                     disabled={
                       processing || 
-                      !getSelectedRepresentative(selectedBooking) || 
-                      !getRepresentativePhone(selectedBooking) || 
-                      !isValidCccd(cccdByBooking[selectedBooking.id]) ||
+                      missingCheckInInfo ||
                       (selectedBooking.remainingAmount > 0 && paymentMethod === 'CASH' && Number(cashReceived || 0) < selectedBooking.remainingAmount)
                     }
                     onClick={selectedBooking.remainingAmount > 0 ? confirmRemainingPayment : () => doCheckIn(selectedBooking)}
@@ -552,6 +639,57 @@ const StaffCheckInPage: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {qrPayment && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-gray-900">Thanh toán chuyển khoản</h2>
+                <p className="mt-1 text-sm text-gray-500">Khách quét QR và xác nhận trên điện thoại.</p>
+              </div>
+              <button
+                type="button"
+                onClick={cancelQrPayment}
+                className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <HiX className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 p-4 text-center">
+              <canvas ref={qrCanvasRef} aria-label="QR thanh toán" className="mx-auto h-[220px] w-[220px] rounded-xl bg-white p-2" />
+              <a href={qrPayment.confirmUrl} target="_blank" rel="noreferrer" className="mt-3 block break-all text-xs font-bold text-sky-700">
+                {qrPayment.confirmUrl}
+              </a>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-sky-50 p-4">
+                <div className="text-[10px] font-black uppercase text-sky-500">Số tiền</div>
+                <div className="mt-1 text-lg font-black text-sky-900">{formatCurrency(qrPayment.amount)}</div>
+              </div>
+              <div className="rounded-2xl bg-gray-50 p-4">
+                <div className="text-[10px] font-black uppercase text-gray-400">Còn lại</div>
+                <div className="mt-1 text-lg font-black text-gray-900">{qrCountdown}</div>
+              </div>
+            </div>
+
+            <div className={`mt-4 rounded-2xl p-4 text-center text-sm font-black ${qrStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              {qrStatus === 'SUCCESS' ? 'Thanh toán thành công' : 'Đang chờ thanh toán'}
+            </div>
+
+            <button
+              type="button"
+              disabled={processing || qrStatus === 'SUCCESS'}
+              onClick={cancelQrPayment}
+              className="mt-5 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Hủy giao dịch
+            </button>
+          </div>
+        </div>
+      )}
 
       {earlyFeeBooking && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
@@ -624,3 +762,4 @@ const StaffCheckInPage: React.FC = () => {
 };
 
 export default StaffCheckInPage;
+
