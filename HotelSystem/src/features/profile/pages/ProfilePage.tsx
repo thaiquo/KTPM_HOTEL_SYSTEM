@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
-import { userApi } from '../../../services/api';
+import {
+  bookingApi,
+  notificationApi,
+  refundApi,
+  roomApi,
+  userApi,
+  type RefundRecord,
+  type UserNotification,
+} from '../../../services/api';
+import type { Booking, Room } from '../../../types';
 import {
   User,
   Mail,
@@ -18,9 +27,14 @@ import {
   type LucideIcon,
   CreditCard,
   Settings,
+  RefreshCcw,
 } from 'lucide-react';
 import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
+import Spinner from '../../../shared/components/ui/Spinner';
+import { getBookingStatusText, isPaidBookingRecord } from '../../booking/utils/bookingHistory';
+
+type BookingWithRoom = Booking & { room?: Room | null };
 
 type FieldRowProps = {
   label: string;
@@ -52,13 +66,100 @@ const FieldRow = ({ label, icon: Icon, value, onChange, type, disabled }: FieldR
   </div>
 );
 
+const getNights = (checkIn: string, checkOut: string) => {
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diff = end.getTime() - start.getTime();
+  if (!Number.isFinite(diff)) return 0;
+  return Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
+};
+
+const getBookingStatusClass = (status: Booking['status']) => {
+  if (status === 'confirmed' || status === 'checked_in') {
+    return 'border-green-500/20 bg-green-500/5 text-green-600';
+  }
+  if (status === 'deposit_paid') {
+    return 'border-primary/20 bg-primary/5 text-primary';
+  }
+  if (status === 'cancelled') {
+    return 'border-error/20 bg-error/5 text-error';
+  }
+  return 'border-yellow-500/20 bg-yellow-500/5 text-yellow-700';
+};
+
+const formatCurrency = (amount: number) => `${Number(amount || 0).toLocaleString('vi-VN')} VND`;
+
+const getRefundStatusText = (status: string) => {
+  switch (status.toUpperCase()) {
+    case 'PENDING':
+      return 'Đã gửi yêu cầu';
+    case 'ASSIGNED':
+      return 'Đã phân công xử lý';
+    case 'PROCESSING':
+      return 'Đang hoàn tiền';
+    case 'REFUNDED':
+    case 'SUCCESS':
+      return 'Đã hoàn tiền';
+    case 'REJECTED':
+      return 'Bị từ chối';
+    case 'FAILED':
+      return 'Hoàn tiền thất bại';
+    case 'OVERDUE':
+      return 'Quá hạn xử lý';
+    default:
+      return status || 'Đang cập nhật';
+  }
+};
+
+const getRefundStatusClass = (status: string) => {
+  switch (status.toUpperCase()) {
+    case 'REFUNDED':
+    case 'SUCCESS':
+      return 'border-green-500/25 bg-green-500/10 text-green-700';
+    case 'REJECTED':
+    case 'FAILED':
+      return 'border-error/25 bg-error/10 text-error';
+    case 'PROCESSING':
+    case 'ASSIGNED':
+      return 'border-blue-500/25 bg-blue-500/10 text-blue-700';
+    default:
+      return 'border-primary/25 bg-primary/10 text-primary';
+  }
+};
+
+const getRefundReasonText = (reason: string) => {
+  switch (reason) {
+    case 'Free cancellation before 24 hours':
+      return 'Hủy miễn phí trước 24 giờ';
+    case 'Free cancellation before 72 hours':
+      return 'Hủy miễn phí trước 72 giờ';
+    case 'Late cancel: charge one night':
+      return 'Hủy sát ngày nhận phòng: tính phí 1 đêm';
+    case 'Late cancel for DEPOSIT: lose deposit':
+      return 'Hủy sát ngày nhận phòng: mất tiền đặt cọc';
+    case 'No-show: charge one night':
+      return 'Không đến nhận phòng: tính phí 1 đêm';
+    case 'No-show for FULL payment: no refund':
+      return 'Không đến nhận phòng: không hoàn tiền';
+    default:
+      return reason || 'Theo chính sách hủy phòng';
+  }
+};
+
 const ProfilePage = () => {
   const { user, logout, loading } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const [profileExists, setProfileExists] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'bookings' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'bookings' | 'refunds' | 'security'>('profile');
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [bookings, setBookings] = useState<BookingWithRoom[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState('');
+  const [refundRecords, setRefundRecords] = useState<RefundRecord[]>([]);
+  const [refundNotifications, setRefundNotifications] = useState<UserNotification[]>([]);
+  const [refundsLoading, setRefundsLoading] = useState(false);
   const [profileData, setProfileData] = useState({
     fullName: user?.name || '',
     email: user?.email || '',
@@ -66,6 +167,13 @@ const ProfilePage = () => {
     address: '',
     dob: '',
   });
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'refunds' || tab === 'bookings' || tab === 'security' || tab === 'profile') {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -92,6 +200,62 @@ const ProfilePage = () => {
     if (user) {
       loadProfile();
     }
+  }, [user]);
+
+  useEffect(() => {
+    const loadRefundNotifications = async () => {
+      if (!user) return;
+      setRefundsLoading(true);
+      try {
+        const [list, refunds] = await Promise.all([
+          notificationApi.getByUser(user.id),
+          refundApi.getByUser(user.id),
+        ]);
+        setRefundRecords(refunds);
+        setRefundNotifications(list.filter((item) => item.type.toUpperCase().includes('REFUND')));
+      } catch (error) {
+        console.error(error);
+        setRefundRecords([]);
+        setRefundNotifications([]);
+      } finally {
+        setRefundsLoading(false);
+      }
+    };
+
+    loadRefundNotifications();
+  }, [user]);
+
+  useEffect(() => {
+    const loadBookings = async () => {
+      if (!user) return;
+
+      setBookingsLoading(true);
+      setBookingsError('');
+
+      try {
+        const list = await bookingApi.getByUser(user.id);
+        const enriched = await Promise.all(
+          list.map(async (booking) => {
+            try {
+              const room = await roomApi.getById(booking.roomId);
+              return { ...booking, room };
+            } catch {
+              return { ...booking, room: null };
+            }
+          })
+        );
+
+        setBookings(enriched.filter(isPaidBookingRecord));
+      } catch (error) {
+        console.error(error);
+        setBookings([]);
+        setBookingsError('Không thể tải lịch sử đặt phòng.');
+      } finally {
+        setBookingsLoading(false);
+      }
+    };
+
+    loadBookings();
   }, [user]);
 
   if (loading) {
@@ -132,15 +296,47 @@ const ProfilePage = () => {
     { id: 'BK003', room: 'Phòng Superior', date: '05/06/2025', nights: 3, status: 'upcoming', amount: '3,600,000 ₫' },
   ];
 
+  void mockBookings;
+
   const memberLevel = 'Gold';
-  const totalNights = 12;
-  const totalBookings = 7;
+  const profileBookings = bookings.map((booking) => {
+    const nights = getNights(booking.checkIn, booking.checkOut);
+    const amount = booking.totalPrice || ((booking.room?.price || 0) * nights);
+
+    return {
+      id: booking.id,
+      roomId: booking.roomId,
+      room: { name: booking.room?.name || `Phòng ${booking.roomId}` },
+      date: `${booking.checkIn} - ${booking.checkOut}`,
+      nights,
+      status: booking.status === 'confirmed' || booking.status === 'checked_in' ? 'completed' : 'upcoming',
+      statusLabel: getBookingStatusText(booking.status),
+      statusClass: getBookingStatusClass(booking.status),
+      amount,
+    };
+  });
+  const totalNights = profileBookings.reduce((sum, booking) => sum + booking.nights, 0);
+  const totalBookings = profileBookings.length;
 
   const tabs = [
     { key: 'profile', label: 'Thông tin cá nhân', icon: User },
     { key: 'bookings', label: 'Lịch sử đặt phòng', icon: Calendar },
+    { key: 'refunds', label: 'Lịch sử hoàn tiền', icon: RefreshCcw },
     { key: 'security', label: 'Bảo mật tài khoản', icon: Shield },
   ];
+
+  const formatNotificationTime = (value: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value.replace('T', ' ');
+    return date.toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   const containerVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -266,7 +462,7 @@ const ProfilePage = () => {
                 <Card className="lg:col-span-2 p-8 sm:p-10 border-outline-variant/10 shadow-xl overflow-visible">
                   <div className="flex items-center justify-between mb-10">
                     <div>
-                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Personal Settings</div>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Thông tin cá nhân</div>
                       <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Hồ sơ cá nhân</h2>
                     </div>
 
@@ -381,7 +577,7 @@ const ProfilePage = () => {
 
                   <motion.div variants={itemVariants}>
                     <Card className="p-8 border-outline-variant/10 shadow-xl">
-                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label mb-6">Quick actions</div>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label mb-6">Thao tác nhanh</div>
                       <div className="space-y-2">
                         {[
                           { label: 'Tìm phòng nghỉ mới', href: '/rooms', icon: MapPin },
@@ -413,12 +609,26 @@ const ProfilePage = () => {
               <motion.div variants={itemVariants}>
                 <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
                   <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
-                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Reservation History</div>
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Lịch sử đặt phòng</div>
                     <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Lịch sử đặt phòng</h2>
                     <p className="mt-2 text-sm text-on-surface-variant font-medium italic">Danh sách các kỳ lưu trú gần đây của bạn tại S-T-T Hotel.</p>
                   </div>
                   <div className="divide-y divide-outline-variant/10">
-                    {mockBookings.map((booking, idx) => (
+                    {bookingsLoading ? (
+                      <div className="p-10 text-center">
+                        <Spinner className="h-10 w-10" />
+                        <div className="mt-4 text-xs font-black uppercase tracking-widest text-on-surface-variant">Dang tai lich su dat phong...</div>
+                      </div>
+                    ) : bookingsError ? (
+                      <div className="p-10 text-center text-error font-bold">{bookingsError}</div>
+                    ) : profileBookings.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <div className="text-lg font-black text-on-surface">Chưa có đặt phòng nào</div>
+                        <Link to="/rooms" className="mt-5 inline-block">
+                          <Button className="rounded-2xl px-8">Tim phong ngay</Button>
+                        </Link>
+                      </div>
+                    ) : profileBookings.map((booking, idx) => (
                       <motion.div 
                         key={booking.id} 
                         initial={{ opacity: 0, x: -10 }}
@@ -431,21 +641,25 @@ const ProfilePage = () => {
                              <Calendar size={24} />
                           </div>
                           <div>
-                            <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Ref #{booking.id}</div>
-                            <div className="mt-1 text-xl font-black tracking-tight text-on-surface font-headline group-hover:text-primary transition-colors">{booking.room}</div>
+                            <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Mã #{booking.id}</div>
+                            <div className="mt-1 text-xl font-black tracking-tight text-on-surface font-headline group-hover:text-primary transition-colors">{booking.room?.name || `Phòng ${booking.roomId}`}</div>
                             <div className="mt-1 text-sm text-on-surface-variant font-bold">{booking.date} · {booking.nights} đêm</div>
                           </div>
                         </div>
                         <div className="flex items-center justify-between sm:justify-end gap-8">
-                          <div className="text-lg font-black text-on-surface font-headline">{booking.amount}</div>
+                          <div className="text-lg font-black text-on-surface font-headline">{booking.amount.toLocaleString('vi-VN')} VND</div>
                           <span className={
                             'px-4 py-1.5 rounded-full text-[10px] font-black tracking-[0.2em] uppercase border-2 ' +
-                            (booking.status === 'completed'
-                              ? 'border-green-500/20 bg-green-500/5 text-green-600'
-                              : 'border-primary/20 bg-primary/5 text-primary')
+                            booking.statusClass
                           }>
-                            {booking.status === 'completed' ? 'Hoàn thành' : 'Sắp tới'}
+                            {booking.statusLabel}
                           </span>
+                          <Link
+                            to={`/my-bookings?bookingId=${encodeURIComponent(booking.id)}`}
+                            className="text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4"
+                          >
+                            Chi tiết
+                          </Link>
                         </div>
                       </motion.div>
                     ))}
@@ -454,10 +668,142 @@ const ProfilePage = () => {
               </motion.div>
             )}
 
+            {activeTab === 'refunds' && (
+              <motion.div variants={itemVariants}>
+                <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
+                  <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Lịch sử hoàn tiền</div>
+                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Theo dõi hoàn tiền</h2>
+                    <p className="mt-2 text-sm text-on-surface-variant font-medium">
+                      Dữ liệu lấy từ yêu cầu hoàn tiền thật sau khi hủy phòng. Thông báo chỉ dùng để cập nhật trạng thái mới nhất.
+                    </p>
+                  </div>
+
+                  <div className="divide-y divide-outline-variant/10">
+                    {refundsLoading ? (
+                      <div className="p-10 text-center">
+                        <Spinner className="h-10 w-10" />
+                        <div className="mt-4 text-xs font-black uppercase tracking-widest text-on-surface-variant">Đang tải lịch sử hoàn tiền...</div>
+                      </div>
+                    ) : refundRecords.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <div className="text-lg font-black text-on-surface">Chưa có yêu cầu hoàn tiền nào</div>
+                        <p className="mt-2 text-sm text-on-surface-variant">Khi bạn hủy đặt phòng và phát sinh số tiền được hoàn, lịch sử xử lý sẽ xuất hiện tại đây.</p>
+                      </div>
+                    ) : (
+                      refundRecords.map((refund, idx) => {
+                        const latestNotice = refundNotifications.find((item) => item.bookingId === refund.bookingId);
+                        return (
+                          <motion.div
+                            key={refund.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.08 }}
+                            className="p-8 hover:bg-surface-container-lowest transition-colors"
+                          >
+                            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+                              <div className="flex gap-5">
+                                <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                  <RefreshCcw size={24} />
+                                </div>
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Yêu cầu #{refund.id} · Đặt phòng #{refund.bookingId}</div>
+                                    <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${getRefundStatusClass(refund.status)}`}>
+                                      {getRefundStatusText(refund.status)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 text-base font-black text-on-surface">Hoàn dự kiến: {formatCurrency(refund.refundAmount)}</div>
+                                  <div className="mt-1 text-sm text-on-surface-variant font-semibold">
+                                    Đã thanh toán {formatCurrency(refund.paidAmount)} · Phí hủy {formatCurrency(refund.cancellationFee)}
+                                  </div>
+                                  <div className="mt-1 text-sm text-on-surface-variant">Lý do: {getRefundReasonText(refund.reason)}</div>
+                                  {latestNotice && (
+                                    <div className="mt-3 rounded-2xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-on-surface">
+                                      {latestNotice.message}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="lg:text-right shrink-0">
+                                <div className="text-xs font-bold text-on-surface-variant">{formatNotificationTime(refund.createdAt)}</div>
+                                {refund.dueAt && (
+                                  <div className="mt-1 text-xs font-semibold text-on-surface-variant">Hạn xử lý: {formatNotificationTime(refund.dueAt)}</div>
+                                )}
+                                <Link
+                                  to={`/my-bookings?bookingId=${encodeURIComponent(refund.bookingId)}`}
+                                  className="mt-4 inline-flex text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4"
+                                >
+                                  Xem đặt phòng
+                                </Link>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
+            {false && (
+              <motion.div variants={itemVariants}>
+                <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
+                  <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Lịch sử hoàn tiền</div>
+                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Theo dõi hoàn tiền</h2>
+                    <p className="mt-2 text-sm text-on-surface-variant font-medium italic">Các cập nhật hoàn tiền sau khi hủy đặt phòng sẽ được lưu tại đây.</p>
+                  </div>
+
+                  <div className="divide-y divide-outline-variant/10">
+                    {refundsLoading ? (
+                      <div className="p-10 text-center">
+                        <Spinner className="h-10 w-10" />
+                        <div className="mt-4 text-xs font-black uppercase tracking-widest text-on-surface-variant">Đang tải lịch sử hoàn tiền...</div>
+                      </div>
+                    ) : refundNotifications.length === 0 ? (
+                      <div className="p-10 text-center">
+                        <div className="text-lg font-black text-on-surface">Chưa có yêu cầu hoàn tiền nào</div>
+                        <p className="mt-2 text-sm text-on-surface-variant">Khi bạn hủy đặt phòng và có hoàn tiền, trạng thái xử lý sẽ xuất hiện ở đây.</p>
+                      </div>
+                    ) : (
+                      refundNotifications.map((item, idx) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: idx * 0.08 }}
+                          className="p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-surface-container-lowest transition-colors"
+                        >
+                          <div className="flex gap-5">
+                            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                              <RefreshCcw size={24} />
+                            </div>
+                            <div>
+                              <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Đặt phòng #{item.bookingId}</div>
+                              <div className="mt-1 text-base font-black text-on-surface">{item.message}</div>
+                              <div className="mt-1 text-sm text-on-surface-variant font-bold">{formatNotificationTime(item.createdAt)}</div>
+                            </div>
+                          </div>
+                          <Link
+                            to={`/my-bookings?bookingId=${encodeURIComponent(item.bookingId)}`}
+                            className="text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4"
+                          >
+                            Xem đặt phòng
+                          </Link>
+                        </motion.div>
+                      ))
+                    )}
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
             {activeTab === 'security' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <Card className="p-8 sm:p-10 border-outline-variant/10 shadow-xl">
-                  <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Privacy & Security</div>
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Quyền riêng tư và bảo mật</div>
                   <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Cập nhật mật khẩu</h2>
 
                   <div className="mt-10 space-y-8">

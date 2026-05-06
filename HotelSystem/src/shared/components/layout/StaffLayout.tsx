@@ -1,5 +1,11 @@
 import React from 'react';
-import { HiOutlineOfficeBuilding, HiOutlineClipboardList } from 'react-icons/hi';
+import {
+  HiOutlineClipboardList,
+  HiOutlineLogin,
+  HiOutlineLogout,
+  HiOutlineOfficeBuilding,
+  HiOutlineRefresh,
+} from 'react-icons/hi';
 import DashboardLayout from './DashboardLayout';
 
 const StaffLayout: React.FC = () => {
@@ -8,6 +14,21 @@ const StaffLayout: React.FC = () => {
       title: 'Theo dõi Phòng',
       path: '/staff/rooms',
       icon: <HiOutlineOfficeBuilding className="w-6 h-6" />,
+    },
+    {
+      title: 'Xử lý Check-in',
+      path: '/staff/check-in',
+      icon: <HiOutlineLogin className="w-6 h-6" />,
+    },
+    {
+      title: 'Xử lý Checkout',
+      path: '/staff/checkout',
+      icon: <HiOutlineLogout className="w-6 h-6" />,
+    },
+    {
+      title: 'Xử lý Hoàn tiền',
+      path: '/staff/refunds',
+      icon: <HiOutlineRefresh className="w-6 h-6" />,
     },
     {
       title: 'Xử lý Hóa đơn',

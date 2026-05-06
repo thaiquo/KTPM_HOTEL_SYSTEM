@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { roomApi } from '../../../services/api';
-import type { Room, SearchFilters } from '../../../types';
-import { Filter, X } from 'lucide-react';
-import Card from '../../../shared/components/ui/Card';
-import Button from '../../../shared/components/ui/Button';
 import Spinner from '../../../shared/components/ui/Spinner';
-import RoomCard from '../components/RoomCard';
 
 const RoomsPage = () => {
-  const [searchParams] = useSearchParams();
   const [roomTypes, setRoomTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

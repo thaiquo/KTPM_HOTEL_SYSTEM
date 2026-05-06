@@ -1,93 +1,46 @@
-# React + TypeScript + Vite
+# 💻 HotelSystem Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Framer Motion](https://img.shields.io/badge/Framer_Motion-Animations-0055FF?style=for-the-badge&logo=framer&logoColor=white)](https://www.framer.com/motion/)
 
-Currently, two official plugins are available:
+Giao diện người dùng của hệ thống quản lý khách sạn. Được thiết kế với phong cách hiện đại, trải nghiệm mượt mà và tối ưu trên mọi thiết bị.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Tính năng chính
+- **Đặt phòng trực tuyến**: Tìm kiếm phòng, xem chi tiết và thực hiện đặt phòng với luồng thanh toán VNPAY.
+- **Quản lý đặt phòng**: Theo dõi lịch sử, trạng thái thanh toán và thực hiện hủy phòng.
+- **Dashboard Nhân viên**: Xử lý Check-in/Check-out chuyên nghiệp với giao diện tối ưu.
+- **Quản lý hồ sơ**: Cập nhật thông tin cá nhân và xem lịch sử tích lũy.
+- **Hiệu ứng mượt mà**: Sử dụng Framer Motion cho các chuyển động premium.
 
-## React Compiler
+## 🛠️ Công nghệ sử dụng
+- **Core**: React 19, TypeScript
+- **Styling**: Tailwind CSS
+- **State Management**: React Hooks (Context API)
+- **Routing**: React Router Dom
+- **Icons**: React Icons (Hi, Lu)
+- **API Client**: Axios với Interceptors cho Auth/Refresh Token.
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+## 📦 Hướng dẫn cài đặt
 
-## Expanding the ESLint configuration
+### 1) Chạy bằng Docker (Khuyến nghị)
+Chạy stack dev từ thư mục gốc của project:
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+Truy cập: `http://localhost:3000`
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-````js
-export default defineConfig([
-  # HotelSystem Frontend (React + Vite)
-
-  Frontend của hệ thống QLKS.
-
-  ## 1) Chạy nhanh bằng Docker (khuyến nghị)
-
-  Chạy full stack (frontend + 6 backend + RabbitMQ + Postgres) ở thư mục root:
-
-  ```bash
-  docker compose -f docker-compose.dev.yml up -d
-````
-
-Mở UI:
-
-- http://localhost:3000
-
-Frontend trong dev mode dùng Vite dev server và proxy API về các service backend.
-
-## 2) Chạy frontend standalone (không dùng Docker)
-
+### 2) Chạy Standalone
 ```bash
 cd HotelSystem
 npm install
-npm run dev -- --host
+npm run dev
 ```
 
-Mặc định Vite chạy ở `http://localhost:5173` (tránh xung đột với Docker hay dùng port 3000).
-Nếu bạn muốn đổi port, có thể set biến môi trường `VITE_PORT` hoặc truyền `--port`:
-
-```bash
-# ví dụ chạy port 3001
-VITE_PORT=3001 npm run dev -- --host
-```
-
-Lưu ý: nếu không dùng Docker thì backend cần chạy sẵn trên máy (8081..8086) hoặc bạn cấu hình biến môi trường.
-
-## 3) API base paths
-
-Trong code, frontend gọi API theo các base path dưới đây (được proxy bởi Vite hoặc Nginx):
-
-- `/auth-api/*`
-- `/user-api/*`
-- `/room-api/*`
-- `/booking-api/*`
-- `/payment-api/*`
-- `/notification-api/*`
-
-Dev proxy cấu hình ở [vite.config.ts](vite.config.ts)
-
-## 4) Cấu hình ENV (tuỳ chọn)
-
-Frontend đọc các biến môi trường sau (nếu không set sẽ dùng các path `/xxx-api`):
-
-- `VITE_AUTH_API_URL`
-- `VITE_USER_API_URL`
-- `VITE_ROOM_API_URL`
-- `VITE_BOOKING_API_URL`
-- `VITE_PAYMENT_API_URL`
-- `VITE_NOTIFICATION_API_URL`
-
-Trong Docker dev stack, compose đã set `VITE_DOCKER=true` để Vite proxy trỏ vào tên service trong Docker network.
-
-## 5) Auth tokens
-
-Frontend lưu token trong `localStorage`:
-
-- `accessToken`
-- `refreshToken`
-
-Axios interceptor tự gắn `Authorization: Bearer <accessToken>` và tự refresh khi bị 401 (xem [src/services/api.ts](src/services/api.ts)).
-
-## 6) Production build
-
-Production build được đóng gói bằng Nginx theo [Dockerfile](Dockerfile) và reverse proxy theo [nginx.conf](nginx.conf).
+## 🏗️ Cấu trúc thư mục
+- `src/features/`: Chứa các module nghiệp vụ chính (room, booking, auth, dashboard).
+- `src/shared/`: Các component, layout và hook dùng chung.
+- `src/services/`: Cấu hình API và các hàm gọi backend.
+- `src/types/`: Định nghĩa kiểu dữ liệu TypeScript.

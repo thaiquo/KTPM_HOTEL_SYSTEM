@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# LAN / máy dev — IP thay đổi theo Wi‑Fi (giữ example trong repo)
+network.local.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

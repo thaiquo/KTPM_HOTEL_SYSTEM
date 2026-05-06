@@ -13,34 +13,24 @@ public class SchemaMigrationRunner implements CommandLineRunner {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    private boolean tableExists(String tableName) {
+        Boolean exists = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?)",
+                Boolean.class,
+                tableName);
+        return Boolean.TRUE.equals(exists);
+    }
+
     @Override
     public void run(String... args) {
         jdbcTemplate.execute("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1
-                        FROM information_schema.tables
-                        WHERE table_name = 'users'
-                    ) THEN
-                        ALTER TABLE users
-                        ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
-                    END IF;
-                END $$;
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
                 """);
 
         jdbcTemplate.execute("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1
-                        FROM information_schema.tables
-                        WHERE table_name = 'users'
-                    ) THEN
-                        ALTER TABLE users
-                        ADD COLUMN IF NOT EXISTS gender VARCHAR(50);
-                    END IF;
-                END $$;
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
                 """);
 
         jdbcTemplate.execute("""

@@ -5,7 +5,9 @@
 /app/src/main/java/iuh/fit/hotelsystem_user/config/SecurityConfig.java
 /app/src/main/java/iuh/fit/hotelsystem_user/controller/InternalController.java
 /app/src/main/java/iuh/fit/hotelsystem_user/controller/UserController.java
+/app/src/main/java/iuh/fit/hotelsystem_user/dto/request/CreateCustomerRequest.java
 /app/src/main/java/iuh/fit/hotelsystem_user/dto/request/CreateEmployeeRequest.java
+/app/src/main/java/iuh/fit/hotelsystem_user/dto/request/UpdateCustomerRequest.java
 /app/src/main/java/iuh/fit/hotelsystem_user/dto/request/UpdateEmployeeRequest.java
 /app/src/main/java/iuh/fit/hotelsystem_user/dto/response/UserDto.java
 /app/src/main/java/iuh/fit/hotelsystem_user/entity/Role.java

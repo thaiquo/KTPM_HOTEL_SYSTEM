@@ -14,6 +14,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByPhoneNumber(String phoneNumber);
 
     @Query("""
+            select count(u) > 0 from User u
+            where u.id = :userId
+              and u.active = true
+              and u.role.name in (iuh.fit.hotelsystem_user.entity.enums.RoleName.STAFF,
+                                  iuh.fit.hotelsystem_user.entity.enums.RoleName.ADMIN)
+            """)
+    boolean isActiveStaffOrAdmin(@Param("userId") Long userId);
+
+    @Query("""
             select u from User u
             where u.role.name = :roleName
                 and (:active is null or u.active = :active)

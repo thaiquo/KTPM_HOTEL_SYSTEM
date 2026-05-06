@@ -10,6 +10,11 @@ const AdminLayout: React.FC = () => {
       icon: <HiOutlineUserGroup className="w-6 h-6" />,
     },
     {
+      title: 'Quản lý Khách hàng',
+      path: '/admin/khach-hang',
+      icon: <HiOutlineUserGroup className="w-6 h-6" />,
+    },
+    {
       title: 'Quản lý Loại phòng',
       path: '/admin/room-types',
       icon: <HiOutlineOfficeBuilding className="w-6 h-6" />,

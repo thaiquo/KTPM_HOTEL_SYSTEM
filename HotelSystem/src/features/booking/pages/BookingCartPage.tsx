@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '../../../contexts/CartContext';
+import { roomApi } from '../../../services/api';
 import { ShoppingCart, Trash2, Plus, ArrowLeft, Calendar, ArrowRight, CheckCircle } from 'lucide-react';
 
 function bedTypeLabel(type: string): string {
@@ -37,11 +38,19 @@ export default function BookingCartPage() {
 
   const total = subtotal * Math.max(nights, 1);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cartItems.length === 0) {
       setError('Giỏ hàng đang trống. Vui lòng chọn phòng trước!');
       return;
     }
+
+    // Current backend booking flow supports creating 1 booking with a single roomId.
+    // Cart UI can contain multiple items/rooms, so block to avoid creating inconsistent bookings.
+    if (cartItems.length !== 1 || cartItems[0].count !== 1) {
+      setError('Hiện tại demo chỉ hỗ trợ đặt 1 phòng mỗi lần. Vui lòng chọn 1 phòng trong giỏ hàng.');
+      return;
+    }
+
     if (!checkIn || !checkOut) {
       setError('Vui lòng nhập đầy đủ ngày nhận và trả phòng!');
       return;
@@ -51,8 +60,31 @@ export default function BookingCartPage() {
       return;
     }
     setError('');
-    // Navigate to checkout with dates
-    navigate(`/booking?checkIn=${checkIn}&checkOut=${checkOut}`);
+
+    try {
+      const roomTypeId = cartItems[0]?.roomType?.id;
+      if (!roomTypeId) {
+        setError('Không xác định được loại phòng. Vui lòng chọn lại phòng.');
+        return;
+      }
+
+      const availableRooms = await roomApi.getAvailableRooms(String(roomTypeId), checkIn, checkOut);
+
+      if (!availableRooms.length) {
+        setError('Không còn phòng trống theo ngày bạn chọn. Vui lòng đổi ngày hoặc chọn phòng khác.');
+        return;
+      }
+
+      // Prefer a room that matches selected bed configuration if possible.
+      const selectedBedType = cartItems[0].bedType;
+      const preferred = availableRooms.find(r => r.bedType === selectedBedType);
+      const chosenRoom = preferred || availableRooms[0];
+
+      navigate(`/booking?roomId=${encodeURIComponent(chosenRoom.id)}&checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}`);
+    } catch (err) {
+      console.error('Error selecting available room:', err);
+      setError('Không thể kiểm tra phòng trống lúc này. Vui lòng thử lại.');
+    }
   };
 
   return (

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Room, Booking, User, UserProfile, ApiResponse, SearchFilters } from '../types';
+import type { Room, Booking, BookingGuest, User, UserProfile, SearchFilters } from '../types';
 
 export interface EmployeeBackend {
   id: number;
@@ -25,6 +25,39 @@ export interface CreateEmployeePayload {
 }
 
 export interface UpdateEmployeePayload {
+  name: string;
+  email: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
+export interface CustomerBackend {
+  id: number;
+  email: string;
+  phoneNumber: string;
+  name: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  role?: string;
+  active?: boolean;
+}
+
+export interface CreateCustomerPayload {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
+export interface UpdateCustomerPayload {
   name: string;
   email: string;
   phoneNumber: string;
@@ -61,6 +94,164 @@ type BookingBackend = {
   checkOut?: string;
   status?: string;
   createdAt?: string;
+  finalTotal?: number;
+  depositAmount?: number;
+  paidAmount?: number;
+  ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
+  paymentType?: string;
+  paymentStatus?: string;
+  paymentTransactionId?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
+  actualCheckInAt?: string;
+  actualCheckOutAt?: string;
+};
+
+type BookingGuestBackend = {
+  id?: number | string;
+  bookingId?: number | string;
+  fullName?: string;
+  dateOfBirth?: string;
+  phone?: string;
+  email?: string;
+  cccd?: string;
+  note?: string;
+  type?: string;
+  primaryGuest?: boolean;
+  checkInPerson?: boolean;
+};
+
+type PaymentBackend = {
+  id?: number | string;
+  bookingId?: number | string;
+  userId?: number | string;
+  totalAmount?: number;
+  paidAmount?: number;
+  amount?: number;
+  paymentType?: string;
+  method?: string;
+  status?: string;
+  transactionId?: string;
+  vnpTransactionNo?: string;
+  vnpResponseCode?: string;
+  createdAt?: string;
+};
+
+type CheckinQrBackend = {
+  paymentCode?: string;
+  amount?: number;
+  confirmUrl?: string;
+  expiredAt?: string;
+};
+
+type NotificationBackend = {
+  id?: number | string;
+  bookingId?: number | string;
+  userId?: number | string;
+  type?: string;
+  message?: string;
+  createdAt?: string;
+};
+
+type RefundBackend = {
+  id?: number | string;
+  bookingId?: number | string;
+  paymentTransactionId?: string;
+  paidAmount?: number;
+  cancellationFee?: number;
+  refundAmount?: number;
+  refundMethod?: string;
+  amount?: number;
+  status?: string;
+  reason?: string;
+  processedBy?: string;
+  assignedTo?: number | string;
+  dueAt?: string;
+  priority?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type PaymentRecord = {
+  id: string;
+  bookingId: string;
+  userId: string;
+  totalAmount: number;
+  paidAmount: number;
+  amount: number;
+  paymentType: string;
+  method: string;
+  status: string;
+  transactionId: string;
+  vnpTransactionNo?: string;
+  vnpResponseCode?: string;
+  createdAt: string;
+};
+
+export type CheckinQrPayment = {
+  paymentCode: string;
+  amount: number;
+  confirmUrl: string;
+  expiredAt: string;
+};
+
+export type CheckinPaymentStatus = {
+  paymentCode: string;
+  bookingId: string;
+  bookingCode: string;
+  amount: number;
+  status: string;
+};
+
+export type UserNotification = {
+  id: string;
+  bookingId: string;
+  userId: string;
+  type: string;
+  message: string;
+  createdAt: string;
+};
+
+export type RefundRecord = {
+  id: string;
+  bookingId: string;
+  paymentTransactionId: string;
+  paidAmount: number;
+  cancellationFee: number;
+  refundAmount: number;
+  refundMethod: string;
+  amount: number;
+  status: string;
+  reason: string;
+  processedBy: string;
+  assignedTo: string;
+  dueAt: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BookingGuestPayload = {
+  fullName: string;
+  dateOfBirth?: string;
+  phone?: string;
+  email?: string;
+  primary?: boolean;
+  checkInPerson?: boolean;
+};
+
+export type CreateBookingPayload = {
+  roomId: number;
+  userId: number;
+  checkIn: string;
+  checkOut: string;
+  pricePerNight: number;
+  paymentType?: PaymentType;
+  ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
+  guestCount: number;
+  roomCapacitySnapshot?: number;
+  primaryGuest: BookingGuestPayload;
+  guests: BookingGuestPayload[];
 };
 
 const api = axios.create({
@@ -87,6 +278,20 @@ const userHttp = axios.create({
 
 const roomHttp = axios.create({
   baseURL: import.meta.env.VITE_ROOM_API_URL || '/room-api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+const paymentHttp = axios.create({
+  baseURL: import.meta.env.VITE_PAYMENT_API_URL || '/payment-api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+const notificationHttp = axios.create({
+  baseURL: import.meta.env.VITE_NOTIFICATION_API_URL || '/notification-api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -167,18 +372,16 @@ const attachAuthInterceptors = (client: typeof api) => {
   );
 };
 
-const DEFAULT_ROOM_IMAGE =
-  'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=800';
-
 const mapRoom = (room: RoomBackend): Room => {
   return {
     id: String(room.id),
+    name: `${room.roomType.type} ${room.roomNumber ? `- ${room.roomNumber}` : ''}`.trim(),
     roomNumber: room.roomNumber,
     type: room.roomType.type,
     price: room.roomType.basePrice,
     maxGuests: room.actualCapacity || room.roomType.maxCapacity,
     images: room.roomType.images?.map(img => img.imageUrl) || [],
-    amenities: [], 
+    amenities: [],
     description: room.roomType.description,
     available: room.status === 'AVAILABLE',
     floor: room.floor,
@@ -189,8 +392,11 @@ const mapRoom = (room: RoomBackend): Room => {
 };
 
 const mapBooking = (booking: BookingBackend): Booking => {
-  const rawStatus = String(booking.status || 'PENDING').toLowerCase();
-  const status = (['pending', 'confirmed', 'cancelled'].includes(rawStatus) ? rawStatus : 'pending') as Booking['status'];
+  const rawStatus = String(booking.status || 'pending_payment').toLowerCase();
+  const status = ([
+    'pending_payment', 'pending', 'deposit_paid', 'confirmed',
+    'checked_in', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
+  ].includes(rawStatus) ? rawStatus : 'pending_payment') as Booking['status'];
 
   return {
     id: String(booking.id ?? ''),
@@ -198,11 +404,21 @@ const mapBooking = (booking: BookingBackend): Booking => {
     userId: String(booking.userId ?? ''),
     checkIn: booking.checkIn || '',
     checkOut: booking.checkOut || '',
-    totalPrice: 0,
+    totalPrice: Number(booking.finalTotal || 0),
     status,
     guests: 0,
     rooms: 0,
     createdAt: booking.createdAt || '',
+    ratePlan: booking.ratePlan,
+    paymentType: booking.paymentType,
+    paymentStatus: booking.paymentStatus,
+    paidAmount: Number(booking.paidAmount || 0),
+    depositAmount: Number(booking.depositAmount || 0),
+    paymentTransactionId: booking.paymentTransactionId,
+    cancelledAt: booking.cancelledAt,
+    cancellationReason: booking.cancellationReason,
+    actualCheckInAt: booking.actualCheckInAt,
+    actualCheckOutAt: booking.actualCheckOutAt,
   };
 };
 
@@ -258,6 +474,8 @@ attachAuthInterceptors(api);
 attachAuthInterceptors(userHttp);
 attachAuthInterceptors(authResourceHttp);
 attachAuthInterceptors(roomHttp);
+attachAuthInterceptors(paymentHttp);
+attachAuthInterceptors(notificationHttp);
 
 // Room APIs
 export const roomApi = {
@@ -270,7 +488,7 @@ export const roomApi = {
     const response = await roomHttp.get<unknown>(`/rooms/${id}`);
     return extractSingleRoom(response.data);
   },
-  
+
   getAvailableRooms: async (roomTypeId: string, checkIn: string, checkOut: string): Promise<Room[]> => {
     const response = await roomHttp.get<unknown>('/rooms/available', {
       params: { roomTypeId, checkIn, checkOut }
@@ -304,7 +522,7 @@ export const roomApi = {
   uploadImage: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return roomHttp.post<{url: string}>('/rooms/upload', formData, {
+    return roomHttp.post<{ url: string }>('/rooms/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
   }
@@ -312,7 +530,7 @@ export const roomApi = {
 
 // Booking APIs
 export const bookingApi = {
-  create: async (bookingData: { roomId: number; userId: number; checkIn: string; checkOut: string }): Promise<Booking> => {
+  create: async (bookingData: CreateBookingPayload): Promise<Booking> => {
     const response = await api.post<unknown>('/bookings', bookingData);
     return extractSingleBooking(response.data);
   },
@@ -325,6 +543,543 @@ export const bookingApi = {
   getById: async (id: string): Promise<Booking> => {
     const response = await api.get<unknown>(`/bookings/${id}`);
     return extractSingleBooking(response.data);
+  },
+
+  getPricing: async (pricingData: { checkInDate: string; checkOutDate: string; pricePerNight: number; ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE' }): Promise<any> => {
+    const response = await api.post<any>('/bookings/pricing', pricingData);
+    return response.data?.data ?? response.data;
+  },
+
+  cancel: async (id: string, reason?: string): Promise<any> => {
+    const response = await api.post<any>(`/bookings/${id}/cancel`, { reason });
+    return response.data;
+  },
+
+  getPolicy: async (id: string): Promise<any> => {
+    const response = await api.get<any>(`/bookings/${id}/policy`);
+    return response.data;
+  },
+
+  getGuests: async (id: string): Promise<any[]> => {
+    const response = await api.get<any[]>(`/bookings/${id}/guests`);
+    return response.data;
+  },
+
+  submitPreCheckin: async (id: string, documents: Array<{
+    guestId: number;
+    idType: 'CCCD' | 'PASSPORT' | 'BIRTH_CERTIFICATE';
+    idNumber: string;
+    issuedDate?: string;
+    issuedPlace?: string;
+    idImageUrl?: string;
+  }>): Promise<any[]> => {
+    const response = await api.post<any[]>(`/bookings/${id}/pre-checkin`, { documents });
+    return response.data;
+  },
+};
+
+const mapPayment = (payment: PaymentBackend): PaymentRecord => ({
+  id: String(payment.id ?? ''),
+  bookingId: String(payment.bookingId ?? ''),
+  userId: String(payment.userId ?? ''),
+  totalAmount: Number(payment.totalAmount || 0),
+  paidAmount: Number(payment.paidAmount || payment.amount || 0),
+  amount: Number(payment.amount || payment.paidAmount || 0),
+  paymentType: payment.paymentType || '',
+  method: payment.method || '',
+  status: payment.status || '',
+  transactionId: payment.transactionId || '',
+  vnpTransactionNo: payment.vnpTransactionNo,
+  vnpResponseCode: payment.vnpResponseCode,
+  createdAt: payment.createdAt || '',
+});
+
+/**
+ * URL trong QR phải là địa chỉ laptop trên LAN (vd. http://192.168.1.5:3000), không dùng localhost —
+ * điện thoại quét QR sẽ mở trên chính máy điện thoại nếu dùng localhost.
+ * - Đặt VITE_PUBLIC_APP_ORIGIN=http://<LAN-IP>:3000 khi nhân viên mở staff bằng http://localhost:3000
+ * - Hoặc mở staff trực tiếp bằng http://<LAN-IP>:3000 (không cần env nếu backend confirmUrl vẫn là localhost)
+ */
+const normalizeConfirmUrl = (confirmUrl: string, paymentCode: string) => {
+  const path = `/payment/confirm?code=${encodeURIComponent(paymentCode)}`;
+  const envOrigin = (import.meta.env.VITE_PUBLIC_APP_ORIGIN as string | undefined)?.trim().replace(/\/$/, '');
+  if (envOrigin) {
+    return `${envOrigin}${path}`;
+  }
+  if (confirmUrl && !confirmUrl.includes('localhost') && !confirmUrl.includes('127.0.0.1')) {
+    return confirmUrl;
+  }
+  const origin = window.location.origin.replace(/\/$/, '');
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    console.warn(
+      '[HotelSystem] QR thanh toán: điện thoại không truy cập được localhost. Thêm VITE_PUBLIC_APP_ORIGIN=http://<IP-LAN>:3000 vào .env hoặc mở trang nhân viên qua IP LAN.'
+    );
+  }
+  return `${origin}${path}`;
+};
+
+const mapCheckinQr = (payment: CheckinQrBackend): CheckinQrPayment => {
+  const paymentCode = payment.paymentCode || '';
+  return {
+    paymentCode,
+    amount: Number(payment.amount || 0),
+    confirmUrl: normalizeConfirmUrl(payment.confirmUrl || '', paymentCode),
+    expiredAt: payment.expiredAt || '',
+  };
+};
+
+const mapCheckinPaymentStatus = (payment: any): CheckinPaymentStatus => ({
+  paymentCode: String(payment?.paymentCode || ''),
+  bookingId: String(payment?.bookingId || ''),
+  bookingCode: String(payment?.bookingCode || payment?.bookingId || ''),
+  amount: Number(payment?.amount || 0),
+  status: String(payment?.status || ''),
+});
+
+const extractPaymentList = (payload: unknown): PaymentRecord[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapPayment(item as PaymentBackend));
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: PaymentBackend[] }).data.map((item) => mapPayment(item));
+  }
+
+  return [];
+};
+
+const mapNotification = (notification: NotificationBackend): UserNotification => ({
+  id: String(notification.id ?? ''),
+  bookingId: String(notification.bookingId ?? ''),
+  userId: String(notification.userId ?? ''),
+  type: notification.type || '',
+  message: notification.message || '',
+  createdAt: notification.createdAt || '',
+});
+
+const extractNotificationList = (payload: unknown): UserNotification[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapNotification(item as NotificationBackend));
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: NotificationBackend[] }).data.map((item) => mapNotification(item));
+  }
+
+  return [];
+};
+
+const mapRefund = (refund: RefundBackend): RefundRecord => ({
+  id: String(refund.id ?? ''),
+  bookingId: String(refund.bookingId ?? ''),
+  paymentTransactionId: refund.paymentTransactionId || '',
+  paidAmount: Number(refund.paidAmount || 0),
+  cancellationFee: Number(refund.cancellationFee || 0),
+  refundAmount: Number(refund.refundAmount || refund.amount || 0),
+  refundMethod: refund.refundMethod || '',
+  amount: Number(refund.amount || refund.refundAmount || 0),
+  status: refund.status || '',
+  reason: refund.reason || '',
+  processedBy: refund.processedBy || '',
+  assignedTo: String(refund.assignedTo ?? ''),
+  dueAt: refund.dueAt || '',
+  priority: refund.priority || '',
+  createdAt: refund.createdAt || '',
+  updatedAt: refund.updatedAt || '',
+});
+
+const extractRefundList = (payload: unknown): RefundRecord[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapRefund(item as RefundBackend));
+  }
+
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: RefundBackend[] }).data.map((item) => mapRefund(item));
+  }
+
+  return [];
+};
+
+export type PaymentType = 'DEPOSIT' | 'FULL' | 'REMAINING';
+
+export type RefundAllocationLine = {
+  amount?: number;
+  receiverType?: string;
+  receiverUserId?: number;
+  receiverGuestId?: number;
+  receiverName?: string;
+  receiverPhone?: string;
+  sourcePaymentPurpose?: string;
+  refundChannel?: string;
+  /** Dòng mô tả đầy đủ từ backend */
+  recipientSummaryVi?: string;
+};
+
+export type CheckoutResponse = {
+  bookingId: string;
+  lateMinutes: number;
+  lateCheckoutFee: number;
+  paymentRequired: boolean;
+  bookingStatus: string;
+  checkoutType?: string;
+  totalNights?: number;
+  refundAmount?: number;
+  refundRate?: number;
+  /** Giá 1 đêm tham chiếu từ backend (công thức hoàn tiền) */
+  effectivePricePerNight?: number;
+  finalAmount?: number;
+  usedNights?: number;
+  chargeNights?: number;
+  unusedNights?: number;
+  representativeGuestId?: string;
+  representativeFullName?: string;
+  representativePhone?: string;
+  representativeCccd?: string;
+  message?: string;
+  refundAllocations?: RefundAllocationLine[];
+};
+
+const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
+  id: String(guest.id ?? ''),
+  bookingId: String(guest.bookingId ?? ''),
+  fullName: guest.fullName || '',
+  dateOfBirth: guest.dateOfBirth,
+  phone: guest.phone,
+  email: guest.email,
+  cccd: guest.cccd,
+  note: guest.note,
+  type: (guest.type || undefined) as BookingGuest['type'],
+  primaryGuest: Boolean(guest.primaryGuest),
+  checkInPerson: Boolean(guest.checkInPerson),
+});
+
+const extractBookingGuestList = (payload: unknown): BookingGuest[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapBookingGuest(item as BookingGuestBackend));
+  }
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: BookingGuestBackend[] }).data.map((item) => mapBookingGuest(item));
+  }
+  return [];
+};
+
+export type InvoiceSummary = {
+  monthlyRevenue: number;
+  paidTotal: number;
+  pendingTotal: number;
+  paidCount: number;
+  pendingCount: number;
+};
+
+export const paymentApi = {
+  createVNPay: async (paymentData: {
+    bookingId: number;
+    userId: number;
+    totalAmount: number;
+    paymentType: PaymentType;
+    bankCode?: string;
+    locale?: 'vn' | 'en';
+  }): Promise<{ paymentUrl: string }> => {
+    const response = await paymentHttp.post<any>('/payments/vnpay/create', paymentData);
+    const payload = response.data?.data ?? response.data;
+    return {
+      paymentUrl: payload?.paymentUrl || payload?.url || payload?.payment_url || '',
+    };
+  },
+
+  createMoMo: async (paymentData: {
+    bookingId: number;
+    userId: number;
+    totalAmount: number;
+    paymentType: PaymentType;
+    requestType?: 'captureWallet' | 'payWithATM';
+  }): Promise<{ paymentUrl: string }> => {
+    const response = await paymentHttp.post<any>('/payments/momo/create', paymentData);
+    const payload = response.data?.data ?? response.data;
+    return {
+      paymentUrl: payload?.paymentUrl || payload?.payUrl || payload?.url || payload?.payment_url || '',
+    };
+  },
+
+  getByBooking: async (bookingId: string, userId?: string): Promise<PaymentRecord[]> => {
+    const response = await paymentHttp.get<unknown>(`/payments/booking/${bookingId}`, {
+      params: userId ? { userId } : undefined,
+    });
+    return extractPaymentList(response.data);
+  },
+
+  markLateCheckoutPaid: async (bookingId: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/late-checkout-fee/paid`);
+    return mapPayment(response.data as PaymentBackend);
+  },
+
+  markEarlyCheckinPaid: async (bookingId: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/early-checkin-fee/paid`);
+    return mapPayment(response.data as PaymentBackend);
+  },
+
+  createCheckinQr: async (payload: {
+    bookingId: string;
+    amount: number;
+    method: 'BANK_TRANSFER';
+    type: 'CHECKIN_REMAINING_PAYMENT';
+  }): Promise<CheckinQrPayment> => {
+    const response = await paymentHttp.post<unknown>('/payments/checkin-qr', {
+      bookingId: Number(payload.bookingId),
+      amount: payload.amount,
+      method: payload.method,
+      type: payload.type,
+    });
+    return mapCheckinQr(response.data as CheckinQrBackend);
+  },
+
+  getCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.get<unknown>('/payments/checkin-qr', { params: { code: paymentCode } });
+    return mapCheckinPaymentStatus(response.data);
+  },
+
+  confirmCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.post<unknown>(`/payments/${paymentCode}/confirm`);
+    return mapCheckinPaymentStatus(response.data);
+  },
+
+  cancelCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.post<unknown>(`/payments/${paymentCode}/cancel`);
+    return mapCheckinPaymentStatus(response.data);
+  },
+};
+
+export const buildPaymentSocketUrl = () => {
+  const configured = import.meta.env.VITE_PAYMENT_WS_URL as string | undefined;
+  if (configured) return configured;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/payment-api/ws/payments`;
+};
+
+export const notificationApi = {
+  getByUser: async (userId: string): Promise<UserNotification[]> => {
+    const response = await notificationHttp.get<unknown>('/notifications', { params: { userId } });
+    return extractNotificationList(response.data).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  },
+};
+
+export const refundApi = {
+  getByUser: async (userId: string): Promise<RefundRecord[]> => {
+    const response = await api.get<unknown>(`/refunds/user/${userId}`);
+    return extractRefundList(response.data).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  },
+
+  getByBooking: async (bookingId: string): Promise<RefundRecord[]> => {
+    const response = await api.get<unknown>(`/refunds/booking/${bookingId}`);
+    return extractRefundList(response.data).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  },
+};
+
+function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): CheckoutResponse {
+  const rawLines = data?.refundAllocations;
+  let refundAllocations: RefundAllocationLine[] | undefined;
+  if (Array.isArray(rawLines)) {
+    refundAllocations = rawLines.map((line: Record<string, unknown>) => ({
+      amount: line.amount != null ? Number(line.amount) : undefined,
+      receiverType: line.receiverType != null ? String(line.receiverType) : undefined,
+      receiverUserId: line.receiverUserId != null ? Number(line.receiverUserId) : undefined,
+      receiverGuestId: line.receiverGuestId != null ? Number(line.receiverGuestId) : undefined,
+      receiverName: line.receiverName != null ? String(line.receiverName) : undefined,
+      receiverPhone: line.receiverPhone != null ? String(line.receiverPhone) : undefined,
+      sourcePaymentPurpose:
+        line.sourcePaymentPurpose != null ? String(line.sourcePaymentPurpose) : undefined,
+      refundChannel: line.refundChannel != null ? String(line.refundChannel) : undefined,
+      recipientSummaryVi:
+        line.recipientSummaryVi != null ? String(line.recipientSummaryVi) : undefined,
+    }));
+  }
+  return {
+    bookingId: String(data?.bookingId ?? bookingId),
+    lateMinutes: Number(data?.lateMinutes || 0),
+    lateCheckoutFee: Number(data?.lateCheckoutFee || 0),
+    paymentRequired: Boolean(data?.paymentRequired),
+    bookingStatus: String(data?.bookingStatus || ''),
+    checkoutType: data?.checkoutType != null ? String(data.checkoutType) : undefined,
+    totalNights: data?.totalNights != null ? Number(data.totalNights) : undefined,
+    refundAmount: data?.refundAmount != null ? Number(data.refundAmount) : undefined,
+    refundRate: data?.refundRate != null ? Number(data.refundRate) : undefined,
+    finalAmount: data?.finalAmount != null ? Number(data.finalAmount) : undefined,
+    usedNights: data?.usedNights != null ? Number(data.usedNights) : undefined,
+    chargeNights: data?.chargeNights != null ? Number(data.chargeNights) : undefined,
+    unusedNights: data?.unusedNights != null ? Number(data.unusedNights) : undefined,
+    effectivePricePerNight:
+      data?.effectivePricePerNight != null ? Number(data.effectivePricePerNight) : undefined,
+    representativeGuestId:
+      data?.representativeGuestId != null ? String(data.representativeGuestId) : undefined,
+    representativeFullName:
+      data?.representativeFullName != null ? String(data.representativeFullName) : undefined,
+    representativePhone: data?.representativePhone != null ? String(data.representativePhone) : undefined,
+    representativeCccd: data?.representativeCccd != null ? String(data.representativeCccd) : undefined,
+    message: data?.message != null ? String(data.message) : undefined,
+    refundAllocations,
+  };
+}
+
+export const staffBookingApi = {
+  getCheckInList: async (): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/check-in-list');
+    return extractBookingList(response.data);
+  },
+
+  getCheckoutList: async (): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/checkout-list');
+    return extractBookingList(response.data);
+  },
+
+  getBooking: async (bookingId: string): Promise<Booking> => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}`);
+    return extractSingleBooking(response.data);
+  },
+
+  checkIn: async (bookingId: string, representativeCccd: string): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/check-in`, { representativeCccd });
+    return extractSingleBooking(response.data);
+  },
+
+  checkInWithRepresentative: async (
+    bookingId: string,
+    payload: { representativeGuestId: string; representativeCccd: string; representativePhone?: string }
+  ): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/check-in`, {
+      representativeGuestId: Number(payload.representativeGuestId),
+      representativeCccd: payload.representativeCccd,
+      representativePhone: payload.representativePhone,
+    });
+    return extractSingleBooking(response.data);
+  },
+
+  updateCheckInRepresentative: async (
+    bookingId: string,
+    payload: { representativeGuestId: string; representativeCccd: string; representativePhone?: string }
+  ): Promise<Booking> => {
+    const response = await api.put<unknown>(`/api/staff/bookings/${bookingId}/check-in-representative`, {
+      representativeGuestId: Number(payload.representativeGuestId),
+      representativeCccd: payload.representativeCccd,
+      representativePhone: payload.representativePhone,
+    });
+    return extractSingleBooking(response.data);
+  },
+
+  getGuests: async (bookingId: string): Promise<BookingGuest[]> => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/guests`);
+    return extractBookingGuestList(response.data);
+  },
+
+  collectRemainingPayment: async (
+    bookingId: string,
+    payload: {
+      amount: number;
+      userId?: number;
+      payerGuestId?: number;
+      payerName?: string;
+      payerPhone?: string;
+      method: 'CASH' | 'BANK_TRANSFER';
+      transactionId?: string;
+    }
+  ): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/remaining-payment`, payload);
+    return extractSingleBooking(response.data);
+  },
+
+  calculateCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/calculate`);
+    return mapCheckoutResponse(response.data, bookingId);
+  },
+
+  confirmCheckout: async (
+    bookingId: string,
+    payload?: {
+      verifierFullName?: string;
+      verifierPhone?: string;
+      verifierCccd?: string;
+      earlyCheckoutReason?: string;
+      verificationOverride?: boolean;
+      overrideReason?: string;
+    }
+  ): Promise<CheckoutResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/confirm`, payload ?? {});
+    return mapCheckoutResponse(response.data, bookingId);
+  },
+
+  completeCheckout: async (bookingId: string): Promise<Booking> => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/checkout/complete`);
+    return extractSingleBooking(response.data);
+  },
+};
+
+export const staffRefundApi = {
+  getAll: async (): Promise<RefundRecord[]> => {
+    const response = await api.get<unknown>('/api/staff/refund-requests');
+    return extractRefundList(response.data);
+  },
+
+  assign: async (id: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/assign`);
+    return mapRefund(response.data as RefundBackend);
+  },
+
+  approve: async (id: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/approve`);
+    return mapRefund(response.data as RefundBackend);
+  },
+
+  reject: async (id: string, reason: string): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/reject`, { reason });
+    return mapRefund(response.data as RefundBackend);
+  },
+};
+
+export const staffInvoiceApi = {
+  getSummary: async (): Promise<InvoiceSummary> => {
+    const response = await paymentHttp.get<any>('/api/staff/invoices/summary');
+    return {
+      monthlyRevenue: Number(response.data.monthlyRevenue || 0),
+      paidTotal: Number(response.data.paidTotal || 0),
+      pendingTotal: Number(response.data.pendingTotal || 0),
+      paidCount: Number(response.data.paidCount || 0),
+      pendingCount: Number(response.data.pendingCount || 0),
+    };
+  },
+
+  getAll: async (): Promise<PaymentRecord[]> => {
+    const response = await paymentHttp.get<unknown>('/api/staff/invoices');
+    return extractPaymentList(response.data);
+  },
+
+  getById: async (id: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.get<unknown>(`/api/staff/invoices/${id}`);
+    return mapPayment(response.data as PaymentBackend);
   },
 };
 
@@ -389,6 +1144,22 @@ export const employeeApi = {
     }),
 
   remove: (employeeId: number) => userHttp.delete(`/api/users/employees/${employeeId}`),
+};
+
+export const customerApi = {
+  getAll: (params?: { keyword?: string; active?: boolean }) =>
+    userHttp.get<CustomerBackend[]>('/api/users/customers', { params }),
+
+  create: (payload: CreateCustomerPayload) =>
+    userHttp.post<CustomerBackend>('/api/users/customers', payload),
+
+  update: (customerId: number, payload: UpdateCustomerPayload) =>
+    userHttp.put<CustomerBackend>(`/api/users/customers/${customerId}`, payload),
+
+  updateStatus: (customerId: number, active: boolean) =>
+    userHttp.patch<CustomerBackend>(`/api/users/customers/${customerId}/status`, null, {
+      params: { active },
+    }),
 };
 
 export default api;

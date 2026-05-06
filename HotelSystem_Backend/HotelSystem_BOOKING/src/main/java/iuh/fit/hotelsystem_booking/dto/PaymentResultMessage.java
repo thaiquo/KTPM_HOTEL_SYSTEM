@@ -4,7 +4,10 @@ public class PaymentResultMessage {
 
     private Long bookingId;
     private Long userId;
-    private String status; // SUCCESS / FAILED
+    private String status; // FULL_PAID / DEPOSIT_PAID / REMAINING_PAID / FAILED
+    private Double paidAmount;
+    private Double totalAmount;
+    private String transactionId;
 
     public Long getBookingId() {
         return bookingId;
@@ -29,5 +32,28 @@ public class PaymentResultMessage {
     public void setStatus(String status) {
         this.status = status;
     }
-}
 
+    public Double getPaidAmount() {
+        return paidAmount;
+    }
+
+    public void setPaidAmount(Double paidAmount) {
+        this.paidAmount = paidAmount;
+    }
+
+    public Double getTotalAmount() {
+        return totalAmount;
+    }
+
+    public void setTotalAmount(Double totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
+    public String getTransactionId() {
+        return transactionId;
+    }
+
+    public void setTransactionId(String transactionId) {
+        this.transactionId = transactionId;
+    }
+}

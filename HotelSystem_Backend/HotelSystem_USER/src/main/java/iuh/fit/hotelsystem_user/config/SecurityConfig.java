@@ -24,16 +24,15 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/users/internal/**").permitAll() // Internal APIs
                         .requestMatchers("/api/users/employees/**").hasRole("ADMIN") // Only Admin can manage employees
+                        .requestMatchers("/api/users/customers/**").hasRole("ADMIN") // Only Admin can manage customers
                         .requestMatchers("/api/users/profile/**", "/api/users/me").authenticated()
-                        .anyRequest().permitAll()
-                )
-                .addFilterBefore(jwtFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                        .anyRequest().permitAll())
+                .addFilterBefore(jwtFilter,
+                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

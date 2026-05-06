@@ -2,7 +2,6 @@ package iuh.fit.hotelsystem_booking.listener;
 
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
-import iuh.fit.hotelsystem_booking.dto.PaymentMessage;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
@@ -25,7 +24,7 @@ public class BookingListener {
     }
 
     // =========================================
-    // 1️⃣ ROOM HELD → GỬI PAYMENT REQUEST
+    // 1️⃣ ROOM HELD → BOOKING GIỮ TRẠNG THÁI PENDING
     // =========================================
     @RabbitListener(queues = RabbitConfig.ROOM_HELD_QUEUE)
     public void handleRoomHeld(RoomMessage msg) {
@@ -34,22 +33,9 @@ public class BookingListener {
                 .findById(msg.getBookingId())
                 .orElseThrow();
 
-        // Booking vẫn ở trạng thái PENDING cho đến khi nhận payment.result
-        if (booking.getStatus() == null) {
-            booking.setStatus(BookingStatus.PENDING);
-            bookingRepository.save(booking);
-        }
-
-        PaymentMessage payment = new PaymentMessage();
-        payment.setBookingId(booking.getId());
-        payment.setUserId(booking.getUserId());
-        payment.setAmount(100.0);
-
-        rabbitTemplate.convertAndSend(
-                RabbitConfig.EXCHANGE,
-                "payment.request",
-                payment
-        );
+        // Booking được createBooking set PENDING_PAYMENT
+        // Ở đây có thể log hoặc verify room hold thành công
+        System.out.println("Room held for booking: " + booking.getId());
     }
 
     // =========================================
@@ -70,9 +56,12 @@ public class BookingListener {
         event.setBookingId(booking.getId());
         event.setUserId(booking.getUserId());
 
-        if ("SUCCESS".equals(result.getStatus())) {
+        if ("FULL_PAID".equals(result.getStatus())) {
 
             booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setPaidAmount(result.getPaidAmount());
+            booking.setPaymentStatus("PAID");
+            booking.setPaymentTransactionId(result.getTransactionId());
             event.setStatus(BookingStatus.CONFIRMED.name());
 
             rabbitTemplate.convertAndSend(
@@ -86,6 +75,42 @@ public class BookingListener {
                 "booking.confirmed",
                 event
             );
+
+            } else if ("DEPOSIT_PAID".equals(result.getStatus())) {
+
+                booking.setStatus(BookingStatus.DEPOSIT_PAID);
+                booking.setPaidAmount(result.getPaidAmount());
+                booking.setPaymentStatus("DEPOSITED");
+                booking.setPaymentTransactionId(result.getTransactionId());
+                event.setStatus(BookingStatus.DEPOSIT_PAID.name());
+
+                rabbitTemplate.convertAndSend(
+                    RabbitConfig.EXCHANGE,
+                    "room.confirm",
+                    msg
+                );
+
+                rabbitTemplate.convertAndSend(
+                    RabbitConfig.EXCHANGE,
+                    "booking.confirmed",
+                    event
+                );
+
+            } else if ("REMAINING_PAID".equals(result.getStatus())) {
+
+                booking.setStatus(BookingStatus.CHECKED_IN);
+                double alreadyPaid = booking.getPaidAmount() != null ? booking.getPaidAmount() : 0.0;
+                double additionalPaid = result.getPaidAmount() != null ? result.getPaidAmount() : 0.0;
+                booking.setPaidAmount(alreadyPaid + additionalPaid);
+                booking.setPaymentStatus("PAID");
+                booking.setPaymentTransactionId(result.getTransactionId());
+                event.setStatus(BookingStatus.CHECKED_IN.name());
+
+                rabbitTemplate.convertAndSend(
+                    RabbitConfig.EXCHANGE,
+                    "booking.confirmed",
+                    event
+                );
 
         } else {
 
