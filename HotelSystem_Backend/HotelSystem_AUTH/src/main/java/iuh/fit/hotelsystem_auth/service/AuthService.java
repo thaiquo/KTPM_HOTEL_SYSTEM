@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_auth.service;
 
+import iuh.fit.hotelsystem_auth.client.UserServiceClient;
 import iuh.fit.hotelsystem_auth.dto.request.LoginRequest;
 import iuh.fit.hotelsystem_auth.dto.request.RegisterRequest;
 import iuh.fit.hotelsystem_auth.dto.response.AuthResponse;
@@ -9,10 +10,7 @@ import iuh.fit.hotelsystem_auth.util.JwtUtil;
 import iuh.fit.hotelsystem_auth.util.PasswordUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -28,13 +26,10 @@ public class AuthService {
     private final PasswordUtil passwordUtil;
     private final JwtUtil jwtUtil;
     private final EmailService emailService;
-    private final RestTemplate restTemplate;
+    private final UserServiceClient userServiceClient;
 
     @Value("${jwt.refresh-expiration}")
     private long refreshExpiration;
-
-    @Value("${user.service.url:http://user-service:8082}")
-    private String userServiceUrl;
 
     public AuthService(
             RefreshTokenRepository refreshTokenRepo,
@@ -42,26 +37,27 @@ public class AuthService {
             PasswordUtil passwordUtil,
             JwtUtil jwtUtil,
             EmailService emailService,
-            RestTemplate restTemplate
+            UserServiceClient userServiceClient
     ) {
         this.refreshTokenRepo = refreshTokenRepo;
         this.sessionRepo = sessionRepo;
         this.passwordUtil = passwordUtil;
         this.jwtUtil = jwtUtil;
         this.emailService = emailService;
-        this.restTemplate = restTemplate;
+        this.userServiceClient = userServiceClient;
     }
 
     public String register(RegisterRequest req) {
         // Call user-service to check if email/phone exists
         try {
-            String checkUrl = userServiceUrl + "/api/users/internal/check-exists?email=" + req.getEmail() + "&phone=" + req.getPhoneNumber();
-            ResponseEntity<Map> response = restTemplate.getForEntity(checkUrl, Map.class);
-            if (response.getBody() != null && Boolean.TRUE.equals(response.getBody().get("exists"))) {
+            Map<String, Object> response = userServiceClient.checkExists(req.getEmail(), req.getPhoneNumber());
+            if (response != null && Boolean.TRUE.equals(response.get("exists"))) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Email or phone number already exists");
             }
-        } catch (HttpClientErrorException e) {
-            throw new ResponseStatusException(e.getStatusCode(), "Error checking user existence");
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Error checking user existence: " + e.getMessage());
         }
 
         sessionRepo.findByEmail(req.getEmail()).ifPresent(sessionRepo::delete);
@@ -120,7 +116,7 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "OTP expired");
         }
 
-        // Call user-service to create user
+        // Call user-service to create user via Feign
         Map<String, Object> createReq = new HashMap<>();
         createReq.put("email", session.getEmail());
         createReq.put("phoneNumber", session.getPhoneNumber());
@@ -132,9 +128,11 @@ public class AuthService {
         createReq.put("role", session.getRole());
 
         try {
-            restTemplate.postForEntity(userServiceUrl + "/api/users/internal/create", createReq, Map.class);
-        } catch (HttpClientErrorException e) {
-            throw new ResponseStatusException(e.getStatusCode(), "Error creating user in user-service: " + e.getResponseBodyAsString());
+            userServiceClient.createUser(createReq);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error creating user in user-service: " + e.getMessage());
         }
 
         sessionRepo.delete(session);
@@ -147,15 +145,11 @@ public class AuthService {
 
         Map<String, Object> userData;
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(userServiceUrl + "/api/users/internal/verify", credentials, Map.class);
-            userData = response.getBody();
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
-            } else if (e.getStatusCode() == HttpStatus.FORBIDDEN) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản đang tạm ngưng");
-            }
-            throw new ResponseStatusException(e.getStatusCode(), "Authentication service error");
+            userData = userServiceClient.verifyCredentials(credentials);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Authentication service error: " + e.getMessage());
         }
 
         if (userData == null || !userData.containsKey("id")) {

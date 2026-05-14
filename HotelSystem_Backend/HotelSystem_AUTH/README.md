@@ -14,13 +14,16 @@ Service **xác thực và bảo mật**. Quản lý đăng nhập, cấp phát J
 - Xác thực Stateless thông qua JWT.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8081`
-- **Base Path**: `/auth`
+- **Internal Port**: `8081`
+- **Service ID**: `auth-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/auth-api/**`
+- **Tracing**: Brave/Zipkin enabled
 
-## 📡 REST API Endpoints
+## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/auth/login` | Đăng nhập hệ thống |
-| `POST` | `/auth/refresh` | Làm mới token |
-| `POST` | `/auth/logout` | Đăng xuất |
+| `POST` | `/auth-api/auth/login` | Đăng nhập hệ thống |
+| `POST` | `/auth-api/auth/refresh` | Làm mới token |
+| `POST` | `/auth-api/auth/logout` | Đăng xuất |
+| `GET` | `/auth-api/auth/verify` | Kiểm tra token hợp lệ |

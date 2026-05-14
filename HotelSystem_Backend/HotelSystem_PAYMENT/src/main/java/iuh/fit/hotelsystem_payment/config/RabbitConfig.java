@@ -10,11 +10,14 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 public class RabbitConfig {
 
     public static final String EXCHANGE = "hotel.exchange";
+    public static final String DLX_EXCHANGE = "hotel.dlx";
 
     public static final String PAYMENT_REQUEST_QUEUE = "payment.request.queue";
+    public static final String PAYMENT_REQUEST_DLQ = "payment.request.dlq";
 
     public static final String PAYMENT_REQUEST_ROUTING_KEY = "payment.request";
     public static final String PAYMENT_RESULT_ROUTING_KEY = "payment.result";
+    public static final String DLQ_ROUTING_KEY = "dlq.payment.request";
 
     @Bean
     public TopicExchange exchange() {
@@ -22,8 +25,21 @@ public class RabbitConfig {
     }
 
     @Bean
+    public TopicExchange deadLetterExchange() {
+        return new TopicExchange(DLX_EXCHANGE);
+    }
+
+    @Bean
     public Queue paymentRequestQueue() {
-        return new Queue(PAYMENT_REQUEST_QUEUE);
+        return QueueBuilder.durable(PAYMENT_REQUEST_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    public Queue paymentRequestDlq() {
+        return new Queue(PAYMENT_REQUEST_DLQ);
     }
 
     @Bean
@@ -32,6 +48,14 @@ public class RabbitConfig {
                 .bind(paymentRequestQueue())
                 .to(exchange())
                 .with(PAYMENT_REQUEST_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding paymentDlqBinding() {
+        return BindingBuilder
+                .bind(paymentRequestDlq())
+                .to(deadLetterExchange())
+                .with(DLQ_ROUTING_KEY);
     }
 
     @Bean

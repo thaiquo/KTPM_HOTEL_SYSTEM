@@ -12,12 +12,11 @@ import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -38,10 +37,7 @@ public class RefundService {
     private final RefundPaymentTransactionRepository paymentTransactionRepository;
     private final RefundAuditService refundAuditService;
     private final RefundNotificationService refundNotificationService;
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    @Value("${payment.service.url:http://payment-service:8085}")
-    private String paymentServiceUrl;
+    private final PaymentServiceClient paymentServiceClient;
 
     public RefundService(RefundTransactionRepository refundRepository,
                          BookingRepository bookingRepository,
@@ -49,7 +45,8 @@ public class RefundService {
                          RefundQueueProducer refundQueueProducer,
                          RefundPaymentTransactionRepository paymentTransactionRepository,
                          RefundAuditService refundAuditService,
-                         RefundNotificationService refundNotificationService) {
+                         RefundNotificationService refundNotificationService,
+                         PaymentServiceClient paymentServiceClient) {
         this.refundRepository = refundRepository;
         this.bookingRepository = bookingRepository;
         this.paymentGateway = paymentGateway;
@@ -57,6 +54,7 @@ public class RefundService {
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.refundAuditService = refundAuditService;
         this.refundNotificationService = refundNotificationService;
+        this.paymentServiceClient = paymentServiceClient;
     }
 
     @Transactional
@@ -200,7 +198,7 @@ public class RefundService {
         paymentRequest.put("bookingId", refund.getBookingId());
         paymentRequest.put("userId", refund.getUserId());
         paymentRequest.put("amount", refund.getRefundAmount());
-        restTemplate.postForObject(paymentServiceUrl + "/payments/refunds/" + refundId, paymentRequest, Object.class);
+        paymentServiceClient.processRefund(refundId, paymentRequest);
 
         approved.setStatus(RefundStatus.COMPLETED);
         approved.setCompletedAt(LocalDateTime.now());

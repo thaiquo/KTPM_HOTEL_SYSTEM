@@ -24,10 +24,10 @@ import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
 import iuh.fit.hotelsystem_payment.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import iuh.fit.hotelsystem_payment.socket.PaymentSocketService;
+import iuh.fit.hotelsystem_payment.client.BookingServiceClient;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -56,10 +56,7 @@ public class PaymentService {
     private final RefundTransactionRepository refundTransactionRepository;
     private final RabbitTemplate rabbitTemplate;
     private final PaymentSocketService paymentSocketService;
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    @Value("${booking.service.url:http://booking-service:8084}")
-    private String bookingServiceUrl;
+    private final BookingServiceClient bookingServiceClient;
 
     @Value("${payment.checkin.confirm-url:http://localhost:3000/payment/confirm}")
     private String checkinConfirmUrl;
@@ -67,11 +64,13 @@ public class PaymentService {
     public PaymentService(PaymentRepository paymentRepository,
                           RefundTransactionRepository refundTransactionRepository,
                           RabbitTemplate rabbitTemplate,
-                          PaymentSocketService paymentSocketService) {
+                          PaymentSocketService paymentSocketService,
+                          BookingServiceClient bookingServiceClient) {
         this.paymentRepository = paymentRepository;
         this.refundTransactionRepository = refundTransactionRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.paymentSocketService = paymentSocketService;
+        this.bookingServiceClient = bookingServiceClient;
     }
 
     public void processPayment(Long bookingId) {
@@ -163,7 +162,7 @@ public class PaymentService {
             throw new IllegalArgumentException("Invalid payment type");
         }
 
-        restTemplate.getForObject(bookingServiceUrl + "/bookings/" + request.getBookingId(), Map.class);
+        bookingServiceClient.getBooking(request.getBookingId());
         if (paymentRepository.existsByBookingIdAndStatus(request.getBookingId(), PaymentStatus.PENDING)) {
             throw new IllegalStateException("Booking already has a pending payment");
         }
@@ -230,10 +229,7 @@ public class PaymentService {
         request.setPaymentCode(payment.getPaymentCode());
         request.setAmount(payment.getAmount());
         request.setMethod(payment.getMethod());
-        restTemplate.postForObject(
-                bookingServiceUrl + "/bookings/" + payment.getBookingId() + "/confirm-checkin-payment",
-                request,
-                Map.class);
+        bookingServiceClient.confirmCheckinPayment(payment.getBookingId(), request);
 
         paymentSocketService.emit("payment:success", toEvent(payment, "SUCCESS"));
         return getCheckinPayment(paymentCode);

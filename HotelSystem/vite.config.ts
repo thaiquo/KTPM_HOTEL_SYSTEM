@@ -68,36 +68,11 @@ export default defineConfig(({ mode }) => {
         clientPort: Number(process.env.VITE_PORT) || 3000,
       },
       proxy: {
-        '/auth-api': {
-          target: authTarget,
-          changeOrigin: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/auth-api/, ''),
-        },
-        '/user-api': {
-          target: userTarget,
-          changeOrigin: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/user-api/, ''),
-        },
-        '/room-api': {
-          target: roomTarget,
-          changeOrigin: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/room-api/, ''),
-        },
-        '/booking-api': {
-          target: bookingTarget,
-          changeOrigin: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/booking-api/, ''),
-        },
-        '/payment-api': {
-          target: paymentTarget,
+        // Tất cả request bắt đầu bằng -api sẽ đi qua Gateway port 8080
+        '^/.*-api': {
+          target: isDocker ? 'http://api-gateway:8080' : 'http://localhost:8080',
           changeOrigin: true,
           ws: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/payment-api/, ''),
-        },
-        '/notification-api': {
-          target: notificationTarget,
-          changeOrigin: true,
-          rewrite: (apiPath) => apiPath.replace(/^\/notification-api/, ''),
         },
       },
     },

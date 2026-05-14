@@ -14,18 +14,20 @@ Service **tạo và quản lý đặt phòng**. Đây là service cốt lõi đi
 - Phụ thu Check-in sớm / Check-out trễ.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8084`
-- **Base Path**: `/bookings`
+- **Internal Port**: `8084`
+- **Service ID**: `booking-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/booking-api/**`
+- **Tracing**: Brave/Zipkin enabled
 
-## 📡 REST API Endpoints
+## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/bookings` | Tạo đặt phòng mới |
-| `GET` | `/bookings/{id}` | Lấy thông tin chi tiết đặt phòng |
-| `GET` | `/bookings/user/{userId}` | Danh sách đặt phòng của người dùng |
-| `POST` | `/bookings/{id}/check-in` | Thực hiện thủ tục nhận phòng |
-| `POST` | `/bookings/{id}/cancel` | Hủy đặt phòng |
+| `POST` | `/booking-api/bookings` | Tạo đặt phòng mới |
+| `GET` | `/booking-api/bookings/{id}` | Lấy thông tin chi tiết đặt phòng |
+| `GET` | `/booking-api/bookings/user/{userId}` | Danh sách đặt phòng của người dùng |
+| `POST` | `/booking-api/bookings/{id}/check-in` | Thực hiện thủ tục nhận phòng |
+| `POST` | `/booking-api/bookings/{id}/cancel` | Hủy đặt phòng |
 
 ### Body mẫu khi tạo booking
 

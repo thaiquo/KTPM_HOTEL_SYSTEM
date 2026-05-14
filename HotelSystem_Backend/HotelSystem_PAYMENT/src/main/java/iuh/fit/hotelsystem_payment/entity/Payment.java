@@ -1,7 +1,5 @@
 package iuh.fit.hotelsystem_payment.entity;
 
-
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -43,6 +41,8 @@ public class Payment {
     private LocalDateTime expiredAt;
     private LocalDateTime paidAt;
 
+    @Column(unique = true)
+    private String idempotencyKey;
 
     public Long getId() {
         return id;
@@ -180,5 +180,12 @@ public class Payment {
     public void setPaidAt(LocalDateTime paidAt) {
         this.paidAt = paidAt;
     }
-}
 
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+}

@@ -1,5 +1,53 @@
 services:
   # ========================
+  # EUREKA SERVER (Service Discovery)
+  # ========================
+  eureka-server:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_EUREKA:/app
+      - maven-repo:/root/.m2
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # ========================
+  # REDIS (Caching & Rate Limiting)
+  # ========================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  # ========================
+  # ZIPKIN (Distributed Tracing)
+  # ========================
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+
+  # ========================
   # RABBITMQ
   # ========================
   rabbitmq:
@@ -42,10 +90,21 @@ services:
     volumes:
       - auth_data:/var/lib/postgresql/data
 
+  postgres-user:
+    image: postgres:15
+    ports:
+      - "55422:5432"
+    environment:
+      POSTGRES_DB: hotel_user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - user_data:/var/lib/postgresql/data
+
   auth-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -57,6 +116,7 @@ services:
     depends_on:
       - postgres-auth
       - rabbitmq
+      - eureka-server
     environment:
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
@@ -64,11 +124,12 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
 
   user-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -78,12 +139,14 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      - postgres-auth
+      - postgres-user
+      - eureka-server
     environment:
-      DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
+      DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      EUREKA_URL: http://eureka-server:8761/eureka/
 
 
   # ========================
@@ -103,7 +166,7 @@ services:
   room-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -115,6 +178,8 @@ services:
     depends_on:
       - postgres-room
       - rabbitmq
+      - eureka-server
+      - redis
     environment:
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
@@ -127,6 +192,9 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local-secret-key}
       AWS_REGION: ap-southeast-2
       AWS_S3_BUCKET: ktpmbtl-s3-bucket
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
   # ========================
   # BOOKING DB + SERVICE (DEV HOT RELOAD)
@@ -145,7 +213,7 @@ services:
   booking-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -157,6 +225,7 @@ services:
     depends_on:
       - postgres-booking
       - rabbitmq
+      - eureka-server
     environment:
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
@@ -164,6 +233,7 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
 
   # ========================
   # PAYMENT DB + SERVICE (DEV HOT RELOAD)
@@ -182,7 +252,7 @@ services:
   payment-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -194,6 +264,7 @@ services:
     depends_on:
       - postgres-payment
       - rabbitmq
+      - eureka-server
     environment:
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
@@ -201,6 +272,7 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
       # ── VNPAY Sandbox credentials (từ vnpay_nodejs/config/default.json) ──
       VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
       VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
@@ -225,7 +297,7 @@ services:
   notification-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -237,6 +309,7 @@ services:
     depends_on:
       - postgres-notification
       - rabbitmq
+      - eureka-server
     environment:
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
@@ -244,6 +317,30 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+
+  # ========================
+  # API GATEWAY
+  # ========================
+  api-gateway:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_GATEWAY:/app
+      - maven-repo:/root/.m2
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+      - redis
+    environment:
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
   # ========================
   # FRONTEND (VITE HOT RELOAD)
@@ -258,12 +355,7 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - auth-service
-      - user-service
-      - room-service
-      - booking-service
-      - payment-service
-      - notification-service
+      - api-gateway
     environment:
       CHOKIDAR_USEPOLLING: "true"
       VITE_DOCKER: "true"
@@ -271,9 +363,11 @@ services:
 volumes:
   pgadmin_data:
   auth_data:
+  user_data:
   room_data:
   booking_data:
   payment_data:
   notification_data:
+  redis_data:
   maven-repo:
   frontend-node-modules:

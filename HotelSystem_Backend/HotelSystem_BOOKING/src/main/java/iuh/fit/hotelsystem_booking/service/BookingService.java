@@ -26,11 +26,11 @@ import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,10 +53,7 @@ public class BookingService {
     private final CheckInOutService checkInOutService;
     private final BookingGuestService bookingGuestService;
     private final CheckoutService checkoutService;
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    @Value("${payment.service.url:http://payment-service:8085}")
-    private String paymentServiceUrl;
+    private final PaymentServiceClient paymentServiceClient;
 
     public BookingService(BookingRepository bookingRepository,
                           BookingStayRepository bookingStayRepository,
@@ -65,7 +62,8 @@ public class BookingService {
                           PricingService pricingService,
                           CheckInOutService checkInOutService,
                           BookingGuestService bookingGuestService,
-                          CheckoutService checkoutService) {
+                          CheckoutService checkoutService,
+                          PaymentServiceClient paymentServiceClient) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
         this.rabbitTemplate = rabbitTemplate;
@@ -74,6 +72,7 @@ public class BookingService {
         this.checkInOutService = checkInOutService;
         this.bookingGuestService = bookingGuestService;
         this.checkoutService = checkoutService;
+        this.paymentServiceClient = paymentServiceClient;
     }
 
     public Booking createBooking(Booking booking) {
@@ -271,19 +270,14 @@ public class BookingService {
                 && now.toLocalTime().isBefore(LocalTime.of(BookingConstants.CHECK_IN_HOUR, 0))) {
             double fee = checkInOutService.calculateEarlyCheckInFee(booking, now);
             if (fee > 0.01) {
-                PaymentStatusResponse earlyFeeStatus = restTemplate.getForObject(
-                        paymentServiceUrl + "/payments/bookings/" + bookingId + "/early-checkin-fee/status",
-                        PaymentStatusResponse.class);
+                PaymentStatusResponse earlyFeeStatus = paymentServiceClient.getEarlyCheckinFeeStatus(bookingId);
                 boolean earlyFeePaid = earlyFeeStatus != null && "PAID".equalsIgnoreCase(earlyFeeStatus.getStatus());
                 if (!earlyFeePaid) {
                     LateCheckoutPaymentRequest feeRequest = new LateCheckoutPaymentRequest();
                     feeRequest.setBookingId(bookingId);
                     feeRequest.setUserId(booking.getUserId());
                     feeRequest.setAmount(fee);
-                    restTemplate.postForObject(
-                            paymentServiceUrl + "/payments/bookings/" + bookingId + "/early-checkin-fee",
-                            feeRequest,
-                            Object.class);
+                    paymentServiceClient.createEarlyCheckinFee(bookingId, feeRequest);
                     throw new IllegalStateException("Early check-in fee payment is required. Amount: " + fee);
                 }
             }
@@ -329,8 +323,7 @@ public class BookingService {
         if (request.getUserId() == null) {
             request.setUserId(booking.getUserId());
         }
-        restTemplate.postForObject(paymentServiceUrl + "/payments/bookings/" + bookingId + "/remaining-payment",
-                request, Object.class);
+        paymentServiceClient.collectRemainingPayment(bookingId, request);
         double paid = valueOrZero(booking.getPaidAmount()) + request.getAmount();
         booking.setPaidAmount(paid);
         if (paid + 0.01 >= valueOrZero(booking.getFinalTotal())) {
@@ -499,8 +492,7 @@ public class BookingService {
     }
 
     private PaymentStatusResponse getPaymentStatus(Long bookingId) {
-        return restTemplate.getForObject(paymentServiceUrl + "/payments/invoices/booking/" + bookingId + "/status",
-                PaymentStatusResponse.class);
+        return paymentServiceClient.getInvoiceStatus(bookingId);
     }
 
     private RatePlan parseRatePlan(String value) {

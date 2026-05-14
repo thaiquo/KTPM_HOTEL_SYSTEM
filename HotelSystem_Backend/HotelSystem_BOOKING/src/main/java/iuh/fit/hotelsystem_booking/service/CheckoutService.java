@@ -1,6 +1,6 @@
 package iuh.fit.hotelsystem_booking.service;
 
-import iuh.fit.hotelsystem_booking.client.PaymentClient;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.config.TimeConfig;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
@@ -41,7 +41,7 @@ public class CheckoutService {
     private final CheckInOutService checkInOutService;
     private final RefundCalculationService refundCalculationService;
     private final RabbitTemplate rabbitTemplate;
-    private final PaymentClient paymentClient;
+    private final PaymentServiceClient paymentServiceClient;
     private final Clock clock;
 
     public CheckoutService(BookingRepository bookingRepository,
@@ -50,7 +50,7 @@ public class CheckoutService {
                            CheckInOutService checkInOutService,
                            RefundCalculationService refundCalculationService,
                            RabbitTemplate rabbitTemplate,
-                           PaymentClient paymentClient,
+                           PaymentServiceClient paymentServiceClient,
                            ObjectProvider<Clock> clockProvider) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
@@ -58,7 +58,7 @@ public class CheckoutService {
         this.checkInOutService = checkInOutService;
         this.refundCalculationService = refundCalculationService;
         this.rabbitTemplate = rabbitTemplate;
-        this.paymentClient = paymentClient;
+        this.paymentServiceClient = paymentServiceClient;
         Clock providedClock = clockProvider != null ? clockProvider.getIfAvailable() : null;
         this.clock = providedClock != null ? providedClock : Clock.system(TimeConfig.VIETNAM_ZONE);
     }
@@ -88,7 +88,8 @@ public class CheckoutService {
             return;
         }
         try {
-            List<RefundAllocationLineDto> lines = paymentClient.previewRefundAllocation(bookingId, early.getRefundAmount());
+            java.util.Map<String, Object> req = java.util.Map.of("amount", early.getRefundAmount());
+            List<RefundAllocationLineDto> lines = paymentServiceClient.previewRefundAllocation(bookingId, req);
             response.setRefundAllocations(lines != null ? lines : Collections.emptyList());
         } catch (Exception ex) {
             log.warn("Could not load refund allocation preview for booking {}: {}", bookingId, ex.getMessage());
@@ -140,14 +141,22 @@ public class CheckoutService {
 
         if (early.getRefundAmount() != null && early.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
             booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUND_PENDING);
-            paymentClient.requestEarlyCheckoutRefund(bookingId, early.getRefundAmount(), "EARLY_CHECKOUT", request.getStaffId());
+            java.util.Map<String, Object> refundReq = new java.util.HashMap<>();
+            refundReq.put("amount", early.getRefundAmount().doubleValue());
+            refundReq.put("reason", "EARLY_CHECKOUT");
+            refundReq.put("processedByStaffId", request.getStaffId());
+            paymentServiceClient.requestEarlyCheckoutRefund(bookingId, refundReq);
         }
 
         boolean paymentRequired = lateFee.compareTo(BigDecimal.ZERO) > 0;
         if (paymentRequired) {
             stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.PENDING);
             booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
-            paymentClient.requestLateCheckoutFeePayment(bookingId, booking.getUserId(), lateFee);
+            iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest lateReq = new iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest();
+            lateReq.setBookingId(bookingId);
+            lateReq.setUserId(booking.getUserId());
+            lateReq.setAmount(lateFee.doubleValue());
+            paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateReq);
             publishBookingEvent(booking, "LateCheckoutPaymentRequiredEvent");
         } else {
             stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
@@ -173,7 +182,8 @@ public class CheckoutService {
 
         BigDecimal lateFee = stay.getLateCheckoutFee() != null ? stay.getLateCheckoutFee() : BigDecimal.ZERO;
         if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
-            if (!paymentClient.isLateCheckoutFeePaid(bookingId)) {
+            iuh.fit.hotelsystem_booking.dto.PaymentStatusResponse status = paymentServiceClient.getLateCheckoutFeeStatus(bookingId);
+            if (status == null || !"PAID".equalsIgnoreCase(status.getStatus())) {
                 throw new IllegalStateException("Late checkout fee is not PAID");
             }
             stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.PAID);

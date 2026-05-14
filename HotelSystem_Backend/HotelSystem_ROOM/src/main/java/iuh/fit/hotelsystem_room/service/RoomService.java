@@ -1,17 +1,19 @@
 package iuh.fit.hotelsystem_room.service;
 
+import iuh.fit.hotelsystem_room.client.BookingServiceClient;
 import iuh.fit.hotelsystem_room.entity.Bed;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
 import iuh.fit.hotelsystem_room.repository.RoomTypeRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.time.LocalDate;
 import java.util.stream.Collectors;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.beans.factory.annotation.Value;
 import java.util.Arrays;
 import java.util.ArrayList;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
@@ -21,37 +23,48 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomTypeRepository roomTypeRepository;
-    private final RestTemplate restTemplate;
+    private final BookingServiceClient bookingServiceClient;
 
-    @Value("${booking.service.url:http://booking-service:8084}")
-    private String bookingServiceUrl;
-
-    public RoomService(RoomRepository roomRepository, RoomTypeRepository roomTypeRepository, RestTemplate restTemplate) {
+    public RoomService(RoomRepository roomRepository, RoomTypeRepository roomTypeRepository,
+                       BookingServiceClient bookingServiceClient) {
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
-        this.restTemplate = restTemplate;
+        this.bookingServiceClient = bookingServiceClient;
     }
 
+    /**
+     * Cache danh sách tất cả phòng (TTL: 5 phút).
+     * Key mặc định = tên method.
+     */
+    @Cacheable(value = "rooms:all")
     public List<Room> getAllRooms() {
         return roomRepository.findAll();
     }
 
+    /**
+     * Cache chi tiết phòng theo ID (TTL: 10 phút).
+     */
+    @Cacheable(value = "rooms:detail", key = "#id")
     public Room getRoomById(Long id) {
         return roomRepository.findById(id).orElse(null);
     }
 
+    /**
+     * Cache danh sách phòng trống theo roomTypeId + checkIn + checkOut (TTL: 2 phút).
+     * Key bao gồm tất cả tham số để tránh cache nhầm.
+     */
+    @Cacheable(value = "rooms:available", key = "#roomTypeId + '_' + #checkIn + '_' + #checkOut")
     public List<Room> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
         // 1. Lấy danh sách ID phòng đã được đặt trong khoảng thời gian này từ booking-service
-        String url = bookingServiceUrl + "/bookings/booked-rooms?checkIn=" + checkIn + "&checkOut=" + checkOut;
         List<Long> bookedRoomIds = new ArrayList<>();
         try {
-            Long[] ids = restTemplate.getForObject(url, Long[].class);
+            Long[] ids = bookingServiceClient.getBookedRoomIds(checkIn.toString(), checkOut.toString());
             if (ids != null) {
                 bookedRoomIds = Arrays.asList(ids);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            // Nếu lỗi gọi booking-service, có thể ném exception hoặc coi như không có phòng nào đặt
+            // Nếu lỗi gọi booking-service, coi như không có phòng nào đặt
         }
 
         // 2. Lấy tất cả các phòng thuộc roomTypeId có status = AVAILABLE
@@ -64,9 +77,12 @@ public class RoomService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Tạo phòng mới và xoá cache rooms:all (vì danh sách đã thay đổi).
+     */
     @Transactional
+    @CacheEvict(value = "rooms:all", allEntries = true)
     public Room createRoom(Room room) {
-        // Gán ngược reference từ Bed về Room để JPA lưu đúng
         if (room.getBeds() != null) {
             for (Bed bed : room.getBeds()) {
                 bed.setRoom(room);
@@ -75,7 +91,15 @@ public class RoomService {
         return roomRepository.save(room);
     }
 
+    /**
+     * Cập nhật phòng: xoá cache chi tiết phòng đó + toàn bộ rooms:all.
+     */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:detail", key = "#id"),
+            @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public Room updateRoom(Long id, Room roomDetails) {
         return roomRepository.findById(id).map(room -> {
             room.setRoomNumber(roomDetails.getRoomNumber());
@@ -84,23 +108,28 @@ public class RoomService {
             room.setFloor(roomDetails.getFloor());
             room.setNote(roomDetails.getNote());
             room.setActualCapacity(roomDetails.getActualCapacity());
-            
-            // Xử lý danh sách giường mới
+
             if (roomDetails.getBeds() != null) {
-                // Xóa giường cũ (JPA orphanRemoval sẽ lo nếu được cấu hình, 
-                // nhưng ở đây ta làm thủ công cho chắc chắn)
                 room.getBeds().clear();
                 for (Bed bed : roomDetails.getBeds()) {
                     bed.setRoom(room);
                     room.getBeds().add(bed);
                 }
             }
-            
+
             return roomRepository.save(room);
         }).orElse(null);
     }
 
+    /**
+     * Xoá phòng: xoá tất cả cache liên quan.
+     */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:detail", key = "#id"),
+            @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);
     }

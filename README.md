@@ -6,20 +6,24 @@
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Multi_DB-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-Hệ thống quản lý khách sạn (QLKS) hiện đại được xây dựng trên kiến trúc Microservices, tập trung vào tính mở rộng, xử lý bất đồng bộ và quy tắc nghiệp vụ thực tế tại Việt Nam.
-
-## 🏗️ Kiến trúc hệ thống
+Hệ thống quản lý khách sạn (QLKS) hiện đại được xây dựng trên kiến trúc Microservices, tập trung vào tính mở rộng, xử lý bất đồng bộ ## 🏗️ Kiến trúc hệ thống
 
 ```mermaid
 graph TD
     User((Khách hàng)) --> Frontend[Frontend - React/Vite]
     Staff((Nhân viên)) --> Frontend
     
-    subgraph "API Gateway (Vite/Nginx Proxy)"
-        Frontend
+    subgraph "Edge Layer"
+        Frontend --> GATEWAY[API Gateway - Port 8080]
     end
 
-    subgraph "Backend Microservices (Spring Boot)"
+    subgraph "Service Discovery & Management"
+        EUREKA[Eureka Server - Port 8761]
+        CONFIG[Config Server - TBD]
+        ZIPKIN[Zipkin - Port 9411]
+    end
+
+    subgraph "Backend Microservices (Spring Boot 3.5.10)"
         AUTH[Auth Service]
         USER[User Service]
         ROOM[Room Service]
@@ -33,90 +37,100 @@ graph TD
     end
 
     subgraph "Storage (PostgreSQL)"
-        DB_AUTH[(DB Auth/User)]
+        DB_AUTH[(DB Auth)]
+        DB_USER[(DB User)]
         DB_ROOM[(DB Room)]
         DB_BOOKING[(DB Booking)]
         DB_PAYMENT[(DB Payment)]
+        DB_NOTIF[(DB Notif)]
     end
 
-    Frontend --> AUTH
-    Frontend --> USER
-    Frontend --> ROOM
-    Frontend --> BOOKING
-    Frontend --> PAYMENT
-    
+    GATEWAY <--> EUREKA
+    AUTH <--> EUREKA
+    USER <--> EUREKA
+    ROOM <--> EUREKA
+    BOOKING <--> EUREKA
+    PAYMENT <--> EUREKA
+    NOTIF <--> EUREKA
+
+    GATEWAY --> AUTH
+    GATEWAY --> USER
+    GATEWAY --> ROOM
+    GATEWAY --> BOOKING
+    GATEWAY --> PAYMENT
+
     BOOKING <--> MQ
     ROOM <--> MQ
     PAYMENT <--> MQ
     NOTIF <--> MQ
 
     AUTH --- DB_AUTH
-    USER --- DB_AUTH
+    USER --- DB_USER
     ROOM --- DB_ROOM
     BOOKING --- DB_BOOKING
     PAYMENT --- DB_PAYMENT
+    NOTIF --- DB_NOTIF
+
+    AUTH -.-> ZIPKIN
+    USER -.-> ZIPKIN
+    ROOM -.-> ZIPKIN
+    BOOKING -.-> ZIPKIN
+    PAYMENT -.-> ZIPKIN
 ```
 
 Mục tiêu của tài liệu này là giúp bạn:
-1. Hiểu kiến trúc tổng quan của hệ thống.
+1. Hiểu kiến trúc tổng quan của hệ thống Microservices hiện đại.
 2. Triển khai môi trường phát triển (Dev) và vận hành (Prod) nhanh chóng.
 3. Nắm vững luồng nghiệp vụ và danh sách các API chính.
 
 ## Cấu trúc thư mục
 
-- [HotelSystem/](HotelSystem/) — Frontend ReactJS (Vite + Tailwind) + Nginx config (production)
-- [HotelSystem_Backend/](HotelSystem_Backend/) — 6 service Spring Boot (AUTH, USER, ROOM, BOOKING, PAYMENT, NOTIFICATION)
-- [docker-compose.dev.yml](docker-compose.dev.yml) — Môi trường Dev (Vite proxy hot reload + `mvn spring-boot:run`)
-- [docker-compose.yml](docker-compose.yml) — Môi trường Prod (build stack hoàn chỉnh: Nginx + frontend tĩnh + backend file `.jar`)
-- [.env.example](.env.example) — Chứa danh sách các biến như cấu hình cổng và chữ ký của VNPAY Sandbox
+- [HotelSystem/](HotelSystem/) — Frontend ReactJS (Vite + Tailwind)
+- [HotelSystem_Backend/](HotelSystem_Backend/) — 8 service Spring Boot (AUTH, USER, ROOM, BOOKING, PAYMENT, NOTIFICATION, EUREKA, GATEWAY)
+- [docker-compose.dev.yml](docker-compose.dev.yml) — Môi trường Dev (Vite proxy hot reload + Dockerized services)
+- [docker-compose.yml](docker-compose.yml) — Môi trường Prod (build stack hoàn chỉnh)
+- [.env.example](.env.example) — Chứa danh sách các biến môi trường cho VNPAY/MoMo.
 
 ## 2) Services, ports, URL
 
 ### Dev mode (docker-compose.dev.yml)
 
-Frontend chạy Vite dev server:
-
+**Entry Point duy nhất**:
 - UI: http://localhost:3000
+- **API Gateway**: http://localhost:8080 (Tất cả request từ Frontend đi qua đây)
 
-Backend (expose ra host):
+Hạ tầng quản lý:
+- **Eureka Dashboard**: http://localhost:8761 (Xem trạng thái các service)
+- **Zipkin Tracing**: http://localhost:9411 (Xem luồng request và latency)
+- **RabbitMQ Management**: http://localhost:15672 (Mặc định: `thaiquoc` / `123456`)
+- **pgAdmin**: http://localhost:5050 (Mặc định: `admin@gmail.com` / `123456`)
 
-- AUTH: http://localhost:8081
-- USER: http://localhost:8082
-- ROOM: http://localhost:8083
-- BOOKING: http://localhost:8084
-- PAYMENT: http://localhost:8085
-- NOTIFICATION: http://localhost:8086
+Chi tiết Service (Internal):
+- AUTH: `:8081`
+- USER: `:8082`
+- ROOM: `:8083`
+- BOOKING: `:8084`
+- PAYMENT: `:8085`
+- NOTIFICATION: `:8086`
 
-Hạ tầng:
-
-- RabbitMQ Management: http://localhost:15672 (user/pass trong compose)
-- pgAdmin: http://localhost:5050
-
-Credentials mặc định (dev compose):
-
-- RabbitMQ: `thaiquoc` / `123456`
-- pgAdmin: `admin@gmail.com` / `123456`
-- Postgres (mỗi DB): user `postgres`, pass `quocthai`
-
-PostgreSQL (mỗi service 1 DB, map port ra host):
-
-- auth: `localhost:55421`
-- user: (dùng chung DB với auth trong compose)
-- room: `localhost:55423`
-- booking: `localhost:55424`
-- payment: `localhost:55425`
-- notification: `localhost:55426`
+PostgreSQL (Dữ liệu tách biệt hoàn toàn):
+- auth: `localhost:55421` (DB: `hotel_auth`)
+- user: `localhost:55422` (DB: `hotel_user`)
+- room: `localhost:55423` (DB: `hotel_room`)
+- booking: `localhost:55424` (DB: `hotel_booking`)
+- payment: `localhost:55425` (DB: `hotel_payment`)
+- notification: `localhost:55426` (DB: `hotel_notification`)
 
 ### API Gateway path (trong Frontend)
 
-Frontend gọi backend qua proxy path (để tránh CORS và unify endpoint):
+Frontend gọi backend qua duy nhất Gateway port 8080:
 
-- `/auth-api/*` → AUTH (8081)
-- `/user-api/*` → USER (8082)
-- `/room-api/*` → ROOM (8083)
-- `/booking-api/*` → BOOKING (8084)
-- `/payment-api/*` → PAYMENT (8085)
-- `/notification-api/*` → NOTIFICATION (8086)
+- `/auth-api/*` → AUTH
+- `/user-api/*` → USER
+- `/room-api/*` → ROOM
+- `/booking-api/*` → BOOKING
+- `/payment-api/*` → PAYMENT
+- `/notification-api/*` → NOTIFICATION
 
 Dev proxy nằm ở [HotelSystem/vite.config.ts](HotelSystem/vite.config.ts)
 

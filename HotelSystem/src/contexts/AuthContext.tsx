@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { AxiosError } from 'axios';
 import { authApi, tokenStorage, userApi } from '../services/api';
 import type { User } from '../types';
 
@@ -62,6 +63,11 @@ const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string
   };
 };
 
+const isAuthError = (error: unknown) => {
+  if (!(error instanceof AxiosError)) return false;
+  return error.response?.status === 401 || error.response?.status === 403;
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,8 +83,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           try {
             const profileRes = await userApi.getMe();
             setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
-          } catch {
-            setUser(tokenUser);
+          } catch (error) {
+            if (isAuthError(error)) {
+              tokenStorage.clear();
+              setUser(null);
+            } else {
+              setUser(tokenUser);
+            }
           }
           setLoading(false);
           return;
@@ -102,6 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         } catch {
           tokenStorage.clear();
+          setUser(null);
         }
       }
 
@@ -122,7 +134,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const mergedUser = mergeProfileIntoUser(tokenUser, profileRes.data);
         setUser(mergedUser);
         return mergedUser;
-      } catch {
+      } catch (error) {
+        if (isAuthError(error)) {
+          tokenStorage.clear();
+          setUser(null);
+          return null;
+        }
         setUser(tokenUser);
         return tokenUser;
       }
@@ -156,7 +173,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         const profileRes = await userApi.getMe();
         setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
-      } catch {
+      } catch (error) {
+        if (isAuthError(error)) {
+          tokenStorage.clear();
+          setUser(null);
+          return;
+        }
         setUser(tokenUser);
       }
     } else {

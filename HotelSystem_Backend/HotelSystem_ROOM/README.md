@@ -14,14 +14,16 @@ Service **quản lý phòng và hạng phòng**. Xử lý trạng thái phòng v
 - Tìm kiếm phòng trống theo thời gian.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8083`
-- **Base Path**: `/rooms`
+- **Internal Port**: `8083`
+- **Service ID**: `room-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/room-api/**`
+- **Tracing**: Brave/Zipkin enabled
 
-## 📡 REST API Endpoints
+## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/rooms/available` | Tìm kiếm phòng trống |
-| `GET` | `/rooms/{id}` | Chi tiết phòng |
-| `GET` | `/rooms/types` | Danh sách hạng phòng |
-| `PUT` | `/rooms/{id}/status` | Cập nhật trạng thái phòng |
+| `GET` | `/room-api/rooms/available` | Tìm kiếm phòng trống |
+| `GET` | `/room-api/rooms/{id}` | Chi tiết phòng |
+| `GET` | `/room-api/room-types` | Danh sách hạng phòng |
+| `PUT` | `/room-api/rooms/{id}/status` | Cập nhật trạng thái phòng |

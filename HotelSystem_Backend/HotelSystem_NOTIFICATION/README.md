@@ -12,5 +12,7 @@ Service **gửi thông báo**. Lắng nghe các sự kiện từ hệ thống đ
 - (Mở rộng) Gửi Email hoặc Push Notification.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8086`
-- **Base Path**: `/notifications`
+- **Internal Port**: `8086`
+- **Service ID**: `notification-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/notification-api/**`
+- **Tracing**: Brave/Zipkin enabled

@@ -14,17 +14,19 @@ Service **xử lý thanh toán**. Tích hợp với VNPAY Sandbox để xử lý
 - Publish kết quả thanh toán lên RabbitMQ để BOOKING cập nhật trạng thái.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8085`
-- **Base Path**: `/payments`
+- **Internal Port**: `8085`
+- **Service ID**: `payment-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/payment-api/**`
+- **Tracing**: Brave/Zipkin enabled
 
-## API endpoints chính
+## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
 
-- `POST /payments/vnpay/create`
+- `POST /payment-api/payments/vnpay/create`
   - Sinh URL thanh toán động VNPAY dựa trên đơn hàng.
   - Tham số: `bookingId`, `userId`, `totalAmount`, `paymentType` (hỗ trợ `DEPOSIT`, `FULL`, `REMAINING`), `bankCode` (tùy chọn), `locale` (tùy chọn).
-- `GET /payments/vnpay-return`
+- `GET /payment-api/payments/vnpay-return`
   - Nhận luồng điều hướng của Front-end sau khi thanh toán xong từ server VNPAY. Endpoint này sẽ kiểm tra checksum tạm thời và chuyển thiết bị người dùng về giao diện kết quả giao dịch frontend.
-- `GET /payments/vnpay-ipn`
+- `GET /payment-api/payments/vnpay-ipn`
   - Nhận luồng Instant Payment Notification (IPN) ngầm từ máy chủ VNPAY gửi về máy chủ.
   - Verify cấu trúc chữ ký checksum HmacSHA512. Tránh làm giả giao dịch.
   - Cập nhật database và publish message (như `payment.result`) lên RabbitMQ để điều phối trạng thái sang Notification / Booking service.

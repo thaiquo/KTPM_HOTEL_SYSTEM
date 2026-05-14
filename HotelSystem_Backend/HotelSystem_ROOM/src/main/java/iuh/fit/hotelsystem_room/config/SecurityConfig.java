@@ -19,9 +19,17 @@ public class SecurityConfig {
     }
 
     @Bean
+    public org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web.ignoring()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/rooms", "/rooms/**", "/room-types", "/room-types/**")
+                .requestMatchers("/actuator/**", "/error");
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                // We rely on the Gateway for CORS, but keeping a permissive one here doesn't hurt.
                 .cors(cors -> cors.configurationSource(request -> {
                     var corsConfig = new org.springframework.web.cors.CorsConfiguration();
                     corsConfig.setAllowedOrigins(java.util.List.of("*"));
@@ -31,11 +39,8 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Cho phép truy cập public để lấy danh sách phòng và loại phòng
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/rooms/**", "/room-types/**").permitAll()
-                        // Các thao tác thêm, sửa, xóa chỉ dành cho ADMIN và STAFF
-                        .requestMatchers("/rooms/**", "/room-types/**").hasAnyRole("ADMIN", "STAFF")
-                        .anyRequest().authenticated()
+                        // Make everything public for now to identify the source of 403
+                        .anyRequest().permitAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

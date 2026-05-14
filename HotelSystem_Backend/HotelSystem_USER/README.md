@@ -12,14 +12,16 @@ Service **quản lý người dùng**. Lưu trữ và quản lý thông tin hồ
 - Quản lý thông tin khách hàng cho mục đích Check-in.
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8082`
-- **Base Path**: `/users`
+- **Internal Port**: `8082`
+- **Service ID**: `user-service` (Đăng ký với Eureka)
+- **Gateway Path**: `/user-api/**`
+- **Tracing**: Brave/Zipkin enabled
 
-## 📡 REST API Endpoints
+## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/users/me` | Lấy thông tin cá nhân |
-| `PUT` | `/users/profile` | Cập nhật hồ sơ |
-| `GET` | `/users/{id}` | Lấy thông tin user theo ID (Staff/Admin) |
-| `POST` | `/users` | Tạo user mới |
+| `GET` | `/user-api/users/me` | Lấy thông tin cá nhân |
+| `PUT` | `/user-api/users/profile` | Cập nhật hồ sơ |
+| `GET` | `/user-api/users/{id}` | Lấy thông tin user theo ID (Staff/Admin) |
+| `POST` | `/user-api/users` | Tạo user mới |
