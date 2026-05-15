@@ -1,7 +1,9 @@
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { CheckCircle2, XCircle } from 'lucide-react';
 
 import { useAuth } from '../../../contexts/AuthContext';
+import { useCart } from '../../../contexts/CartContext';
 import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 
@@ -9,17 +11,24 @@ export default function PaymentResultPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, loading } = useAuth();
+  const { clearCart } = useCart();
+
+  const code = searchParams.get('code');
+  const bookingId = searchParams.get('bookingId');
+  const paymentType = searchParams.get('paymentType');
+  const success = code === '00';
+
+  useEffect(() => {
+    if (success) {
+      clearCart();
+    }
+  }, [success, clearCart]);
 
   if (loading) return null;
   if (!user) {
     const redirect = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
-
-  const code = searchParams.get('code');
-  const bookingId = searchParams.get('bookingId');
-  const paymentType = searchParams.get('paymentType');
-  const success = code === '00';
 
   return (
     <div className="min-h-screen bg-background py-16 pb-32">

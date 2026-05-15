@@ -50,13 +50,16 @@ public class RedisCacheConfig {
 
         // rooms:all — cache danh sách tất cả phòng, TTL 5 phút
         cacheConfigs.put("rooms:all", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+        cacheConfigs.put("rooms:all:v2", defaultConfig.entryTtl(Duration.ofMinutes(5)));
 
         // rooms:available — cache phòng trống theo ngày, TTL 2 phút
         // (ngắn hơn vì trạng thái thay đổi nhanh)
         cacheConfigs.put("rooms:available", defaultConfig.entryTtl(Duration.ofMinutes(2)));
+        cacheConfigs.put("rooms:available:v2", defaultConfig.entryTtl(Duration.ofMinutes(2)));
 
         // rooms:detail — cache chi tiết phòng, TTL 10 phút
         cacheConfigs.put("rooms:detail", defaultConfig.entryTtl(Duration.ofMinutes(10)));
+        cacheConfigs.put("rooms:detail:v2", defaultConfig.entryTtl(Duration.ofMinutes(10)));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultConfig)

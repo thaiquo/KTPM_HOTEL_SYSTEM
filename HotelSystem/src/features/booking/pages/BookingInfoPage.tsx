@@ -245,7 +245,8 @@ export default function BookingInfoPage() {
     return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
-  const canSubmit = !!room && !!pricing && nights > 0 && total > 0 && !submitting;
+  const isPrimaryGuestInfoComplete = !!primaryGuest.fullName.trim() && !!primaryGuest.phone.trim() && !!primaryGuest.dateOfBirth;
+  const canSubmit = !!room && !!pricing && nights > 0 && total > 0 && !submitting && isPrimaryGuestInfoComplete;
   const money = (value: number) => `${Math.round(value || 0).toLocaleString('vi-VN')}đ`;
   const baseTotal = (pricing?.baseTotal || 0) * (form.rooms || 1);
   const holidaySurcharge = Math.max(0, ((pricing?.baseTotal || 0) * ((pricing?.priceMultiplier || 1) - 1)) * (form.rooms || 1));

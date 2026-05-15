@@ -14,14 +14,16 @@ spring:
         request-rate-limiter:
           # Tránh 403 khi KeyResolver không lấy được key (môi trường proxy / IPv6).
           deny-empty-key: false
-      # ── Global CORS ──────────────────────────────────────────────────────────
+      # ── Global CORS (WebFlux Standard) ───────────────────────────────────────
       globalcors:
+        add-to-simple-url-handler-mapping: true
         cors-configurations:
           '[/**]':
             allowedOrigins:
               - "http://localhost:3000"
+              - "http://127.0.0.1:3000"
               - "http://frontend:3000"
-            allowedMethods: ["GET","POST","PUT","DELETE","OPTIONS","PATCH"]
+            allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
             allowedHeaders: ["*"]
             allowCredentials: true
 
@@ -48,12 +50,12 @@ spring:
             - Path=/user-api/**
           filters:
             - RewritePath=/user-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 30
-                redis-rate-limiter.burstCapacity: 60
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 30
+            #     redis-rate-limiter.burstCapacity: 60
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
         # ROOM – đọc nhiều, cache Redis ở service
         - id: room-service
@@ -62,12 +64,12 @@ spring:
             - Path=/room-api/**
           filters:
             - RewritePath=/room-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 50
-                redis-rate-limiter.burstCapacity: 100
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 50
+            #     redis-rate-limiter.burstCapacity: 100
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
         # BOOKING
         - id: booking-service
@@ -76,12 +78,12 @@ spring:
             - Path=/booking-api/**
           filters:
             - RewritePath=/booking-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 20
-                redis-rate-limiter.burstCapacity: 40
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 20
+            #     redis-rate-limiter.burstCapacity: 40
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
         # PAYMENT – rate limit chặt nhất (tài chính)
         - id: payment-service
@@ -90,12 +92,12 @@ spring:
             - Path=/payment-api/**
           filters:
             - RewritePath=/payment-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 10
-                redis-rate-limiter.burstCapacity: 20
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 10
+            #     redis-rate-limiter.burstCapacity: 20
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
         # NOTIFICATION
         - id: notification-service
@@ -104,12 +106,12 @@ spring:
             - Path=/notification-api/**
           filters:
             - RewritePath=/notification-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 15
-                redis-rate-limiter.burstCapacity: 30
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 15
+            #     redis-rate-limiter.burstCapacity: 30
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
 eureka:
   client:

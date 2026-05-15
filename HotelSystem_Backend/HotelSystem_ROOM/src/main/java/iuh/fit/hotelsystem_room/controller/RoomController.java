@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_room.controller;
 
+import iuh.fit.hotelsystem_room.dto.RoomResponse;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.service.RoomService;
 import org.springframework.http.ResponseEntity;
@@ -20,19 +21,19 @@ public class RoomController {
     }
 
     @GetMapping
-    public List<Room> getAllRooms() {
+    public List<RoomResponse> getAllRooms() {
         return roomService.getAllRooms();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Room> getRoomById(@PathVariable Long id) {
-        Room room = roomService.getRoomById(id);
+    public ResponseEntity<RoomResponse> getRoomById(@PathVariable Long id) {
+        RoomResponse room = roomService.getRoomById(id);
         if (room == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(room);
     }
 
     @GetMapping("/available")
-    public List<Room> getAvailableRooms(
+    public List<RoomResponse> getAvailableRooms(
             @RequestParam Long roomTypeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {

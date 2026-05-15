@@ -3,7 +3,7 @@ package iuh.fit.hotelsystem_booking.config;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -181,8 +181,8 @@ public class RabbitConfig {
     // JSON CONVERTER (QUAN TRỌNG)
     // -------------------------
     @Bean
-    public JacksonJsonMessageConverter jsonMessageConverter() {
-        JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();
+    public Jackson2JsonMessageConverter jsonMessageConverter() {
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
         converter.setAlwaysConvertToInferredType(true); // QUAN TRỌNG
         return converter;
     }

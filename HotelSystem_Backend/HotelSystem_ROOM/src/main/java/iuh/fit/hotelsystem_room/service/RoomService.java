@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_room.service;
 
 import iuh.fit.hotelsystem_room.client.BookingServiceClient;
+import iuh.fit.hotelsystem_room.dto.RoomResponse;
 import iuh.fit.hotelsystem_room.entity.Bed;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
@@ -36,25 +37,32 @@ public class RoomService {
      * Cache danh sách tất cả phòng (TTL: 5 phút).
      * Key mặc định = tên method.
      */
-    @Cacheable(value = "rooms:all")
-    public List<Room> getAllRooms() {
-        return roomRepository.findAll();
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:all:v2")
+    public List<RoomResponse> getAllRooms() {
+        return roomRepository.findAll().stream()
+                .map(RoomResponse::from)
+                .collect(Collectors.toList());
     }
 
     /**
      * Cache chi tiết phòng theo ID (TTL: 10 phút).
      */
-    @Cacheable(value = "rooms:detail", key = "#id")
-    public Room getRoomById(Long id) {
-        return roomRepository.findById(id).orElse(null);
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:detail:v2", key = "#id")
+    public RoomResponse getRoomById(Long id) {
+        return roomRepository.findById(id)
+                .map(RoomResponse::from)
+                .orElse(null);
     }
 
     /**
      * Cache danh sách phòng trống theo roomTypeId + checkIn + checkOut (TTL: 2 phút).
      * Key bao gồm tất cả tham số để tránh cache nhầm.
      */
-    @Cacheable(value = "rooms:available", key = "#roomTypeId + '_' + #checkIn + '_' + #checkOut")
-    public List<Room> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:available:v2", key = "#roomTypeId + '_' + #checkIn + '_' + #checkOut")
+    public List<RoomResponse> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
         // 1. Lấy danh sách ID phòng đã được đặt trong khoảng thời gian này từ booking-service
         List<Long> bookedRoomIds = new ArrayList<>();
         try {
@@ -74,6 +82,7 @@ public class RoomService {
         List<Long> finalBookedRoomIds = bookedRoomIds;
         return allRoomsOfType.stream()
                 .filter(room -> !finalBookedRoomIds.contains(room.getId()))
+                .map(RoomResponse::from)
                 .collect(Collectors.toList());
     }
 
@@ -81,7 +90,12 @@ public class RoomService {
      * Tạo phòng mới và xoá cache rooms:all (vì danh sách đã thay đổi).
      */
     @Transactional
-    @CacheEvict(value = "rooms:all", allEntries = true)
+    @Caching(evict = {
+            @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:all:v2", allEntries = true),
+            @CacheEvict(value = "rooms:available", allEntries = true),
+            @CacheEvict(value = "rooms:available:v2", allEntries = true)
+    })
     public Room createRoom(Room room) {
         if (room.getBeds() != null) {
             for (Bed bed : room.getBeds()) {
@@ -97,8 +111,11 @@ public class RoomService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:all:v2", allEntries = true),
             @CacheEvict(value = "rooms:detail", key = "#id"),
-            @CacheEvict(value = "rooms:available", allEntries = true)
+            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+            @CacheEvict(value = "rooms:available", allEntries = true),
+            @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public Room updateRoom(Long id, Room roomDetails) {
         return roomRepository.findById(id).map(room -> {
@@ -127,8 +144,11 @@ public class RoomService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:all:v2", allEntries = true),
             @CacheEvict(value = "rooms:detail", key = "#id"),
-            @CacheEvict(value = "rooms:available", allEntries = true)
+            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+            @CacheEvict(value = "rooms:available", allEntries = true),
+            @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);

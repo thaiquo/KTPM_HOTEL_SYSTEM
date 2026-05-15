@@ -14,6 +14,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Room implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -27,6 +28,7 @@ public class Room implements Serializable {
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "room_type_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "images"})
     private RoomType roomType;
 
     @Enumerated(EnumType.STRING)
@@ -41,6 +43,7 @@ public class Room implements Serializable {
 
     // 👉 cấu hình giường (QUAN TRỌNG)
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("room")
     private List<Bed> beds;
 
     // 👉 capacity thực tế của phòng này (có thể khác type)
