@@ -1,5 +1,5 @@
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { CheckCircle2, XCircle } from 'lucide-react';
 
 import { useAuth } from '../../../contexts/AuthContext';
@@ -12,6 +12,7 @@ export default function PaymentResultPage() {
   const [searchParams] = useSearchParams();
   const { user, loading } = useAuth();
   const { clearCart } = useCart();
+  const hasCleared = useRef(false);
 
   const code = searchParams.get('code');
   const bookingId = searchParams.get('bookingId');
@@ -19,8 +20,9 @@ export default function PaymentResultPage() {
   const success = code === '00';
 
   useEffect(() => {
-    if (success) {
+    if (success && !hasCleared.current) {
       clearCart();
+      hasCleared.current = true;
     }
   }, [success, clearCart]);
 

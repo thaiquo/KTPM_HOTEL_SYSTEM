@@ -2,14 +2,17 @@ package iuh.fit.hotelsystem_booking.listener;
 
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
+import iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_booking.dto.PaymentMessage;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.service.BookingService;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -17,11 +20,14 @@ public class BookingListener {
 
     private final BookingRepository bookingRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final BookingService bookingService;
 
     public BookingListener(BookingRepository bookingRepository,
-                           RabbitTemplate rabbitTemplate) {
+                           RabbitTemplate rabbitTemplate,
+                           @Lazy BookingService bookingService) {
         this.bookingRepository = bookingRepository;
         this.rabbitTemplate = rabbitTemplate;
+        this.bookingService = bookingService;
     }
 
     // =========================================
@@ -111,19 +117,12 @@ public class BookingListener {
 
             } else if ("REMAINING_PAID".equals(result.getStatus())) {
 
-                booking.setStatus(BookingStatus.CHECKED_IN);
-                double alreadyPaid = booking.getPaidAmount() != null ? booking.getPaidAmount() : 0.0;
-                double additionalPaid = result.getPaidAmount() != null ? result.getPaidAmount() : 0.0;
-                booking.setPaidAmount(alreadyPaid + additionalPaid);
-                booking.setPaymentStatus("PAID");
-                booking.setPaymentTransactionId(result.getTransactionId());
-                event.setStatus(BookingStatus.CHECKED_IN.name());
-
-                rabbitTemplate.convertAndSend(
-                    RabbitConfig.EXCHANGE,
-                    "booking.confirmed",
-                    event
-                );
+                ConfirmCheckinPaymentRequest confirmReq = new ConfirmCheckinPaymentRequest();
+                confirmReq.setPaymentCode(result.getTransactionId() != null ? result.getTransactionId() : "CONF_QR_" + booking.getId());
+                confirmReq.setAmount(result.getPaidAmount() != null ? result.getPaidAmount() : 0.0);
+                
+                bookingService.confirmCheckinPayment(booking.getId(), confirmReq);
+                return;
 
         } else {
 

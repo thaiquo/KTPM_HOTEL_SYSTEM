@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 
 export interface CartItem {
@@ -51,14 +51,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(cartKey, JSON.stringify(cartItems));
   }, [cartItems, cartKey]);
 
-  const setDates = (inDate: string, outDate: string) => {
+  const setDates = useCallback((inDate: string, outDate: string) => {
     setCheckInState(inDate);
     setCheckOutState(outDate);
     localStorage.setItem(`${cartKey}_checkIn`, inDate);
     localStorage.setItem(`${cartKey}_checkOut`, outDate);
-  };
+  }, [cartKey]);
 
-  const addToCart = (roomType: any, bedType: string, count: number, maxCount: number) => {
+  const addToCart = useCallback((roomType: any, bedType: string, count: number, maxCount: number) => {
     setCartItems(prev => {
       // Check if same roomType + bedType already exists in cart
       const existingIdx = prev.findIndex(item => item.roomType.id === roomType.id && item.bedType === bedType);
@@ -82,28 +82,40 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         maxCount,
       }];
     });
-  };
+  }, []);
 
-  const removeFromCart = (id: string) => {
+  const removeFromCart = useCallback((id: string) => {
     setCartItems(prev => prev.filter(item => item.id !== id));
-  };
+  }, []);
 
-  const updateQuantity = (id: string, count: number) => {
+  const updateQuantity = useCallback((id: string, count: number) => {
     setCartItems(prev => prev.map(item => item.id === id ? { ...item, count } : item));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCartItems([]);
     setCheckInState(null);
     setCheckOutState(null);
     localStorage.removeItem(`${cartKey}_checkIn`);
     localStorage.removeItem(`${cartKey}_checkOut`);
-  };
+  }, [cartKey]);
 
-  const totalRooms = cartItems.reduce((sum, item) => sum + item.count, 0);
+  const totalRooms = useMemo(() => cartItems.reduce((sum, item) => sum + item.count, 0), [cartItems]);
+
+  const value = useMemo(() => ({
+    cartItems,
+    checkIn,
+    checkOut,
+    setDates,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    totalRooms
+  }), [cartItems, checkIn, checkOut, setDates, addToCart, removeFromCart, updateQuantity, clearCart, totalRooms]);
 
   return (
-    <CartContext.Provider value={{ cartItems, checkIn, checkOut, setDates, addToCart, removeFromCart, updateQuantity, clearCart, totalRooms }}>
+    <CartContext.Provider value={value}>
       {children}
     </CartContext.Provider>
   );

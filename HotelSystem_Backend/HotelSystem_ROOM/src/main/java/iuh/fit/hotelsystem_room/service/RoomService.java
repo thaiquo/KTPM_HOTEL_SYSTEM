@@ -138,6 +138,22 @@ public class RoomService {
         }).orElse(null);
     }
 
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = "rooms:all", allEntries = true),
+            @CacheEvict(value = "rooms:all:v2", allEntries = true),
+            @CacheEvict(value = "rooms:detail", key = "#id"),
+            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+            @CacheEvict(value = "rooms:available", allEntries = true),
+            @CacheEvict(value = "rooms:available:v2", allEntries = true)
+    })
+    public Room updateRoomStatus(Long id, RoomStatus status) {
+        return roomRepository.findById(id).map(room -> {
+            room.setStatus(status);
+            return roomRepository.save(room);
+        }).orElse(null);
+    }
+
     /**
      * Xoá phòng: xoá tất cả cache liên quan.
      */

@@ -143,8 +143,9 @@ public class PaymentController {
 
     @PostMapping("/bookings/{bookingId}/early-checkin-fee/paid")
     public ResponseEntity<Payment> markEarlyCheckinFeePaid(
-            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
-        return ResponseEntity.ok(paymentService.markEarlyCheckinFeePaid(bookingId));
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "CASH") String method) {
+        return ResponseEntity.ok(paymentService.markEarlyCheckinFeePaid(bookingId, method));
     }
 
     @GetMapping("/bookings/{bookingId}/early-checkin-fee/status")
@@ -155,8 +156,9 @@ public class PaymentController {
 
     @PostMapping("/bookings/{bookingId}/late-checkout-fee/paid")
     public ResponseEntity<Payment> markLateCheckoutFeePaid(
-            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
-        return ResponseEntity.ok(paymentService.markLateCheckoutFeePaid(bookingId));
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "CASH") String method) {
+        return ResponseEntity.ok(paymentService.markLateCheckoutFeePaid(bookingId, method));
     }
 
     @GetMapping("/bookings/{bookingId}/late-checkout-fee/status")

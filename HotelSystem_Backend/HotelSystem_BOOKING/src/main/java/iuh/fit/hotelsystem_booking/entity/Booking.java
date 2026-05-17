@@ -94,11 +94,19 @@ public class Booking {
     private LocalDateTime cancelledAt;
     private String cancellationReason;
 
-    @Transient
+    // ─── Check-in / Check-out tracking ────────────────────────────
+    /** Thời gian thực tế check-in (lưu vào DB) */
     private LocalDateTime actualCheckInAt;
 
-    @Transient
+    /** Thời gian thực tế check-out (lưu vào DB) */
     private LocalDateTime actualCheckOutAt;
+
+    // ─── Cleaning tracking ───────────────────────────────────────
+    /** Lúc bắt đầu dọn phòng (tính từ checkout) */
+    private LocalDateTime cleaningStartAt;
+
+    /** Lúc dọn xong (calculated = cleaningStartAt + 20 phút) */
+    private LocalDateTime cleaningEndAt;
 
     // ════════════════════════════════════════════════════════════
     // Getters / Setters
@@ -199,6 +207,12 @@ public class Booking {
 
     public LocalDateTime getActualCheckOutAt() { return actualCheckOutAt; }
     public void setActualCheckOutAt(LocalDateTime actualCheckOutAt) { this.actualCheckOutAt = actualCheckOutAt; }
+
+    public LocalDateTime getCleaningStartAt() { return cleaningStartAt; }
+    public void setCleaningStartAt(LocalDateTime cleaningStartAt) { this.cleaningStartAt = cleaningStartAt; }
+
+    public LocalDateTime getCleaningEndAt() { return cleaningEndAt; }
+    public void setCleaningEndAt(LocalDateTime cleaningEndAt) { this.cleaningEndAt = cleaningEndAt; }
 
     // ─── Helper ──────────────────────────────────────────────────
     public boolean isHoliday() {

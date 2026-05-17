@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  HiOutlineOfficeBuilding,
   HiOutlinePlus, 
   HiOutlinePencilAlt, 
   HiOutlineTrash,
-  HiOutlineDownload,
   HiOutlineSearch,
   HiOutlineX,
   HiOutlineFilter,
@@ -37,6 +35,7 @@ const RoomManagementPage: React.FC = () => {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState('ALL');
+  const roomStatuses = ['AVAILABLE', 'BOOKED', 'MAINTENANCE', 'OCCUPIED', 'HOLD', 'CLEANING'];
 
   // Form state
   const [formData, setFormData] = useState({
@@ -82,7 +81,7 @@ const RoomManagementPage: React.FC = () => {
       setFormData({
         roomNumber: room.roomNumber,
         roomType: { id: matchedType?.id || 0 },
-        status: room.available ? 'AVAILABLE' : 'BOOKED',
+        status: room.status || (room.available ? 'AVAILABLE' : 'BOOKED'),
         floor: room.floor,
         note: '',
         actualCapacity: room.maxGuests,
@@ -137,6 +136,30 @@ const RoomManagementPage: React.FC = () => {
       fetchRooms();
     } catch (error) {
       toast.error('Có lỗi xảy ra');
+    }
+  };
+
+  const statusLabel = (status?: string) => {
+    switch (status) {
+      case 'AVAILABLE': return 'Sẵn sàng';
+      case 'BOOKED': return 'Đã đặt';
+      case 'MAINTENANCE': return 'Bảo trì';
+      case 'OCCUPIED': return 'Đang ở';
+      case 'HOLD': return 'Chờ thanh toán';
+      case 'CLEANING': return 'Đang dọn dẹp';
+      default: return status || 'Không rõ';
+    }
+  };
+
+  const statusClass = (status?: string) => {
+    switch (status) {
+      case 'AVAILABLE': return 'bg-green-100 text-green-700';
+      case 'BOOKED': return 'bg-blue-100 text-blue-700';
+      case 'MAINTENANCE': return 'bg-gray-100 text-gray-700';
+      case 'OCCUPIED': return 'bg-rose-100 text-rose-700';
+      case 'HOLD': return 'bg-amber-100 text-amber-700';
+      case 'CLEANING': return 'bg-[#efebe9] text-[#5d4037]';
+      default: return 'bg-gray-100 text-gray-400';
     }
   };
 
@@ -217,10 +240,8 @@ const RoomManagementPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-5 text-sm text-gray-600">{room.maxGuests} Người</td>
                     <td className="px-6 py-5">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        room.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {room.available ? 'Sẵn sàng' : 'Bận'}
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${statusClass(room.status)}`}>
+                        {statusLabel(room.status)}
                       </span>
                     </td>
                     <td className="px-8 py-5 text-right">
@@ -265,6 +286,14 @@ const RoomManagementPage: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sức chứa thực tế</label>
                   <input required type="number" value={formData.actualCapacity} onChange={e => setFormData({...formData, actualCapacity: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Trạng thái</label>
+                  <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                    {roomStatuses.map(status => (
+                      <option key={status} value={status}>{statusLabel(status)}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <div className="flex items-center justify-between mb-4">

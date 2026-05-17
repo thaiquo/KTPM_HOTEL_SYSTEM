@@ -31,6 +31,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     boolean existsByBookingIdAndStatus(Long bookingId, PaymentStatus status);
 
+    Optional<Payment> findTopByBookingIdAndStatusOrderByCreatedAtDesc(Long bookingId, PaymentStatus status);
+
     boolean existsByIdempotencyKey(String idempotencyKey);
 
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);

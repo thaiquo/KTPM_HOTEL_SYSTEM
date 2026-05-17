@@ -5,6 +5,7 @@ import iuh.fit.hotelsystem_payment.config.VNPayConfig;
 import iuh.fit.hotelsystem_payment.dto.CreateVNPayRequest;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
+import iuh.fit.hotelsystem_payment.entity.InvoiceCategory;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
@@ -232,6 +233,7 @@ public class VNPayService {
         payment.setPaidAmount(paidAmount);
         payment.setAmount(paidAmount);
         payment.setPaymentType(paymentType);
+        payment.setInvoiceCategory(InvoiceCategory.CHECKIN);
         payment.setMethod("VNPAY");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());

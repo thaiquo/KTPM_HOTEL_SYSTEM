@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_booking.controller;
 
+import iuh.fit.hotelsystem_booking.dto.CheckInCheckOutStatsDto;
 import iuh.fit.hotelsystem_booking.dto.CheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
@@ -16,11 +17,17 @@ import iuh.fit.hotelsystem_booking.service.BookingService;
 import iuh.fit.hotelsystem_booking.service.RefundAssignmentService;
 import iuh.fit.hotelsystem_booking.service.RefundService;
 import iuh.fit.hotelsystem_booking.service.StaffAuthService;
+import iuh.fit.hotelsystem_booking.service.StaffCheckInOutStatsService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.view.RedirectView;
 
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/staff")
@@ -31,50 +38,63 @@ public class StaffBookingController {
     private final RefundAssignmentService refundAssignmentService;
     private final RefundService refundService;
     private final StaffAuthService staffAuthService;
+    private final StaffCheckInOutStatsService statsService;
 
     public StaffBookingController(BookingService bookingService,
                                   RefundTransactionRepository refundRepository,
                                   RefundAssignmentService refundAssignmentService,
                                   RefundService refundService,
-                                  StaffAuthService staffAuthService) {
+                                  StaffAuthService staffAuthService,
+                                  StaffCheckInOutStatsService statsService) {
         this.bookingService = bookingService;
         this.refundRepository = refundRepository;
         this.refundAssignmentService = refundAssignmentService;
         this.refundService = refundService;
         this.staffAuthService = staffAuthService;
+        this.statsService = statsService;
+    }
+
+    private StaffTokenInfo staff(HttpServletRequest request) {
+        return staffAuthService.requireStaffOrAdmin(request);
+    }
+
+    private void ensureStaff(HttpServletRequest request) {
+        staffAuthService.requireStaffOrAdmin(request);
+    }
+
+    private LocalDate resolveDate(LocalDate date) {
+        return date != null ? date : statsService.todayInVietnam();
     }
 
     @GetMapping("/bookings/check-in-list")
-    public List<Booking> checkInList(@RequestHeader("Authorization") String authorization) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    public List<Booking> checkInList(HttpServletRequest request) {
+        ensureStaff(request);
         return bookingService.getStaffCheckInList();
     }
 
     @GetMapping("/bookings/checkout-list")
-    public List<Booking> checkoutList(@RequestHeader("Authorization") String authorization) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    public List<Booking> checkoutList(HttpServletRequest request) {
+        ensureStaff(request);
         return bookingService.getStaffCheckoutList();
     }
 
-    @GetMapping("/bookings/{bookingId}")
-    public Booking detail(@RequestHeader("Authorization") String authorization,
-                          @PathVariable Long bookingId) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    @GetMapping("/bookings/{bookingId:\\d+}")
+    public Booking detail(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
         return bookingService.getBooking(bookingId);
     }
 
-    @GetMapping("/bookings/{bookingId}/guests")
-    public List<BookingGuest> guests(@RequestHeader("Authorization") String authorization,
-                                     @PathVariable Long bookingId) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    @GetMapping("/bookings/{bookingId:\\d+}/guests")
+    public List<BookingGuest> guests(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
         return bookingService.getGuests(bookingId);
     }
 
-    @PostMapping("/bookings/{bookingId}/check-in")
-    public ResponseEntity<Booking> checkIn(@RequestHeader("Authorization") String authorization,
+    @PostMapping("/bookings/{bookingId:\\d+}/check-in")
+    public ResponseEntity<Booking> checkIn(HttpServletRequest httpRequest,
                                            @PathVariable Long bookingId,
                                            @RequestBody StaffCheckInRequest request) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+        StaffTokenInfo staff = staff(httpRequest);
         CheckInRequest checkInRequest = new CheckInRequest();
         checkInRequest.setStaffId(staff.getStaffId());
         checkInRequest.setRepresentativeGuestId(request.getRepresentativeGuestId());
@@ -83,11 +103,11 @@ public class StaffBookingController {
         return ResponseEntity.ok(bookingService.checkIn(bookingId, checkInRequest));
     }
 
-    @PutMapping("/bookings/{bookingId}/check-in-representative")
-    public ResponseEntity<Booking> updateCheckInRepresentative(@RequestHeader("Authorization") String authorization,
+    @PutMapping("/bookings/{bookingId:\\d+}/check-in-representative")
+    public ResponseEntity<Booking> updateCheckInRepresentative(HttpServletRequest httpRequest,
                                                                @PathVariable Long bookingId,
                                                                @RequestBody StaffCheckInRequest request) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+        StaffTokenInfo staff = staff(httpRequest);
         CheckInRequest checkInRequest = new CheckInRequest();
         checkInRequest.setStaffId(staff.getStaffId());
         checkInRequest.setRepresentativeGuestId(request.getRepresentativeGuestId());
@@ -96,83 +116,134 @@ public class StaffBookingController {
         return ResponseEntity.ok(bookingService.updateCheckInRepresentative(bookingId, checkInRequest));
     }
 
-    @GetMapping("/bookings/{bookingId}/check-in")
+    @GetMapping("/bookings/{bookingId:\\d+}/check-in")
     public RedirectView checkInGetNotAllowed() {
         return new RedirectView("http://localhost:3000/staff/check-in");
     }
 
-    @PostMapping("/bookings/{bookingId}/remaining-payment")
-    public ResponseEntity<Booking> remainingPayment(@RequestHeader("Authorization") String authorization,
+    @PostMapping("/bookings/{bookingId:\\d+}/remaining-payment")
+    public ResponseEntity<Booking> remainingPayment(HttpServletRequest httpRequest,
                                                     @PathVariable Long bookingId,
                                                     @RequestBody RemainingPaymentRequest request) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+        StaffTokenInfo staff = staff(httpRequest);
         request.setStaffId(staff.getStaffId());
         return ResponseEntity.ok(bookingService.collectRemainingPayment(bookingId, request));
     }
 
-    @GetMapping("/bookings/{bookingId}/remaining-payment")
+    @GetMapping("/bookings/{bookingId:\\d+}/remaining-payment")
     public RedirectView remainingPaymentGetNotAllowed() {
         return new RedirectView("http://localhost:3000/staff/check-in");
     }
 
-    @PostMapping("/bookings/{bookingId}/checkout/calculate")
-    public CheckoutResponse calculateCheckout(@RequestHeader("Authorization") String authorization,
-                                              @PathVariable Long bookingId) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    @PostMapping("/bookings/{bookingId:\\d+}/checkout/calculate")
+    public CheckoutResponse calculateCheckout(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
         return bookingService.calculateCheckout(bookingId);
     }
 
-    @PostMapping("/bookings/{bookingId}/checkout/confirm")
-    public CheckoutResponse confirmCheckout(@RequestHeader("Authorization") String authorization,
+    @PostMapping("/bookings/{bookingId:\\d+}/checkout/confirm")
+    public CheckoutResponse confirmCheckout(HttpServletRequest httpRequest,
                                             @PathVariable Long bookingId,
                                             @RequestBody(required = false) CheckOutRequest body) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+        StaffTokenInfo staff = staff(httpRequest);
         CheckOutRequest request = body != null ? body : new CheckOutRequest();
         request.setStaffId(staff.getStaffId());
         return bookingService.checkout(bookingId, request);
     }
 
-    @PostMapping("/bookings/{bookingId}/checkout/complete")
-    public Booking completeCheckout(@RequestHeader("Authorization") String authorization,
-                                    @PathVariable Long bookingId) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    @PostMapping("/bookings/{bookingId:\\d+}/checkout/complete")
+    public Booking completeCheckout(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
         return bookingService.completeCheckout(bookingId);
     }
 
     @GetMapping("/refund-requests")
-    public List<RefundTransaction> refundRequests(@RequestHeader("Authorization") String authorization) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    public List<RefundTransaction> refundRequests(HttpServletRequest request) {
+        ensureStaff(request);
         return refundRepository.findByStatusInOrderByCreatedAtAsc(
                 List.of(RefundStatus.PENDING, RefundStatus.ASSIGNED, RefundStatus.PROCESSING));
     }
 
     @GetMapping("/refund-requests/{id}")
-    public RefundTransaction refundDetail(@RequestHeader("Authorization") String authorization,
-                                          @PathVariable Long id) {
-        staffAuthService.requireStaffOrAdmin(authorization);
+    public RefundTransaction refundDetail(HttpServletRequest request, @PathVariable Long id) {
+        ensureStaff(request);
         return refundRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Refund request not found: " + id));
     }
 
     @PostMapping("/refund-requests/{id}/assign")
-    public RefundTransaction assignRefund(@RequestHeader("Authorization") String authorization,
-                                          @PathVariable Long id) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+    public RefundTransaction assignRefund(HttpServletRequest request, @PathVariable Long id) {
+        StaffTokenInfo staff = staff(request);
         return refundAssignmentService.assignToStaff(id, staff.getStaffId());
     }
 
     @PostMapping("/refund-requests/{id}/approve")
-    public RefundTransaction approveRefund(@RequestHeader("Authorization") String authorization,
-                                           @PathVariable Long id) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
+    public RefundTransaction approveRefund(HttpServletRequest request, @PathVariable Long id) {
+        StaffTokenInfo staff = staff(request);
         return refundService.approveRefundByStaff(id, staff.getStaffId());
     }
 
     @PostMapping("/refund-requests/{id}/reject")
-    public RefundTransaction rejectRefund(@RequestHeader("Authorization") String authorization,
+    public RefundTransaction rejectRefund(HttpServletRequest request,
                                           @PathVariable Long id,
-                                          @RequestBody StaffRejectRefundRequest request) {
-        StaffTokenInfo staff = staffAuthService.requireStaffOrAdmin(authorization);
-        return refundService.rejectRefundByStaff(id, staff.getStaffId(), request.getReason());
+                                          @RequestBody StaffRejectRefundRequest body) {
+        StaffTokenInfo staff = staff(request);
+        return refundService.rejectRefundByStaff(id, staff.getStaffId(), body.getReason());
+    }
+
+    @GetMapping("/bookings/check-in-today")
+    public ResponseEntity<List<Booking>> getTodayCheckInList(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(statsService.getCheckInList(date));
+    }
+
+    @GetMapping("/bookings/checkout-today")
+    public ResponseEntity<List<Booking>> getTodayCheckOutList(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(statsService.getCheckOutList(date));
+    }
+
+    @GetMapping("/bookings/checked-in-today")
+    public ResponseEntity<List<Booking>> getAlreadyCheckedInTodayList(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(statsService.getAlreadyCheckedInList(date));
+    }
+
+    @GetMapping("/bookings/checked-out-today")
+    public ResponseEntity<List<Booking>> getAlreadyCheckedOutTodayList(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(statsService.getAlreadyCheckedOutList(date));
+    }
+
+    @GetMapping("/bookings/today-stats")
+    public ResponseEntity<CheckInCheckOutStatsDto> getTodayStats(
+            HttpServletRequest request,
+            @RequestParam(required = false) String date) {
+        ensureStaff(request);
+        LocalDate localDate = date != null && !date.isBlank()
+                ? LocalDate.parse(date)
+                : statsService.todayInVietnam();
+        return ResponseEntity.ok(statsService.getStats(localDate));
+    }
+
+    @GetMapping("/rooms/today-highlight")
+    public ResponseEntity<Map<String, List<Long>>> getTodayRoomHighlight(HttpServletRequest request) {
+        ensureStaff(request);
+        Map<String, List<Long>> result = new HashMap<>();
+        result.put("checkInRooms", statsService.getTodayCheckInRoomIds());
+        result.put("checkOutRooms", statsService.getTodayCheckOutRoomIds());
+        return ResponseEntity.ok(result);
     }
 }

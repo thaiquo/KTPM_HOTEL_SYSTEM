@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -13,6 +14,27 @@ public class StaffAuthService {
 
     private static final Pattern USER_ID_PATTERN = Pattern.compile("\"userId\"\\s*:\\s*(\\d+)");
     private static final Pattern ROLE_PATTERN = Pattern.compile("\"role\"\\s*:\\s*\"([^\"]+)\"");
+
+    public StaffTokenInfo requireStaffOrAdmin(HttpServletRequest request) {
+        if (request != null) {
+            String gatewayRole = request.getHeader("X-User-Role");
+            String gatewayUserId = request.getHeader("X-User-Id");
+            if (gatewayRole != null && gatewayUserId != null) {
+                String role = gatewayRole.trim().toUpperCase();
+                if ("STAFF".equals(role) || "ADMIN".equals(role)) {
+                    try {
+                        return new StaffTokenInfo(Long.parseLong(gatewayUserId.trim()), role);
+                    } catch (NumberFormatException ignored) {
+                        // fall through to Bearer token
+                    }
+                }
+            }
+        }
+        if (request == null) {
+            throw new SecurityException("Missing access token");
+        }
+        return requireStaffOrAdmin(request.getHeader("Authorization"));
+    }
 
     public StaffTokenInfo requireStaffOrAdmin(String authorizationHeader) {
         if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {

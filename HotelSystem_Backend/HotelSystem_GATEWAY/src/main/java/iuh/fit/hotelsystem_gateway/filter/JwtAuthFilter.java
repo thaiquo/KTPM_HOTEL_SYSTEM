@@ -37,13 +37,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/payment-api/payments/vnpay-return",
             "/payment-api/payments/momo-return",
             "/payment-api/payments/momo-ipn",
+            "/payment-api/payments/checkin-qr",
             // Actuator endpoints (health checks, metrics)
             "/actuator"
-    );
-
-    private static final List<String> EXCLUDED_GET_PATHS = List.of(
-            "/room-api",
-            "/booking-api"
     );
 
     private static final List<String> EXCLUDED_POST_PATHS = List.of(
@@ -56,6 +52,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         String path = request.getURI().getPath();
         String method = request.getMethod() != null ? request.getMethod().toString() : "GET";
 
+        // Skip validation for WebSocket handshake
+        String upgradeHeader = request.getHeaders().getFirst("Upgrade");
+        if ("websocket".equalsIgnoreCase(upgradeHeader)) {
+            return chain.filter(exchange);
+        }
+
         // CORS preflight must not require JWT (browser sends OPTIONS without Authorization).
         if ("OPTIONS".equalsIgnoreCase(method)) {
             return chain.filter(exchange);
@@ -66,9 +68,21 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        // Allow GET requests to certain paths (browsing is public)
-        if ("GET".equalsIgnoreCase(method) && EXCLUDED_GET_PATHS.stream().anyMatch(path::startsWith)) {
+        // Exclude mobile-specific payment flows (no auth)
+        if (path.startsWith("/payment-api/payments/") && (
+                path.endsWith("/confirm") || path.endsWith("/cancel") || path.contains("/checkin-qr")
+        )) {
             return chain.filter(exchange);
+        }
+
+        // Public GET: room browsing + booking customer APIs (not staff)
+        if ("GET".equalsIgnoreCase(method)) {
+            if (path.startsWith("/room-api")) {
+                return chain.filter(exchange);
+            }
+            if (path.startsWith("/booking-api") && !path.startsWith("/booking-api/api/staff")) {
+                return chain.filter(exchange);
+            }
         }
 
         // Allow public preview calculations that do not create or mutate data.

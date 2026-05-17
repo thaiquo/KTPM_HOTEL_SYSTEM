@@ -1,4 +1,39 @@
 services:
+  # ========================
+  # EUREKA SERVER (Service Discovery)
+  # ========================
+  eureka-server:
+    build: ./HotelSystem_Backend/HotelSystem_EUREKA
+    ports:
+      - "8761:8761"
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ========================
+  # REDIS (Caching & Rate Limiting)
+  # ========================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # ========================
+  # ZIPKIN (Distributed Tracing)
+  # ========================
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
+
+
 
   # ========================
   # RABBITMQ
@@ -40,6 +75,7 @@ services:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - auth_data:/var/lib/postgresql/data
 
@@ -62,6 +98,9 @@ services:
       VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
       VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      TZ: Asia/Ho_Chi_Minh
+
 
   postgres-user:
     image: postgres:15
@@ -71,6 +110,7 @@ services:
       POSTGRES_DB: hotel_user
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - user_data:/var/lib/postgresql/data
 
@@ -84,6 +124,10 @@ services:
       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      TZ: Asia/Ho_Chi_Minh
+
+
 
 
   # ========================
@@ -97,6 +141,7 @@ services:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - room_data:/var/lib/postgresql/data
 
@@ -117,7 +162,13 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local-access-key}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local-secret-key}
       AWS_REGION: ap-southeast-2
+
       AWS_S3_BUCKET: ktpmbtl-s3-bucket
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TZ: Asia/Ho_Chi_Minh
+
 
   # ========================
   # BOOKING DB + SERVICE
@@ -130,6 +181,7 @@ services:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - booking_data:/var/lib/postgresql/data
 
@@ -147,6 +199,9 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      TZ: Asia/Ho_Chi_Minh
+
 
   # ========================
   # PAYMENT DB + SERVICE
@@ -159,6 +214,7 @@ services:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - payment_data:/var/lib/postgresql/data
 
@@ -176,6 +232,10 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      PAYMENT_CHECKIN_CONFIRM_URL: ${VITE_PUBLIC_APP_ORIGIN:-http://localhost:3000}/payment/confirm
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      TZ: Asia/Ho_Chi_Minh
+
 
   # ========================
   # NOTIFICATION DB + SERVICE
@@ -188,6 +248,7 @@ services:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - notification_data:/var/lib/postgresql/data
 
@@ -205,6 +266,25 @@ services:
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      TZ: Asia/Ho_Chi_Minh
+
+  # ========================
+  # API GATEWAY
+  # ========================
+  api-gateway:
+    build: ./HotelSystem_Backend/HotelSystem_GATEWAY
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+      - redis
+    environment:
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TZ: Asia/Ho_Chi_Minh
+
 
   # ========================
   # FRONTEND
@@ -220,6 +300,8 @@ services:
       - booking-service
       - payment-service
       - notification-service
+      - api-gateway
+
 
 volumes:
   pgadmin_data:

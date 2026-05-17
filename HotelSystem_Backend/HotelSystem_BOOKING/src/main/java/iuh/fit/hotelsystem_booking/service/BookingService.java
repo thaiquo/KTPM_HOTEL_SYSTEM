@@ -27,6 +27,8 @@ import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
+import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
+import iuh.fit.hotelsystem_booking.dto.RoomStatusUpdateDto;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -54,6 +56,7 @@ public class BookingService {
     private final BookingGuestService bookingGuestService;
     private final CheckoutService checkoutService;
     private final PaymentServiceClient paymentServiceClient;
+    private final RoomServiceClient roomServiceClient;
 
     public BookingService(BookingRepository bookingRepository,
                           BookingStayRepository bookingStayRepository,
@@ -63,7 +66,8 @@ public class BookingService {
                           CheckInOutService checkInOutService,
                           BookingGuestService bookingGuestService,
                           CheckoutService checkoutService,
-                          PaymentServiceClient paymentServiceClient) {
+                          PaymentServiceClient paymentServiceClient,
+                          RoomServiceClient roomServiceClient) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
         this.rabbitTemplate = rabbitTemplate;
@@ -73,6 +77,7 @@ public class BookingService {
         this.bookingGuestService = bookingGuestService;
         this.checkoutService = checkoutService;
         this.paymentServiceClient = paymentServiceClient;
+        this.roomServiceClient = roomServiceClient;
     }
 
     public Booking createBooking(Booking booking) {
@@ -110,8 +115,8 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.PENDING_PAYMENT);
-        booking.setCreatedAt(LocalDateTime.now());
-        booking.setHoldExpiresAt(LocalDateTime.now().plusMinutes(BookingConstants.HOLD_MINUTES));
+        booking.setCreatedAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime());
+        booking.setHoldExpiresAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).plusMinutes(BookingConstants.HOLD_MINUTES).toLocalDateTime());
 
         Booking saved = bookingRepository.save(booking);
         RoomMessage msg = new RoomMessage();
@@ -219,7 +224,9 @@ public class BookingService {
     }
 
     public List<Booking> getStaffCheckoutList() {
-        return bookingRepository.findByStatusInOrderByCheckInAsc(List.of(BookingStatus.CHECKED_IN)).stream()
+        return bookingRepository.findByStatusInOrderByCheckInAsc(
+                List.of(BookingStatus.CHECKED_IN, BookingStatus.CHECKOUT_PENDING_PAYMENT)
+        ).stream()
                 .map(this::withStayTimes)
                 .toList();
     }
@@ -235,6 +242,9 @@ public class BookingService {
     public Booking checkIn(Long bookingId, CheckInRequest request) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+        if (booking.getStatus() == BookingStatus.CHECKED_IN) {
+            return updateCheckInRepresentative(bookingId, request);
+        }
         if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.DEPOSIT_PAID) {
             throw new IllegalStateException("Booking cannot be checked in with current status: " + booking.getStatus());
         }
@@ -244,9 +254,8 @@ public class BookingService {
             throw new IllegalStateException("Booking cannot be checked in before check-in date");
         }
 
-        LocalDateTime standardCheckoutDateTime = booking.getCheckOut().atTime(BookingConstants.CHECK_OUT_HOUR, 0);
-        if (!now.isBefore(standardCheckoutDateTime)) {
-            throw new IllegalStateException("Booking can no longer be checked in after the standard check-out time");
+        if (now.toLocalDate().isAfter(booking.getCheckOut())) {
+            throw new IllegalStateException("Booking can no longer be checked in after the check-out date");
         }
         if (request == null || request.getStaffId() == null) {
             throw new IllegalArgumentException("staffId is required");
@@ -254,11 +263,9 @@ public class BookingService {
         BookingGuest representative = resolveCheckInRepresentative(booking, request, now.toLocalDate());
 
         PaymentStatusResponse paymentStatus = getPaymentStatus(bookingId);
-        double localPaidAmount = valueOrZero(booking.getPaidAmount());
-        double localRemainingAmount = Math.max(0.0, valueOrZero(booking.getFinalTotal()) - localPaidAmount);
-        boolean paidInPaymentService = paymentStatus != null && "PAID".equalsIgnoreCase(paymentStatus.getStatus());
-        boolean paidInBookingService = localPaidAmount > 0 && localRemainingAmount <= 0.01;
-        if (!paidInPaymentService && !paidInBookingService) {
+        if (!isBookingPaidForCheckIn(booking, paymentStatus)) {
+            double localPaidAmount = valueOrZero(booking.getPaidAmount());
+            double localRemainingAmount = Math.max(0.0, valueOrZero(booking.getFinalTotal()) - localPaidAmount);
             double remaining = paymentStatus != null
                     ? valueOrZero(paymentStatus.getRemainingAmount())
                     : localRemainingAmount;
@@ -271,7 +278,8 @@ public class BookingService {
             double fee = checkInOutService.calculateEarlyCheckInFee(booking, now);
             if (fee > 0.01) {
                 PaymentStatusResponse earlyFeeStatus = paymentServiceClient.getEarlyCheckinFeeStatus(bookingId);
-                boolean earlyFeePaid = earlyFeeStatus != null && "PAID".equalsIgnoreCase(earlyFeeStatus.getStatus());
+                boolean earlyFeePaid = earlyFeeStatus != null && 
+                    ("PAID".equalsIgnoreCase(earlyFeeStatus.getStatus()) || "SUCCESS".equalsIgnoreCase(earlyFeeStatus.getStatus()));
                 if (!earlyFeePaid) {
                     LateCheckoutPaymentRequest feeRequest = new LateCheckoutPaymentRequest();
                     feeRequest.setBookingId(bookingId);
@@ -292,7 +300,9 @@ public class BookingService {
         bookingStayRepository.save(stay);
 
         booking.setStatus(BookingStatus.CHECKED_IN);
+        booking.setActualCheckInAt(now);
         Booking saved = bookingRepository.save(booking);
+        setRoomStatus(saved.getRoomId(), "OCCUPIED");
         publishBookingEvent(saved, "BookingCheckedInEvent");
         return saved;
     }
@@ -359,10 +369,18 @@ public class BookingService {
         booking.setPaymentStatus("PAID");
         booking.setPaymentTransactionId(request.getPaymentCode());
         booking.setStatus(BookingStatus.CHECKED_IN);
+        booking.setActualCheckInAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime());
 
         BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
         stay.setBookingId(bookingId);
-        stay.setActualCheckInAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime());
+        stay.setActualCheckInAt(booking.getActualCheckInAt());
+        BookingGuest representative = resolveRepresentativeForAutoCheckin(bookingId, booking.getCheckIn());
+        if (representative != null) {
+            stay.setRepresentativeGuestId(representative.getId());
+            stay.setRepresentativeFullName(representative.getFullName());
+            stay.setRepresentativePhone(clean(representative.getPhone()));
+            stay.setRepresentativeCccd(clean(representative.getCccd()));
+        }
         stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
         bookingStayRepository.save(stay);
 
@@ -372,6 +390,7 @@ public class BookingService {
         }
 
         Booking saved = bookingRepository.save(booking);
+        setRoomStatus(saved.getRoomId(), "OCCUPIED");
         publishBookingEvent(saved, "BookingCheckedInEvent");
         return withStayTimes(saved);
     }
@@ -487,8 +506,54 @@ public class BookingService {
         stay.setRepresentativeCccd(clean(request.getRepresentativeCccd()));
     }
 
+    private BookingGuest resolveRepresentativeForAutoCheckin(Long bookingId, LocalDate checkInDate) {
+        List<BookingGuest> guests = bookingGuestService.getGuests(bookingId);
+        BookingGuest primary = null;
+        BookingGuest firstAdult = null;
+        BookingGuest firstGuest = null;
+        LocalDate effectiveDate = checkInDate != null ? checkInDate : LocalDate.now();
+
+        for (BookingGuest guest : guests) {
+            if (guest == null) continue;
+            if (firstGuest == null) {
+                firstGuest = guest;
+            }
+            if (firstAdult == null && guest.isAdultOn(effectiveDate)) {
+                firstAdult = guest;
+            }
+            if (Boolean.TRUE.equals(guest.getCheckInPerson())) {
+                return guest;
+            }
+            if (primary == null && Boolean.TRUE.equals(guest.getPrimaryGuest())) {
+                primary = guest;
+            }
+        }
+
+        if (primary != null) return primary;
+        if (firstAdult != null) return firstAdult;
+        return firstGuest;
+    }
+
     private String clean(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private boolean isBookingPaidForCheckIn(Booking booking, PaymentStatusResponse paymentStatus) {
+        if (booking == null || booking.getStatus() == null) {
+            return false;
+        }
+
+        double localPaidAmount = valueOrZero(booking.getPaidAmount());
+        double finalTotal = valueOrZero(booking.getFinalTotal());
+        double depositAmount = valueOrZero(booking.getDepositAmount());
+        boolean isDepositPaidBooking = booking.getStatus() == BookingStatus.DEPOSIT_PAID;
+        if (isDepositPaidBooking) {
+            return localPaidAmount + 0.01 >= depositAmount;
+        }
+
+        boolean paidInPaymentService = paymentStatus != null && "PAID".equalsIgnoreCase(paymentStatus.getStatus());
+        boolean paidInBookingService = localPaidAmount > 0 && Math.max(0.0, finalTotal - localPaidAmount) <= 0.01;
+        return paidInPaymentService || paidInBookingService;
     }
 
     private PaymentStatusResponse getPaymentStatus(Long bookingId) {
@@ -516,5 +581,15 @@ public class BookingService {
     private void publishBookingEvent(Booking booking, String status) {
         BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), status);
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "booking.status", event);
+    }
+
+    private void setRoomStatus(Long roomId, String status) {
+        if (roomId == null) {
+            return;
+        }
+        RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
+        dto.setRoomId(roomId);
+        dto.setStatus(status);
+        roomServiceClient.updateRoomStatus(roomId, dto);
     }
 }

@@ -424,26 +424,37 @@ const ProfilePage = () => {
         {/* Tab Navigation */}
         <div className="mt-12 flex flex-wrap gap-3">
           {tabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key as typeof activeTab)}
-              className={
-                'relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 ' +
-                (activeTab === key
-                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 scale-105'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest')
-              }
-            >
-              <Icon size={18} />
-              {label}
-              {activeTab === key && (
-                <motion.div 
-                   layoutId="activeTab"
-                   className="absolute inset-0 bg-primary rounded-2xl -z-10"
-                />
-              )}
-            </button>
+            key === 'bookings' ? (
+              <Link
+                key={key}
+                to="/my-bookings"
+                className="relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
+              >
+                <Icon size={18} />
+                {label}
+              </Link>
+            ) : (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key as typeof activeTab)}
+                className={
+                  'relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 ' +
+                  (activeTab === key
+                    ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 scale-105'
+                    : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest')
+                }
+              >
+                <Icon size={18} />
+                {label}
+                {activeTab === key && (
+                  <motion.div 
+                     layoutId="activeTab"
+                     className="absolute inset-0 bg-primary rounded-2xl -z-10"
+                  />
+                )}
+              </button>
+            )
           ))}
         </div>
 
@@ -605,68 +616,6 @@ const ProfilePage = () => {
               </div>
             )}
 
-            {activeTab === 'bookings' && (
-              <motion.div variants={itemVariants}>
-                <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
-                  <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
-                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Lịch sử đặt phòng</div>
-                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Lịch sử đặt phòng</h2>
-                    <p className="mt-2 text-sm text-on-surface-variant font-medium italic">Danh sách các kỳ lưu trú gần đây của bạn tại S-T-T Hotel.</p>
-                  </div>
-                  <div className="divide-y divide-outline-variant/10">
-                    {bookingsLoading ? (
-                      <div className="p-10 text-center">
-                        <Spinner className="h-10 w-10" />
-                        <div className="mt-4 text-xs font-black uppercase tracking-widest text-on-surface-variant">Dang tai lich su dat phong...</div>
-                      </div>
-                    ) : bookingsError ? (
-                      <div className="p-10 text-center text-error font-bold">{bookingsError}</div>
-                    ) : profileBookings.length === 0 ? (
-                      <div className="p-10 text-center">
-                        <div className="text-lg font-black text-on-surface">Chưa có đặt phòng nào</div>
-                        <Link to="/rooms" className="mt-5 inline-block">
-                          <Button className="rounded-2xl px-8">Tim phong ngay</Button>
-                        </Link>
-                      </div>
-                    ) : profileBookings.map((booking, idx) => (
-                      <motion.div 
-                        key={booking.id} 
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.1 }}
-                        className="p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-surface-container-lowest transition-colors group"
-                      >
-                        <div className="flex gap-5">
-                          <div className="w-14 h-14 rounded-2xl bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-all">
-                             <Calendar size={24} />
-                          </div>
-                          <div>
-                            <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Mã #{booking.id}</div>
-                            <div className="mt-1 text-xl font-black tracking-tight text-on-surface font-headline group-hover:text-primary transition-colors">{booking.room?.name || `Phòng ${booking.roomId}`}</div>
-                            <div className="mt-1 text-sm text-on-surface-variant font-bold">{booking.date} · {booking.nights} đêm</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-8">
-                          <div className="text-lg font-black text-on-surface font-headline">{booking.amount.toLocaleString('vi-VN')} VND</div>
-                          <span className={
-                            'px-4 py-1.5 rounded-full text-[10px] font-black tracking-[0.2em] uppercase border-2 ' +
-                            booking.statusClass
-                          }>
-                            {booking.statusLabel}
-                          </span>
-                          <Link
-                            to={`/my-bookings?bookingId=${encodeURIComponent(booking.id)}`}
-                            className="text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4"
-                          >
-                            Chi tiết
-                          </Link>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </Card>
-              </motion.div>
-            )}
 
             {activeTab === 'refunds' && (
               <motion.div variants={itemVariants}>

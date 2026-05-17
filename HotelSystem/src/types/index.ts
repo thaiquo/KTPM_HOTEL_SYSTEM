@@ -9,6 +9,7 @@ export interface Room {
   amenities: string[];
   description: string;
   available: boolean;
+  status?: string;
   floor: number;
   bedType: string;
 }

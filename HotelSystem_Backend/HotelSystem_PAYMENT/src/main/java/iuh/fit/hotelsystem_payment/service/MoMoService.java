@@ -4,6 +4,7 @@ import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import iuh.fit.hotelsystem_payment.dto.CreateMoMoRequest;
 import iuh.fit.hotelsystem_payment.dto.MoMoResponse;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
+import iuh.fit.hotelsystem_payment.entity.InvoiceCategory;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
@@ -105,6 +106,7 @@ public class MoMoService {
         payment.setPaidAmount(paidAmount);
         payment.setAmount(paidAmount);
         payment.setPaymentType(paymentType);
+        payment.setInvoiceCategory(InvoiceCategory.CHECKIN);
         payment.setMethod("MOMO");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());

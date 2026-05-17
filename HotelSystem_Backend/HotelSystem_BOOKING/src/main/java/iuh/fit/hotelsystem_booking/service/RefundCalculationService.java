@@ -25,7 +25,12 @@ public class RefundCalculationService {
         }
 
         LocalDate plannedCheckout = booking.getCheckOut();
-        boolean early = plannedCheckout != null && actualCheckoutAt.toLocalDate().isBefore(plannedCheckout);
+        LocalDateTime plannedCheckoutDateTime = plannedCheckout != null 
+                ? plannedCheckout.atTime(BookingConstants.CHECK_OUT_HOUR, 0) 
+                : actualCheckoutAt;
+        
+        // Checkout là SỚM chỉ khi thời điểm checkout thực tế TRƯỚC thời điểm checkout dự kiến (12:00 ngày kết thúc)
+        boolean early = actualCheckoutAt.isBefore(plannedCheckoutDateTime);
 
         EarlyCheckoutRefundResult result = new EarlyCheckoutRefundResult();
         result.setEarlyCheckout(early);
@@ -79,8 +84,9 @@ public class RefundCalculationService {
     }
 
     private int resolveUsedNights(Booking booking, BookingStay stay, LocalDateTime actualCheckoutAt) {
+        // Luôn tính từ ngày check-in dự kiến để tránh việc khách đến trễ nhưng vẫn được tính ít đêm hơn
         LocalDate start = booking.getCheckIn();
-        if (stay != null && stay.getActualCheckInAt() != null) {
+        if (start == null && stay != null && stay.getActualCheckInAt() != null) {
             start = stay.getActualCheckInAt().toLocalDate();
         }
         if (start == null) {

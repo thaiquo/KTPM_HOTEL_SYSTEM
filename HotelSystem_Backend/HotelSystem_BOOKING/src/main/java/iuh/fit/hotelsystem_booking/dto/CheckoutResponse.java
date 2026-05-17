@@ -35,6 +35,7 @@ public class CheckoutResponse {
     private String representativeFullName;
     private String representativePhone;
     private String representativeCccd;
+    private boolean immediateRefund;
 
     /** Preview phân bổ hoàn tiền theo người đã thanh toán (Payment Service). */
     private List<RefundAllocationLineDto> refundAllocations;
@@ -115,6 +116,9 @@ public class CheckoutResponse {
 
     public String getRepresentativeCccd() { return representativeCccd; }
     public void setRepresentativeCccd(String representativeCccd) { this.representativeCccd = representativeCccd; }
+
+    public boolean isImmediateRefund() { return immediateRefund; }
+    public void setImmediateRefund(boolean immediateRefund) { this.immediateRefund = immediateRefund; }
 
     public List<RefundAllocationLineDto> getRefundAllocations() { return refundAllocations; }
     public void setRefundAllocations(List<RefundAllocationLineDto> refundAllocations) {

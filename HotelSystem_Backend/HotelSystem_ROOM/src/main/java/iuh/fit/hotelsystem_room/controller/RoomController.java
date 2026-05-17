@@ -1,7 +1,9 @@
 package iuh.fit.hotelsystem_room.controller;
 
 import iuh.fit.hotelsystem_room.dto.RoomResponse;
+import iuh.fit.hotelsystem_room.dto.RoomStatusUpdateRequest;
 import iuh.fit.hotelsystem_room.entity.Room;
+import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.service.RoomService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -50,6 +52,17 @@ public class RoomController {
         Room updated = roomService.updateRoom(id, roomDetails);
         if (updated == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(updated);
+    }
+
+    @PutMapping("/{id}/status")
+    public ResponseEntity<RoomResponse> updateRoomStatus(@PathVariable Long id,
+                                                         @RequestBody RoomStatusUpdateRequest request) {
+        if (request == null || request.getStatus() == null || request.getStatus().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Room updated = roomService.updateRoomStatus(id, RoomStatus.valueOf(request.getStatus().trim().toUpperCase()));
+        if (updated == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(RoomResponse.from(updated));
     }
 
     @DeleteMapping("/{id}")

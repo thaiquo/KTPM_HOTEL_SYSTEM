@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { CartProvider } from './contexts/CartContext';
 import MainLayout from './shared/components/layout/MainLayout';
 import AdminLayout from './shared/components/layout/AdminLayout';
 import StaffLayout from './shared/components/layout/StaffLayout';
@@ -27,7 +28,7 @@ import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
 
-import { CartProvider } from './contexts/CartContext';
+
 
 function ScrollToTop() {
   const { pathname } = useLocation();

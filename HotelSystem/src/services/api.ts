@@ -98,6 +98,7 @@ type PaymentBackend = {
   paymentType?: string;
   method?: string;
   status?: string;
+  invoiceCategory?: 'CHECKIN' | 'CHECKOUT' | 'REFUND';
   transactionId?: string;
   vnpTransactionNo?: string;
   vnpResponseCode?: string;
@@ -149,6 +150,7 @@ export type PaymentRecord = {
   paymentType: string;
   method: string;
   status: string;
+  invoiceCategory?: 'CHECKIN' | 'CHECKOUT' | 'REFUND';
   transactionId: string;
   vnpTransactionNo?: string;
   vnpResponseCode?: string;
@@ -223,6 +225,7 @@ export type CreateBookingPayload = {
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_BOOKING_API_URL || '/booking-api',
+  timeout: 30000, // 30s timeout for stability
   headers: {
     'Content-Type': 'application/json',
   },
@@ -348,9 +351,10 @@ const mapRoom = (room: RoomBackend): Room => {
     price: room.roomType.basePrice,
     maxGuests: room.actualCapacity || room.roomType.maxCapacity,
     images: room.roomType.images?.map(img => img.imageUrl) || [],
-    amenities: [], 
+    amenities: [],
     description: room.roomType.description,
     available: room.status === 'AVAILABLE',
+    status: room.status,
     floor: room.floor,
     bedType: room.beds?.map(b => `${b.quantity} ${b.type}`).join(', ') || 'Chưa cấu hình',
   };
@@ -359,7 +363,7 @@ const mapRoom = (room: RoomBackend): Room => {
 const mapBooking = (booking: BookingBackend): Booking => {
   const rawStatus = String(booking.status || 'pending_payment').toLowerCase();
   const status = ([
-    'pending_payment', 'pending', 'deposit_paid', 'confirmed', 
+    'pending_payment', 'pending', 'deposit_paid', 'confirmed',
     'checked_in', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
   ].includes(rawStatus) ? rawStatus : 'pending_payment') as Booking['status'];
 
@@ -453,7 +457,7 @@ export const roomApi = {
     const response = await roomHttp.get<unknown>(`/rooms/${id}`);
     return extractSingleRoom(response.data);
   },
-  
+
   getAvailableRooms: async (roomTypeId: string, checkIn: string, checkOut: string): Promise<Room[]> => {
     const response = await roomHttp.get<unknown>('/rooms/available', {
       params: { roomTypeId, checkIn, checkOut }
@@ -468,6 +472,11 @@ export const roomApi = {
 
   update: async (id: string, room: Partial<Room>): Promise<Room> => {
     const response = await roomHttp.put<unknown>(`/rooms/${id}`, room);
+    return extractSingleRoom(response.data);
+  },
+
+  updateStatus: async (id: string, status: string): Promise<Room> => {
+    const response = await roomHttp.put<unknown>(`/rooms/${id}/status`, { roomId: Number(id), status });
     return extractSingleRoom(response.data);
   },
 
@@ -487,7 +496,7 @@ export const roomApi = {
   uploadImage: (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return roomHttp.post<{url: string}>('/rooms/upload', formData, {
+    return roomHttp.post<{ url: string }>('/rooms/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
   }
@@ -553,6 +562,7 @@ const mapPayment = (payment: PaymentBackend): PaymentRecord => ({
   paymentType: payment.paymentType || '',
   method: payment.method || '',
   status: payment.status || '',
+  invoiceCategory: payment.invoiceCategory,
   transactionId: payment.transactionId || '',
   vnpTransactionNo: payment.vnpTransactionNo,
   vnpResponseCode: payment.vnpResponseCode,
@@ -719,6 +729,39 @@ export type CheckoutResponse = {
   refundAllocations?: RefundAllocationLine[];
 };
 
+export type CheckInOutStats = {
+  totalCheckInToday: number;
+  alreadyCheckedIn: number;
+  notYetCheckedIn: number;
+  totalCheckOutToday: number;
+  alreadyCheckedOut: number;
+  notYetCheckedOut: number;
+  inCleaningNow: number;
+};
+
+/** Ngày hiện tại theo múi giờ VN (yyyy-MM-dd) — đồng bộ với backend staff APIs. */
+export const vietnamTodayISO = (): string =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+
+const extractCheckInOutStats = (payload: unknown): CheckInOutStats => {
+  const data =
+    payload && typeof payload === 'object' && 'data' in payload
+      ? (payload as { data: Record<string, unknown> }).data
+      : (payload as Record<string, unknown> | null);
+
+  const num = (key: keyof CheckInOutStats) => Number(data?.[key] ?? 0);
+
+  return {
+    totalCheckInToday: num('totalCheckInToday'),
+    alreadyCheckedIn: num('alreadyCheckedIn'),
+    notYetCheckedIn: num('notYetCheckedIn'),
+    totalCheckOutToday: num('totalCheckOutToday'),
+    alreadyCheckedOut: num('alreadyCheckedOut'),
+    notYetCheckedOut: num('notYetCheckedOut'),
+    inCleaningNow: num('inCleaningNow'),
+  };
+};
+
 const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
   id: String(guest.id ?? ''),
   bookingId: String(guest.bookingId ?? ''),
@@ -793,13 +836,21 @@ export const paymentApi = {
     return extractPaymentList(response.data);
   },
 
-  markLateCheckoutPaid: async (bookingId: string): Promise<PaymentRecord> => {
-    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/late-checkout-fee/paid`);
+  markLateCheckoutPaid: async (bookingId: string, method?: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(
+      `/payments/bookings/${bookingId}/late-checkout-fee/paid`,
+      null,
+      { params: method ? { method } : undefined }
+    );
     return mapPayment(response.data as PaymentBackend);
   },
 
-  markEarlyCheckinPaid: async (bookingId: string): Promise<PaymentRecord> => {
-    const response = await paymentHttp.post<unknown>(`/payments/bookings/${bookingId}/early-checkin-fee/paid`);
+  markEarlyCheckinPaid: async (bookingId: string, method?: string): Promise<PaymentRecord> => {
+    const response = await paymentHttp.post<unknown>(
+      `/payments/bookings/${bookingId}/early-checkin-fee/paid`,
+      null,
+      { params: method ? { method } : undefined }
+    );
     return mapPayment(response.data as PaymentBackend);
   },
 
@@ -917,9 +968,40 @@ export const staffBookingApi = {
     return extractBookingList(response.data);
   },
 
+  getTodayCheckInList: async (date?: string): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/check-in-today', {
+      params: { date: date || vietnamTodayISO() },
+    });
+    return extractBookingList(response.data);
+  },
+
   getCheckoutList: async (): Promise<Booking[]> => {
     const response = await api.get<unknown>('/api/staff/bookings/checkout-list');
     return extractBookingList(response.data);
+  },
+
+  getTodayCheckoutList: async (date?: string): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/checkout-today', {
+      params: { date: date || vietnamTodayISO() },
+    });
+    return extractBookingList(response.data);
+  },
+
+  getAlreadyCheckedInTodayList: async (date?: string): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/checked-in-today', { params: { date } });
+    return extractBookingList(response.data);
+  },
+
+  getAlreadyCheckedOutTodayList: async (date?: string): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings/checked-out-today', { params: { date } });
+    return extractBookingList(response.data);
+  },
+
+  getTodayStats: async (date?: string): Promise<CheckInOutStats> => {
+    const response = await api.get<unknown>('/api/staff/bookings/today-stats', {
+      params: { date: date || vietnamTodayISO() },
+    });
+    return extractCheckInOutStats(response.data);
   },
 
   getBooking: async (bookingId: string): Promise<Booking> => {
@@ -1091,6 +1173,7 @@ export const userApi = {
   getMe: () => userHttp.get<UserProfile>('/api/users/me'),
   updateMe: (profile: UserProfile) => userHttp.put<UserProfile>('/api/users/me', profile),
   createProfile: (profile: UserProfile) => userHttp.post<UserProfile>('/api/users', profile),
+  getUserById: (id: string | number) => userHttp.get<any>(`/api/users/profile/${id}`),
 };
 
 export const employeeApi = {

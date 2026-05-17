@@ -234,6 +234,7 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
+      STAFF_DEMO_SEED: "true"
 
   # ========================
   # PAYMENT DB + SERVICE (DEV HOT RELOAD)
@@ -273,6 +274,7 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
+      PAYMENT_CHECKIN_CONFIRM_URL: ${VITE_PUBLIC_APP_ORIGIN:-http://localhost:3000}/payment/confirm
       # ── VNPAY Sandbox credentials (từ vnpay_nodejs/config/default.json) ──
       VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
       VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
