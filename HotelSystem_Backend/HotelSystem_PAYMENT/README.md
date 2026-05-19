@@ -1,95 +1,84 @@
-# 💳 HotelSystem_PAYMENT (Payment Service)
+# 💳 HotelSystem_PAYMENT (Payment Gateway Service)
 
-[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.10-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![VNPAY](https://img.shields.io/badge/Payment-VNPAY-003399?style=for-the-badge)](https://sandbox.vnpayment.vn/)
+[![MoMo](https://img.shields.io/badge/Payment-MoMo-A50064?style=for-the-badge)](https://developers.momo.vn/)
+[![WebSocket](https://img.shields.io/badge/WebSocket-Enabled-brightgreen?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-Message_Broker-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 
-Service **xử lý thanh toán**. Tích hợp với VNPAY Sandbox để xử lý các giao dịch đặt phòng và hoàn tiền.
+Service **Cổng Thanh toán** (Payment Gateway) chịu trách nhiệm tích hợp và kiểm soát tất cả các giao dịch thanh toán trực tuyến của hệ thống qua cổng **VNPAY Sandbox** và **MoMo Sandbox**. Service hỗ trợ cả thanh toán tại quầy (tiền mặt/chuyển khoản), quản lý hoàn tiền tự động (Refund APIs), và đồng bộ hóa tức thì kết quả giao dịch tới Web/Mobile qua WebSocket thời gian thực.
 
-## 🚀 Tính năng chính
-- Tạo link thanh toán VNPAY (QR Code / Thẻ nội địa / Quốc tế).
-- Xử lý Callback (IPN) từ VNPAY để cập nhật trạng thái thanh toán.
-- Ghi nhận thanh toán bằng tiền mặt hoặc chuyển khoản tại quầy.
-- Quản lý giao dịch hoàn tiền (Refund).
-- Publish kết quả thanh toán lên RabbitMQ để BOOKING cập nhật trạng thái.
+---
+
+## 🚀 Tính năng nổi bật
+
+1. **Tích hợp Cổng thanh toán Quốc gia VNPAY**:
+   - Sinh link thanh toán động tương thích Web & Mobile dựa trên mã hóa chữ ký số HmacSHA512 để chống giả mạo giao dịch.
+   - Xử lý hai kênh phản hồi:
+     - **VNPAY Return**: Nhận điều hướng trực quan của người dùng trên trình duyệt để đưa về trang kết quả Frontend.
+     - **VNPAY IPN (Instant Payment Notification)**: Nhận phản hồi ngầm server-to-server để cập nhật trạng thái cơ sở dữ liệu và kích hoạt RabbitMQ thông báo ngay cả khi khách đóng trình duyệt đột ngột.
+2. **Tích hợp Cổng thanh toán MoMo (Napas/ATM flow)**:
+   - Sinh luồng MoMo ATM (`payWithATM`) cho phép khách hàng thanh toán trực tiếp bằng thẻ Napas kiểm thử, đồng bộ hóa các luồng IPN và Return tương tự VNPAY.
+3. **Thanh toán thời gian thực qua WebSocket**:
+   - Khởi chạy WebSocket Server tại đường dẫn `/ws/payments`.
+   - Khi có kết quả thanh toán từ VNPAY/MoMo IPN, server sẽ phát đi thông điệp `payment:success` tới tất cả các Web Client và Mobile App đang kết nối để tự động chuyển hướng màn hình, tăng cường độ mượt mà cho trải nghiệm người dùng.
+4. **Idempotency (Chống trùng lặp giao dịch)**:
+   - Áp dụng cơ chế khóa Idempotency Key (`payment:bookingId:amount`) để chặn đứng hiện tượng Double-payment (khách bấm thanh toán 2 lần hoặc IPN bắn về nhiều lần gây trùng lặp hóa đơn).
+5. **Ghi nhận thanh toán tại quầy & Hoàn tiền (Refund)**:
+   - API cho phép nhân viên khách sạn xác nhận thanh toán ngoại tuyến (Offline Confirm) bằng tiền mặt thông qua Web Dashboard hoặc quét mã QR qua Mobile App.
+   - Hỗ trợ API xử lý hoàn tiền tự động hoàn trả ngân quỹ qua cổng kiểm thử VNPAY.
+
+---
 
 ## 🔌 Cấu hình kết nối
-- **Internal Port**: `8085`
-- **Service ID**: `payment-service` (Đăng ký với Eureka)
+
+- **Cổng chạy nội bộ**: `8085`
+- **Tên đăng ký Eureka**: `payment-service`
+- **Cơ sở dữ liệu**: PostgreSQL riêng biệt `hotel_payment` trên cổng `55425` (Dev container: `postgres-payment`)
+- **Đường dẫn WebSocket Server**: `ws://localhost:8080/payment-api/ws/payments` (Đi qua Gateway)
 - **Gateway Path**: `/payment-api/**`
-- **Tracing**: Brave/Zipkin enabled
 
-## 📡 REST API Endpoints (Truy cập qua Gateway:8080)
+---
 
-- `POST /payment-api/payments/vnpay/create`
-  - Sinh URL thanh toán động VNPAY dựa trên đơn hàng.
-  - Tham số: `bookingId`, `userId`, `totalAmount`, `paymentType` (hỗ trợ `DEPOSIT`, `FULL`, `REMAINING`), `bankCode` (tùy chọn), `locale` (tùy chọn).
-- `GET /payment-api/payments/vnpay-return`
-  - Nhận luồng điều hướng của Front-end sau khi thanh toán xong từ server VNPAY. Endpoint này sẽ kiểm tra checksum tạm thời và chuyển thiết bị người dùng về giao diện kết quả giao dịch frontend.
-- `GET /payment-api/payments/vnpay-ipn`
-  - Nhận luồng Instant Payment Notification (IPN) ngầm từ máy chủ VNPAY gửi về máy chủ.
-  - Verify cấu trúc chữ ký checksum HmacSHA512. Tránh làm giả giao dịch.
-  - Cập nhật database và publish message (như `payment.result`) lên RabbitMQ để điều phối trạng thái sang Notification / Booking service.
+## 📡 Danh sách REST API Endpoints (Gọi qua Gateway:8080)
 
-## Body mẫu tạo thanh toán
+| Method | Endpoint | Yêu cầu JWT | Mô tả chức năng nghiệp vụ |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/payment-api/payments/vnpay/create` | Có | Sinh link URL thanh toán VNPAY SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`). |
+| `POST` | `/payment-api/payments/momo/create` | Có | Sinh link URL thanh toán MoMo SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`). |
+| `GET` | `/payment-api/payments/vnpay-return` | Không | Điểm nhận điều hướng của người dùng sau khi thanh toán xong từ VNPAY. |
+| `GET` | `/payment-api/payments/vnpay-ipn` | Không | Điểm nhận phản hồi ngầm đáng tin cậy từ máy chủ VNPAY gửi về. |
+| `GET` | `/payment-api/payments/checkin-qr` | Không | Tra cứu nhanh thông tin hóa đơn khi quét QR (dành cho Mobile App). |
+| `POST` | `/payment-api/payments/{code}/confirm` | Không | Xác nhận đã thanh toán tiền mặt/ngoại tuyến tại quầy (từ Web/Mobile). |
 
-```json
-{
-  "bookingId": 1,
-  "userId": 10,
-  "totalAmount": 1000000,
-  "paymentType": "DEPOSIT",
-  "bankCode": "NCB",
-  "locale": "vn"
-}
+---
+
+## 🛠️ Cấu hình Biến môi trường cổng thanh toán
+
+Tất cả các tham số kết nối được nạp động từ file `.env` ở root hệ thống vào container để đảm bảo tính bảo mật:
+
+```properties
+# VNPAY Credentials
+VNP_TMN_CODE=E6BOARWZ
+VNP_HASH_SECRET=O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ
+VNP_PAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+VNP_RETURN_URL=http://localhost:8085/payments/vnpay-return
+VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
+
+# MoMo Credentials
+MOMO_PARTNER_CODE=MOMOLRDO20220304
+MOMO_ACCESS_KEY=F8B3Ytz123456
+MOMO_SECRET_KEY=v73bZtf123456
+MOMO_PAY_URL=https://test-payment.momo.vn/v2/gateway/api/create
 ```
 
-Các loại `paymentType` hỗ trợ:
+---
 
-- `DEPOSIT` (Thường là 50% tiền cọc)
-- `FULL` (Thanh toán 100%)
-- `REMAINING` (Thanh toán nốt 50% tiền còn lại của đơn hàng - Phải có `DEPOSIT` thành công trước đó)
+## 🔄 Phân loại Giao dịch thanh toán (Payment Types)
 
-## Quy trình gọi và Callback
+Hệ thống phân biệt rõ các loại giao dịch dựa trên quy tắc đặt phòng:
+* `DEPOSIT`: Thanh toán tiền đặt cọc (thường là 30% ngày thường hoặc 50% ngày lễ).
+* `FULL`: Thanh toán trả trước toàn bộ 100% tiền phòng.
+* `REMAINING`: Thanh toán phần tiền còn lại (ví dụ cọc trước 30% thì trả nốt 70% khi nhận phòng).
 
-1. Gửi request sinh URL => Trả về `"paymentUrl"`.
-2. Hệ thống khách ở giao diện Frontend chuyển hướng trình duyệt theo `"paymentUrl"`.
-3. Khách nhập thẻ/app trên VNPAY (Sandbox dùng thẻ NCB mặc định).
-4. VNPAY bắn tín hiệu Server-to-Server ngầm (IPN) tới `/payments/vnpay-ipn`. Hệ thống backend PAYMENT verify và lưu trạng thái thành công, thông báo tới các service khác bằng RabbitMQ.
-5. VNPAY cũng trả trình duyệt user về URL điều hướng `/payments/vnpay-return` (Return), endpoint này lại trỏ user về trang frontend thành công/thất bại để xem nhanh kết quả.
-
-## Dữ liệu Publish RabbitMQ
-
-- Nếu `vnp_ResponseCode == 00` (Giao dịch thành công):
-  - `FULL` => publish sự kiện: `FULL_PAID`
-  - `DEPOSIT` => publish sự kiện: `DEPOSIT_PAID`
-  - `REMAINING` => publish sự kiện: `REMAINING_PAID`
-- Nếu lỗi/không thành công => publish: `FAILED`
-
-## ENV / File cấu hình (.properties / docker-compose)
-
-- Cấu hình chung của ứng dụng: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `RABBIT_HOST`, `RABBIT_USERNAME`, `RABBIT_PASSWORD`
-- Thông số kết nối cổng tích hợp VNPAY (đã được expose khai báo bằng `.env` ở root hệ thống):
-  - `VNP_TMN_CODE` (Mã website Merchant API sandbox)
-  - `VNP_HASH_SECRET` (Mã bí mật tạo chữ ký bằng quy tắc checksum)
-  - `VNP_PAY_URL` (URL server vnpay `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`)
-  - `VNP_RETURN_URL` (Domain URL callback frontend/backend Return)
-  - `VNP_FRONTEND_RETURN_URL` (Domain UI sau Return)
-
-## Cách khởi động nhanh
-
-Nên nạp biến sandbox từ file `.env` mẫu, sau đó khởi chạy:
-
-```bash
-docker compose -f docker-compose.dev.yml up -d payment-service
-```
-
-## MoMo sandbox
-
-- Backend hỗ trợ thêm MoMo theo sample `momo_nodejs/MoMo.js`.
-- Mặc định dùng MoMo ATM (`requestType=payWithATM`) để nhập thẻ test/Napas trên web, không cần quét QR bằng app.
-- API tạo thanh toán: `POST /payments/momo/create` với `bookingId`, `userId`, `totalAmount`, `paymentType`, `requestType`.
-- API thanh toán phần còn lại: `POST /payments/momo/create-remaining`.
-- Callback: `GET /payments/momo-return` redirect về frontend và `POST /payments/momo-ipn` để xác nhận server-to-server.
-- ENV: `MOMO_PARTNER_CODE`, `MOMO_ACCESS_KEY`, `MOMO_SECRET_KEY`, `MOMO_PAY_URL`, `MOMO_REDIRECT_URL`, `MOMO_IPN_URL`, `MOMO_PARTNER_NAME`, `MOMO_STORE_ID`, `MOMO_FRONTEND_RETURN_URL`, `MOMO_EXPIRE_MINUTES`.
-- `MOMO_EXPIRE_MINUTES` mặc định `10`, đồng bộ với `vnpay.expireMinutes`; Booking hold đang dùng buffer thêm 1 phút.
+Khi thanh toán bất kỳ loại nào thành công, PAYMENT service sẽ xuất bản sự kiện tương ứng lên RabbitMQ (`FULL_PAID`, `DEPOSIT_PAID`, `REMAINING_PAID`) để BOOKING service tự động đồng bộ hóa trạng thái tức thì.

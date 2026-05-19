@@ -1,35 +1,68 @@
-# 🚪 HotelSystem_GATEWAY (API Gateway)
+# 🚪 HotelSystem_GATEWAY (Spring Cloud API Gateway)
 
-[![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-2025.x-6DB33F?style=for-the-badge&logo=spring&logoColor=white)](https://spring.io/projects/spring-cloud-gateway)
+[![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-Gateway-6DB33F?style=for-the-badge&logo=spring&logoColor=white)](https://spring.io/projects/spring-cloud-gateway)
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.10-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Redis](https://img.shields.io/badge/Redis-Rate_Limiter-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
 
-Service **cửa ngõ duy nhất** của hệ thống. Quản lý định tuyến (Routing), bảo mật (Security), giới hạn băng thông (Rate Limiting) và xử lý CORS.
+Service **API Gateway** là cửa ngõ giao tiếp duy nhất (Unified Entry Point) cho toàn bộ hệ thống Web & Mobile. Gateway chịu trách nhiệm điều phối định tuyến (Routing), bảo mật biên (Security), cấu hình CORS tập trung, giới hạn băng thông chống DoS (Rate Limiting), và làm phong phú dữ liệu header hạ nguồn.
 
-## 🚀 Tính năng chính
-- **Unified Entry Point**: Tập trung tất cả các yêu cầu từ Frontend về port 8080.
-- **Dynamic Routing**: Định tuyến yêu cầu đến các microservices thông qua Eureka Service Discovery.
-- **JWT Authentication Filter**: Kiểm tra và xác thực token trước khi chuyển tiếp yêu cầu đến các service con.
-- **Rate Limiting**: Sử dụng Redis để giới hạn tần suất request theo IP (tránh tấn công DoS).
-- **CORS Handling**: Cấu hình tập trung cho toàn bộ hệ thống Web/Mobile.
-- **Distributed Tracing**: Tích hợp Zipkin để theo dõi luồng request.
+---
+
+## 🚀 Tính năng cốt lõi
+
+1. **Định tuyến động (Dynamic Routing)**:
+   - Sử dụng cơ chế cân bằng tải tích hợp Eureka (`lb://`) để phân phối các request đến các microservices đang chạy dưới dạng container.
+2. **Bộ lọc bảo mật JWT (`JwtAuthFilter`)**:
+   - Tự động chặn và kiểm tra chữ ký token `Bearer JWT` ở mức biên trước khi chuyển tiếp yêu cầu.
+   - Trích xuất thông tin người dùng từ JWT và bổ sung vào header để các microservices con đọc trực tiếp:
+     - `X-User-Id` (ID người dùng)
+     - `X-User-Role` (Vai trò: `ADMIN`, `STAFF`, `USER`)
+     - `X-User-Email` (Email người dùng)
+   - **Bỏ qua xác thực (JWT Bypass)** cho các endpoint công khai (Login, Register, Send OTP, VNPAY/MoMo Callbacks, và các phương thức đọc `GET` phòng trống).
+   - **Bỏ qua xác thực cho WebSocket**: Cho phép các luồng nâng cấp kết nối WebSocket (`Upgrade: websocket`) vượt qua kiểm thử JWT để thiết lập kênh thông báo thời gian thực `/ws/payments`.
+3. **Cấu hình CORS tập trung (WebFlux Standard)**:
+   - Xử lý triệt để lỗi CORS của trình duyệt bằng cách cấu hình danh sách allowedOrigins cụ thể (`http://localhost:3000`), hỗ trợ đầy đủ các phương thức HTTP và cho phép đính kèm Cookies (`allowCredentials: true`).
+4. **Giới hạn băng thông (Rate Limiter)**:
+   - Sử dụng `RequestRateLimiter` kết hợp với Redis để kiểm soát tần suất request tối đa của từng Client dựa trên địa chỉ IP (`ipKeyResolver`).
+   - Ngăn chặn triệt để tấn công từ chối dịch vụ (DoS) hoặc càn quét API (Web scraping).
+5. **Giám sát Distributed Tracing**:
+   - Tích hợp Micrometer Tracing và Zipkin để đánh dấu vết request (Span ID, Trace ID) đi qua Gateway sang các service sâu hơn.
+
+---
 
 ## 🔌 Cấu hình kết nối
-- **Port**: `8080` (Công khai cho Frontend)
-- **Service ID**: `api-gateway`
-- **Eureka Server**: `http://localhost:8761/eureka/`
 
-## 📡 Các Route chính
+- **Cổng công khai**: `8080` (Mọi truy cập bên ngoài trỏ vào đây)
+- **Tên đăng ký ứng dụng**: `api-gateway`
+- **Địa chỉ Eureka Discovery**: `http://localhost:8761/eureka/`
+- **Cấu hình Redis kết nối**: Port `6379` (Dev container: `redis`)
 
-| Path Prefix | Target Service | Rewrite Rule |
-| :--- | :--- | :--- |
-| `/auth-api/**` | `auth-service` | `/auth-api/login` → `/login` |
-| `/user-api/**` | `user-service` | `/user-api/me` → `/me` |
-| `/room-api/**` | `room-service` | `/room-api/rooms` → `/rooms` |
-| `/booking-api/**` | `booking-service` | `/booking-api/create` → `/create` |
-| `/payment-api/**` | `payment-service` | `/payment-api/vnpay` → `/vnpay` |
+---
 
-## 🛠️ Cấu hình Rate Limiter (Redis)
-Service sử dụng `RequestRateLimiter` của Spring Cloud Gateway kết hợp với Redis:
-- **Replenish Rate**: 30-50 tokens/sec (tùy service).
-- **Burst Capacity**: Gấp đôi Replenish Rate.
-- **Key Resolver**: Theo địa chỉ IP của Client.
+## 📡 Chi tiết các Route định tuyến
+
+Tất cả các endpoint gửi từ Frontend Web/Mobile bắt buộc có tiền tố tương ứng để Gateway điều phối chính xác và loại bỏ tiền tố trước khi gửi đến Service con:
+
+| Cổng định tuyến | Đích đến (Eureka Service ID) | Tiền tố Gateway | Ví dụ viết lại đường dẫn (Rewrite Path) |
+| :--- | :--- | :--- | :--- |
+| **AUTH** | `auth-service` | `/auth-api/**` | `/auth-api/auth/login` ➔ `/auth/login` |
+| **USER** | `user-service` | `/user-api/**` | `/user-api/users/me` ➔ `/users/me` |
+| **ROOM** | `room-service` | `/room-api/**` | `/room-api/rooms/available` ➔ `/rooms/available` |
+| **BOOKING** | `booking-service`| `/booking-api/**` | `/booking-api/bookings` ➔ `/bookings` |
+| **PAYMENT** | `payment-service`| `/payment-api/**` | `/payment-api/payments/vnpay/create` ➔ `/payments/vnpay/create` |
+| **NOTIF** | `notification-service` | `/notification-api/**`| `/notification-api/notifications` ➔ `/notifications` |
+
+---
+
+## 🛡️ Cấu hình Giới hạn băng thông (Rate Limiting)
+
+Thiết lập trong tệp `application.yml` cho từng Route:
+```yaml
+filters:
+  - name: RequestRateLimiter
+    args:
+      redis-rate-limiter.replenishRate: 20      # Tốc độ nạp lại: 20 token/giây
+      redis-rate-limiter.burstCapacity: 40      # Dung lượng tối đa: 40 token
+      redis-rate-limiter.requestedTokens: 1
+      key-resolver: "#{@ipKeyResolver}"        # Phân loại theo địa chỉ IP của Client
+```
