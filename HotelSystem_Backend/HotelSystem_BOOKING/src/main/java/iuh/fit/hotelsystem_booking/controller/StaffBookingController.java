@@ -6,19 +6,24 @@ import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
 import iuh.fit.hotelsystem_booking.dto.RemainingPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffCheckInRequest;
-import iuh.fit.hotelsystem_booking.dto.StaffRejectRefundRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
+import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_booking.service.BookingService;
+import iuh.fit.hotelsystem_booking.service.RefundAuditService;
 import iuh.fit.hotelsystem_booking.service.RefundAssignmentService;
+import iuh.fit.hotelsystem_booking.service.RefundQueueProducer;
 import iuh.fit.hotelsystem_booking.service.RefundService;
 import iuh.fit.hotelsystem_booking.service.StaffAuthService;
 import iuh.fit.hotelsystem_booking.service.StaffCheckInOutStatsService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -33,23 +38,34 @@ import java.util.Map;
 @RequestMapping("/api/staff")
 public class StaffBookingController {
 
+    private static final Logger log = LoggerFactory.getLogger(StaffBookingController.class);
+
     private final BookingService bookingService;
+    private final BookingRepository bookingRepository;
     private final RefundTransactionRepository refundRepository;
     private final RefundAssignmentService refundAssignmentService;
     private final RefundService refundService;
+    private final RefundAuditService refundAuditService;
+    private final RefundQueueProducer refundQueueProducer;
     private final StaffAuthService staffAuthService;
     private final StaffCheckInOutStatsService statsService;
 
     public StaffBookingController(BookingService bookingService,
+                                  BookingRepository bookingRepository,
                                   RefundTransactionRepository refundRepository,
                                   RefundAssignmentService refundAssignmentService,
                                   RefundService refundService,
+                                  RefundAuditService refundAuditService,
+                                  RefundQueueProducer refundQueueProducer,
                                   StaffAuthService staffAuthService,
                                   StaffCheckInOutStatsService statsService) {
         this.bookingService = bookingService;
+        this.bookingRepository = bookingRepository;
         this.refundRepository = refundRepository;
         this.refundAssignmentService = refundAssignmentService;
         this.refundService = refundService;
+        this.refundAuditService = refundAuditService;
+        this.refundQueueProducer = refundQueueProducer;
         this.staffAuthService = staffAuthService;
         this.statsService = statsService;
     }
@@ -160,8 +176,7 @@ public class StaffBookingController {
     @GetMapping("/refund-requests")
     public List<RefundTransaction> refundRequests(HttpServletRequest request) {
         ensureStaff(request);
-        return refundRepository.findByStatusInOrderByCreatedAtAsc(
-                List.of(RefundStatus.PENDING, RefundStatus.ASSIGNED, RefundStatus.PROCESSING));
+        return refundRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     @GetMapping("/refund-requests/{id}")
@@ -181,14 +196,6 @@ public class StaffBookingController {
     public RefundTransaction approveRefund(HttpServletRequest request, @PathVariable Long id) {
         StaffTokenInfo staff = staff(request);
         return refundService.approveRefundByStaff(id, staff.getStaffId());
-    }
-
-    @PostMapping("/refund-requests/{id}/reject")
-    public RefundTransaction rejectRefund(HttpServletRequest request,
-                                          @PathVariable Long id,
-                                          @RequestBody StaffRejectRefundRequest body) {
-        StaffTokenInfo staff = staff(request);
-        return refundService.rejectRefundByStaff(id, staff.getStaffId(), body.getReason());
     }
 
     @GetMapping("/bookings/check-in-today")
@@ -236,6 +243,111 @@ public class StaffBookingController {
                 ? LocalDate.parse(date)
                 : statsService.todayInVietnam();
         return ResponseEntity.ok(statsService.getStats(localDate));
+    }
+
+    @PostMapping("/refund-requests/early-checkout/{bookingId}")
+    public RefundTransaction createEarlyCheckoutRefund(
+            HttpServletRequest request,
+            @PathVariable Long bookingId,
+            @RequestBody Map<String, Object> body) {
+        StaffTokenInfo staff = staff(request);
+        Double refundAmount = body != null && body.get("refundAmount") instanceof Number 
+            ? ((Number) body.get("refundAmount")).doubleValue() 
+            : 0.0;
+        // Lấy paidAmount thực tế từ booking (số tiền khách đã thanh toán)
+        // KHÔNG dùng refundAmount làm paidAmount
+        
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+        
+        String idempotencyKey = iuh.fit.hotelsystem_booking.constants.BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX + bookingId;
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        java.util.Optional<RefundTransaction> existingRefund =
+                refundRepository.findByIdempotencyKey(idempotencyKey)
+                        .or(() -> refundRepository.findFirstByBookingIdAndReasonOrderByCreatedAtDesc(
+                                bookingId, "EARLY_CHECKOUT_REFUND"));
+
+        if (existingRefund.isPresent()) {
+            RefundTransaction refund = existingRefund.get();
+            if (refund.getStatus() != RefundStatus.REFUNDED
+                    && refund.getStatus() != RefundStatus.SUCCESS
+                    && refund.getStatus() != RefundStatus.REJECTED) {
+                RefundStatus oldStatus = refund.getStatus();
+                refund.setStatus(RefundStatus.ASSIGNED);
+                refund.setAssignedTo(staff.getStaffId());
+                refund.setAssignedAt(now);
+                refund.setProcessedBy(null);
+                refund.setProcessedByStaffId(null);
+                refund.setProcessedAt(null);
+                refund.setCompletedAt(null);
+                refund.setRejectReason(null);
+                refund.setRefundAmount(refundAmount);
+                refund.setAmount(refundAmount);
+                double actualPaid = booking.getPaidAmount() != null ? booking.getPaidAmount() : refundAmount;
+                refund.setPaidAmount(actualPaid);
+                refund.setCancellationFee(Math.max(0, actualPaid - refundAmount));
+                refund.setUpdatedAt(now);
+                RefundTransaction saved = refundRepository.save(refund);
+                try {
+                    refundAuditService.log(saved.getId(), "REASSIGNED", oldStatus, RefundStatus.ASSIGNED,
+                            String.valueOf(staff.getStaffId()), "STAFF", "Early checkout refund assigned to checkout staff");
+                } catch (Exception e) {
+                    log.warn("Could not log audit for early checkout refund: {}", e.getMessage());
+                }
+                try {
+                    refundQueueProducer.publishAssigned(saved);
+                } catch (Exception e) {
+                    log.warn("Could not publish refund event: {}", e.getMessage());
+                }
+                return saved;
+            }
+            return refund;
+        }
+
+        double actualPaidAmount = booking.getPaidAmount() != null ? booking.getPaidAmount() : refundAmount;
+        double retentionFee = Math.max(0, actualPaidAmount - refundAmount);
+
+        RefundTransaction refund = new RefundTransaction();
+        refund.setBookingId(bookingId);
+        refund.setUserId(booking.getUserId());
+        refund.setPaymentTransactionId(booking.getPaymentTransactionId());
+        refund.setPaidAmount(actualPaidAmount);
+        refund.setCancellationFee(retentionFee);
+        refund.setRefundAmount(refundAmount);
+        refund.setRefundMethod("VNPAY");
+        refund.setAmount(refundAmount);
+        refund.setReason("EARLY_CHECKOUT_REFUND");
+        refund.setStatus(RefundStatus.ASSIGNED);
+        refund.setAssignedTo(staff.getStaffId());
+        refund.setAssignedAt(java.time.LocalDateTime.now());
+        refund.setProcessedBy(null);
+        refund.setProcessedByStaffId(null);
+        refund.setProcessedAt(null);
+        refund.setCompletedAt(null);
+        refund.setIdempotencyKey(idempotencyKey);
+        refund.setCreatedAt(now);
+        refund.setDueAt(now.plusHours(iuh.fit.hotelsystem_booking.constants.BookingConstants.REFUND_SLA_HOURS));
+        refund.setPriority(iuh.fit.hotelsystem_booking.constants.BookingConstants.REFUND_PRIORITY_NORMAL);
+        refund.setUpdatedAt(now);
+        
+        RefundTransaction saved = refundRepository.save(refund);
+        
+        // Log audit
+        try {
+            refundAuditService.log(saved.getId(), "CREATED_AND_ASSIGNED", null, RefundStatus.ASSIGNED,
+                    String.valueOf(staff.getStaffId()), "STAFF", "Early checkout refund created and assigned to staff");
+        } catch (Exception e) {
+            log.warn("Could not log audit for early checkout refund: {}", e.getMessage());
+        }
+        
+        // Publish event
+        try {
+            refundQueueProducer.publishAssigned(saved);
+        } catch (Exception e) {
+            log.warn("Could not publish refund event: {}", e.getMessage());
+        }
+        
+        return saved;
     }
 
     @GetMapping("/rooms/today-highlight")

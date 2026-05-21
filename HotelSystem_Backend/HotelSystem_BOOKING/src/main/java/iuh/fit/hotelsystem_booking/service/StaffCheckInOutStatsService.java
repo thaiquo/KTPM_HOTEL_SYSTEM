@@ -188,11 +188,13 @@ public class StaffCheckInOutStatsService {
 
         if (date == null) {
 
-            return bookingRepository.findCompletedCheckOutAll(CHECK_OUT_DONE_STATUSES);
+            List<Booking> list = bookingRepository.findCompletedCheckOutAll(CHECK_OUT_DONE_STATUSES);
+            list.addAll(bookingRepository.findLegacyEarlyCheckoutAll());
+            return list;
 
         }
 
-        return bookingRepository.findCompletedCheckOutOnDate(
+        List<Booking> list = bookingRepository.findCompletedCheckOutOnDate(
 
                 date,
 
@@ -203,6 +205,12 @@ public class StaffCheckInOutStatsService {
                 CHECK_OUT_DONE_STATUSES
 
         );
+        list.addAll(bookingRepository.findLegacyEarlyCheckoutOnDate(
+                date,
+                date.atStartOfDay(),
+                date.plusDays(1).atStartOfDay()
+        ));
+        return list;
 
     }
 

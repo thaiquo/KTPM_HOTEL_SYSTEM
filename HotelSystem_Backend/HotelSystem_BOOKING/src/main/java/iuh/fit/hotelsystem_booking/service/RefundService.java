@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
@@ -32,6 +33,7 @@ public class RefundService {
 
     private final RefundTransactionRepository refundRepository;
     private final BookingRepository bookingRepository;
+    private final CancellationPolicyService policyService;
     private final PaymentGateway paymentGateway;
     private final RefundQueueProducer refundQueueProducer;
     private final RefundPaymentTransactionRepository paymentTransactionRepository;
@@ -41,6 +43,7 @@ public class RefundService {
 
     public RefundService(RefundTransactionRepository refundRepository,
                          BookingRepository bookingRepository,
+                         CancellationPolicyService policyService,
                          PaymentGateway paymentGateway,
                          RefundQueueProducer refundQueueProducer,
                          RefundPaymentTransactionRepository paymentTransactionRepository,
@@ -49,6 +52,7 @@ public class RefundService {
                          PaymentServiceClient paymentServiceClient) {
         this.refundRepository = refundRepository;
         this.bookingRepository = bookingRepository;
+        this.policyService = policyService;
         this.paymentGateway = paymentGateway;
         this.refundQueueProducer = refundQueueProducer;
         this.paymentTransactionRepository = paymentTransactionRepository;
@@ -60,6 +64,7 @@ public class RefundService {
     @Transactional
     public RefundTransaction createRefundTransaction(Booking booking, CancellationPolicyResult policyResult) {
         String idempotencyKey = buildIdempotencyKey(booking);
+        LocalDateTime now = nowVi();
 
         return refundRepository.findByIdempotencyKey(idempotencyKey)
                 .orElseGet(() -> {
@@ -71,7 +76,8 @@ public class RefundService {
                             policyResult.getRefundAmount(),
                             BookingConstants.REFUND_METHOD_VNPAY,
                             policyResult.getReason(),
-                            idempotencyKey
+                            idempotencyKey,
+                            now
                     );
                     log.info("Create refund request. bookingId={}, refundAmount={}, idempotencyKey={}",
                             booking.getId(), policyResult.getRefundAmount(), idempotencyKey);
@@ -99,6 +105,7 @@ public class RefundService {
         }
 
         String idempotencyKey = buildEarlyCheckoutIdempotencyKey(booking);
+        LocalDateTime now = nowVi();
         return refundRepository.findByIdempotencyKey(idempotencyKey)
                 .orElseGet(() -> {
                     RefundTransaction refund = RefundTransaction.create(
@@ -109,7 +116,8 @@ public class RefundService {
                             refundAmount.doubleValue(),
                             BookingConstants.REFUND_METHOD_VNPAY,
                             "EARLY_CHECKOUT_REFUND",
-                            idempotencyKey
+                            idempotencyKey,
+                            now
                     );
                     RefundTransaction saved = refundRepository.save(refund);
                     refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
@@ -134,9 +142,14 @@ public class RefundService {
             throw new IllegalArgumentException("User does not own this booking");
         }
 
-        int refundPercent = calculateRefundPercent(booking, LocalDateTime.now());
+        LocalDateTime now = nowVi();
+        CancellationPolicyResult policyResult = policyService.calculateCancellationPolicy(booking, now);
+        if (!policyResult.isCanCancel()) {
+            throw new IllegalStateException(policyResult.getReason());
+        }
+
         double paidAmount = valueOrZero(booking.getPaidAmount());
-        double refundAmount = paidAmount * refundPercent / 100.0;
+        double refundAmount = valueOrZero(policyResult.getRefundAmount());
         String idempotencyKey = BookingConstants.REFUND_IDEMPOTENCY_PREFIX + bookingId;
 
         RefundTransaction refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(RefundTransaction::new);
@@ -145,12 +158,14 @@ public class RefundService {
         refund.setCitizenId(request.getCitizenId());
         refund.setPaymentTransactionId(resolvePaymentTransactionId(booking));
         refund.setPaidAmount(paidAmount);
-        refund.setCancellationFee(Math.max(0.0, paidAmount - refundAmount));
+        refund.setCancellationFee(valueOrZero(policyResult.getCancellationFee()));
         refund.setRefundAmount(refundAmount);
-        refund.setRefundPercent(refundPercent);
+        refund.setRefundPercent(paidAmount > 0 ? (int) Math.round(refundAmount * 100.0 / paidAmount) : 0);
         refund.setRefundMethod(BookingConstants.REFUND_METHOD_VNPAY);
         refund.setAmount(refundAmount);
-        refund.setReason(request.getReason());
+        refund.setReason(request.getReason() != null && !request.getReason().isBlank()
+            ? request.getReason()
+            : policyResult.getReason());
         refund.setStatus(RefundStatus.PENDING);
         refund.setAssignedTo(null);
         refund.setAssignedAt(null);
@@ -161,15 +176,15 @@ public class RefundService {
         refund.setRejectReason(null);
         refund.setIdempotencyKey(idempotencyKey);
         if (refund.getCreatedAt() == null) {
-            refund.setCreatedAt(LocalDateTime.now());
+            refund.setCreatedAt(now);
         }
-        refund.setDueAt(LocalDateTime.now().plusHours(BookingConstants.REFUND_SLA_HOURS));
+        refund.setDueAt(now.plusHours(BookingConstants.REFUND_SLA_HOURS));
         refund.setPriority(BookingConstants.REFUND_PRIORITY_NORMAL);
-        refund.setUpdatedAt(LocalDateTime.now());
+        refund.setUpdatedAt(now);
 
         booking.setStatus(BookingStatus.CANCEL_REQUESTED);
         booking.setPaymentStatus(refundAmount > 0 ? BookingConstants.PAYMENT_STATUS_REFUND_PENDING
-                : BookingConstants.PAYMENT_STATUS_NO_REFUND);
+            : BookingConstants.PAYMENT_STATUS_NO_REFUND);
         bookingRepository.save(booking);
 
         RefundTransaction saved = refundRepository.save(refund);
@@ -184,37 +199,79 @@ public class RefundService {
     public RefundTransaction approveRefundByStaff(Long refundId, Long staffId) {
         RefundTransaction refund = refundRepository.findByIdForUpdate(refundId)
                 .orElseThrow(() -> new IllegalArgumentException("Refund request not found: " + refundId));
+
+        if (refund.getStatus() == RefundStatus.REFUNDED || refund.getStatus() == RefundStatus.SUCCESS) {
+            return refund;
+        }
         ensureAssignedToStaff(refund, staffId);
+
+        String processedBy = String.valueOf(staffId);
         RefundStatus oldStatus = refund.getStatus();
-        refund.setStatus(RefundStatus.APPROVED);
+        LocalDateTime now = nowVi();
+        refund.setStatus(RefundStatus.PROCESSING);
         refund.setProcessedByStaffId(staffId);
-        refund.setProcessedBy(String.valueOf(staffId));
-        refund.setProcessedAt(LocalDateTime.now());
-        refund.setUpdatedAt(LocalDateTime.now());
-        RefundTransaction approved = refundRepository.save(refund);
+        refund.setProcessedBy(processedBy);
+        refund.setProcessedAt(now);
+        refund.setUpdatedAt(now);
+        refundRepository.save(refund);
+        refundAuditService.log(refund.getId(), "APPROVED", oldStatus, RefundStatus.PROCESSING,
+                processedBy, "REFUND_STAFF", "Refund request approved for processing");
+        refundNotificationService.notifyApproved(refund);
 
-        Map<String, Object> paymentRequest = new HashMap<>();
-        paymentRequest.put("refundRequestId", refundId);
-        paymentRequest.put("bookingId", refund.getBookingId());
-        paymentRequest.put("userId", refund.getUserId());
-        paymentRequest.put("amount", refund.getRefundAmount());
-        paymentServiceClient.processRefund(refundId, paymentRequest);
+        try {
+            Map<String, Object> paymentRequest = new HashMap<>();
+            paymentRequest.put("refundRequestId", refundId);
+            paymentRequest.put("bookingId", refund.getBookingId());
+            paymentRequest.put("userId", refund.getUserId());
+            paymentRequest.put("amount", refund.getRefundAmount());
+            paymentRequest.put("paymentTransactionId", refund.getPaymentTransactionId());
+            paymentServiceClient.processRefund(refundId, paymentRequest);
 
-        approved.setStatus(RefundStatus.COMPLETED);
-        approved.setCompletedAt(LocalDateTime.now());
-        approved.setUpdatedAt(LocalDateTime.now());
-        bookingRepository.findById(approved.getBookingId()).ifPresent(booking -> {
-            booking.setStatus(BookingStatus.CANCELLED);
-            booking.setCancelledAt(LocalDateTime.now());
-            booking.setCancellationReason(approved.getReason());
-            booking.setPaymentStatus(valueOrZero(approved.getRefundAmount()) > 0
-                    ? BookingConstants.PAYMENT_STATUS_REFUNDED
-                    : BookingConstants.PAYMENT_STATUS_NO_REFUND);
-            bookingRepository.save(booking);
-        });
-        refundAuditService.log(refund.getId(), "APPROVED", oldStatus, RefundStatus.COMPLETED,
-                String.valueOf(staffId), "REFUND_STAFF", "Refund approved and completed");
-        return refundRepository.save(approved);
+            LocalDateTime completedAt = nowVi();
+            refund.setStatus(RefundStatus.REFUNDED);
+            refund.setCompletedAt(completedAt);
+            refund.setUpdatedAt(completedAt);
+            bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
+                boolean isEarlyCheckoutRefund = "EARLY_CHECKOUT_REFUND".equals(refund.getReason());
+                if (isEarlyCheckoutRefund) {
+                    // Early checkout: booking đã COMPLETED, CHỈ cập nhật payment status
+                    // KHÔNG chuyển thành CANCELLED — đây không phải hủy đơn
+                    log.info("Early checkout refund completed. Keeping booking {} as COMPLETED.", refund.getBookingId());
+                } else {
+                    // Cancellation refund: set booking CANCELLED như bình thường
+                    if (booking.getStatus() != BookingStatus.CANCELLED) {
+                        booking.setStatus(BookingStatus.CANCELLED);
+                        booking.setCancelledAt(completedAt);
+                        booking.setCancellationReason(refund.getReason());
+                    }
+                }
+                double refundAmt = valueOrZero(refund.getRefundAmount());
+                double paidAmt = valueOrZero(refund.getPaidAmount());
+                if (refundAmt <= 0) {
+                    booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_NO_REFUND);
+                } else if (paidAmt > 0 && refundAmt >= paidAmt) {
+                    booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUNDED);
+                } else {
+                    booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_PARTIALLY_REFUNDED);
+                }
+                bookingRepository.save(booking);
+            });
+            refundAuditService.log(refund.getId(), "REFUNDED", RefundStatus.PROCESSING, RefundStatus.REFUNDED,
+                    processedBy, "SYSTEM", "Refund processed via payment service");
+            refundNotificationService.notifyRefunded(refund, "PAYMENT_SERVICE");
+            log.info("Staff refund approved. refundId={}, bookingId={}, amount={}",
+                    refund.getId(), refund.getBookingId(), refund.getRefundAmount());
+            return refundRepository.save(refund);
+        } catch (Exception ex) {
+            refund.setStatus(RefundStatus.FAILED);
+            refund.setUpdatedAt(nowVi());
+            refundAuditService.log(refund.getId(), "FAILED", RefundStatus.PROCESSING, RefundStatus.FAILED,
+                    processedBy, "SYSTEM", ex.getMessage());
+            refundNotificationService.notifyFailed(refund, ex.getMessage());
+            refundQueueProducer.publishFailed(refund);
+            log.warn("Staff refund failed. refundId={}, reason={}", refund.getId(), ex.getMessage());
+            return refundRepository.save(refund);
+        }
     }
 
     @Transactional
@@ -226,9 +283,10 @@ public class RefundService {
         refund.setStatus(RefundStatus.REJECTED);
         refund.setProcessedByStaffId(staffId);
         refund.setProcessedBy(String.valueOf(staffId));
-        refund.setProcessedAt(LocalDateTime.now());
+        LocalDateTime now = nowVi();
+        refund.setProcessedAt(now);
         refund.setRejectReason(reason);
-        refund.setUpdatedAt(LocalDateTime.now());
+        refund.setUpdatedAt(now);
         bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
             booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_NO_REFUND);
             bookingRepository.save(booking);
@@ -259,10 +317,11 @@ public class RefundService {
 
         refund.setStatus(RefundStatus.PROCESSING);
         refund.setProcessedBy(processedBy);
-        refund.setUpdatedAt(LocalDateTime.now());
+        LocalDateTime now = nowVi();
+        refund.setUpdatedAt(now);
         refundRepository.save(refund);
         paymentTransaction.setStatus(RefundPaymentTransactionStatus.PROCESSING);
-        paymentTransaction.setUpdatedAt(LocalDateTime.now());
+        paymentTransaction.setUpdatedAt(now);
         paymentTransactionRepository.save(paymentTransaction);
 
         PaymentGateway.GatewayRefundResult gatewayResult = paymentGateway.refund(
@@ -277,8 +336,9 @@ public class RefundService {
             refund.setStatus(RefundStatus.REFUNDED);
             paymentTransaction.setStatus(RefundPaymentTransactionStatus.SUCCESS);
             paymentTransaction.setGatewayRefundTransactionId(gatewayResult.gatewayRefundTransactionId());
-            paymentTransaction.setProcessedAt(LocalDateTime.now());
-            paymentTransaction.setUpdatedAt(LocalDateTime.now());
+            LocalDateTime processedAt = nowVi();
+            paymentTransaction.setProcessedAt(processedAt);
+            paymentTransaction.setUpdatedAt(processedAt);
             double paidAmount = valueOrZero(refund.getPaidAmount());
             double refundAmount = valueOrZero(refund.getRefundAmount());
             booking.setPaymentStatus(refundAmount >= paidAmount
@@ -292,7 +352,7 @@ public class RefundService {
             refund.setStatus(RefundStatus.FAILED);
             paymentTransaction.setStatus(RefundPaymentTransactionStatus.FAILED);
             paymentTransaction.setNote(gatewayResult.message());
-            paymentTransaction.setUpdatedAt(LocalDateTime.now());
+            paymentTransaction.setUpdatedAt(nowVi());
             refundAuditService.log(refund.getId(), "FAILED", RefundStatus.PROCESSING, RefundStatus.FAILED,
                     processedBy, "SYSTEM", gatewayResult.message());
             refundNotificationService.notifyFailed(refund, gatewayResult.message());
@@ -300,7 +360,7 @@ public class RefundService {
             log.warn("Refund failed. refundId={}, reason={}", refund.getId(), gatewayResult.message());
         }
 
-        refund.setUpdatedAt(LocalDateTime.now());
+        refund.setUpdatedAt(nowVi());
         bookingRepository.save(booking);
         paymentTransactionRepository.save(paymentTransaction);
         return refundRepository.save(refund);
@@ -318,7 +378,7 @@ public class RefundService {
         refund.setStatus(RefundStatus.REJECTED);
         refund.setProcessedBy(processedBy);
         refund.setReason(reason != null && !reason.isBlank() ? reason : refund.getReason());
-        refund.setUpdatedAt(LocalDateTime.now());
+        refund.setUpdatedAt(nowVi());
 
         bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
             booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_NO_REFUND);
@@ -362,6 +422,10 @@ public class RefundService {
         return value != null ? value : 0.0;
     }
 
+    private LocalDateTime nowVi() {
+        return ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime();
+    }
+
     private int calculateRefundPercent(Booking booking, LocalDateTime now) {
         if (booking.isNonRefundable()) {
             return 0;
@@ -381,7 +445,9 @@ public class RefundService {
         if (staffId == null) {
             throw new IllegalArgumentException("staffId is required");
         }
-        if (refund.getStatus() != RefundStatus.ASSIGNED && refund.getStatus() != RefundStatus.PROCESSING) {
+        if (refund.getStatus() != RefundStatus.ASSIGNED
+                && refund.getStatus() != RefundStatus.PROCESSING
+                && refund.getStatus() != RefundStatus.FAILED) {
             throw new IllegalStateException("Refund request must be assigned before processing");
         }
         if (!staffId.equals(refund.getAssignedTo())) {

@@ -110,6 +110,8 @@ type CheckinQrBackend = {
   amount?: number;
   confirmUrl?: string;
   expiredAt?: string;
+  paymentType?: string;
+  invoiceCategory?: string;
 };
 
 type NotificationBackend = {
@@ -162,6 +164,8 @@ export type CheckinQrPayment = {
   amount: number;
   confirmUrl: string;
   expiredAt: string;
+  paymentType?: string;
+  invoiceCategory?: string;
 };
 
 export type CheckinPaymentStatus = {
@@ -170,6 +174,8 @@ export type CheckinPaymentStatus = {
   bookingCode: string;
   amount: number;
   status: string;
+  paymentType?: string;
+  invoiceCategory?: string;
 };
 
 export type UserNotification = {
@@ -600,6 +606,8 @@ const mapCheckinQr = (payment: CheckinQrBackend): CheckinQrPayment => {
     amount: Number(payment.amount || 0),
     confirmUrl: normalizeConfirmUrl(payment.confirmUrl || '', paymentCode),
     expiredAt: payment.expiredAt || '',
+    paymentType: payment.paymentType,
+    invoiceCategory: payment.invoiceCategory,
   };
 };
 
@@ -609,6 +617,8 @@ const mapCheckinPaymentStatus = (payment: any): CheckinPaymentStatus => ({
   bookingCode: String(payment?.bookingCode || payment?.bookingId || ''),
   amount: Number(payment?.amount || 0),
   status: String(payment?.status || ''),
+  paymentType: payment?.paymentType != null ? String(payment.paymentType) : undefined,
+  invoiceCategory: payment?.invoiceCategory != null ? String(payment.invoiceCategory) : undefined,
 });
 
 const extractPaymentList = (payload: unknown): PaymentRecord[] => {
@@ -836,10 +846,10 @@ export const paymentApi = {
     return extractPaymentList(response.data);
   },
 
-  markLateCheckoutPaid: async (bookingId: string, method?: string): Promise<PaymentRecord> => {
+  markLateCheckoutPaid: async (bookingId: string, method?: string, body?: { payerName?: string; payerPhone?: string; payerGuestId?: number; payerCccd?: string }): Promise<PaymentRecord> => {
     const response = await paymentHttp.post<unknown>(
       `/payments/bookings/${bookingId}/late-checkout-fee/paid`,
-      null,
+      body || null,
       { params: method ? { method } : undefined }
     );
     return mapPayment(response.data as PaymentBackend);
@@ -858,7 +868,7 @@ export const paymentApi = {
     bookingId: string;
     amount: number;
     method: 'BANK_TRANSFER';
-    type: 'CHECKIN_REMAINING_PAYMENT';
+    type: 'CHECKIN_REMAINING_PAYMENT' | 'EARLY_CHECKIN_FEE' | 'LATE_CHECKOUT_FEE';
   }): Promise<CheckinQrPayment> => {
     const response = await paymentHttp.post<unknown>('/payments/checkin-qr', {
       bookingId: Number(payload.bookingId),
@@ -876,6 +886,11 @@ export const paymentApi = {
 
   confirmCheckinQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
     const response = await paymentHttp.post<unknown>(`/payments/${paymentCode}/confirm`);
+    return mapCheckinPaymentStatus(response.data);
+  },
+
+  confirmLateCheckoutQr: async (paymentCode: string): Promise<CheckinPaymentStatus> => {
+    const response = await paymentHttp.post<unknown>(`/payments/late-checkout/${encodeURIComponent(paymentCode)}/confirm`);
     return mapCheckinPaymentStatus(response.data);
   },
 
@@ -1101,8 +1116,10 @@ export const staffRefundApi = {
     return mapRefund(response.data as RefundBackend);
   },
 
-  reject: async (id: string, reason: string): Promise<RefundRecord> => {
-    const response = await api.post<unknown>(`/api/staff/refund-requests/${id}/reject`, { reason });
+  createEarlyCheckoutRefund: async (bookingId: string, refundAmount: number): Promise<RefundRecord> => {
+    const response = await api.post<unknown>(`/api/staff/refund-requests/early-checkout/${bookingId}`, {
+      refundAmount,
+    });
     return mapRefund(response.data as RefundBackend);
   },
 };

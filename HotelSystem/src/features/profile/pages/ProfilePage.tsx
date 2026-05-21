@@ -662,9 +662,22 @@ const ProfilePage = () => {
                                       {getRefundStatusText(refund.status)}
                                     </span>
                                   </div>
-                                  <div className="mt-2 text-base font-black text-on-surface">Hoàn dự kiến: {formatCurrency(refund.refundAmount)}</div>
-                                  <div className="mt-1 text-sm text-on-surface-variant font-semibold">
-                                    Đã thanh toán {formatCurrency(refund.paidAmount)} · Phí hủy {formatCurrency(refund.cancellationFee)}
+                                  <div className="mt-2 grid gap-2 rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 sm:grid-cols-3">
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Đã thanh toán</div>
+                                      <div className="mt-1 text-sm font-black text-on-surface">{formatCurrency(refund.paidAmount)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Giữ lại / hao hụt</div>
+                                      <div className="mt-1 text-sm font-black text-error">{formatCurrency(Math.max(0, Number(refund.paidAmount || 0) - Number(refund.refundAmount || 0)))}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Sẽ hoàn</div>
+                                      <div className="mt-1 text-sm font-black text-green-700">{formatCurrency(refund.refundAmount)}</div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 text-sm text-on-surface-variant font-semibold">
+                                    Phí hủy: {formatCurrency(refund.cancellationFee)} · Giao dịch gốc: {refund.paymentTransactionId || 'Chưa có mã giao dịch'}
                                   </div>
                                   <div className="mt-1 text-sm text-on-surface-variant">Lý do: {getRefundReasonText(refund.reason)}</div>
                                   {latestNotice && (

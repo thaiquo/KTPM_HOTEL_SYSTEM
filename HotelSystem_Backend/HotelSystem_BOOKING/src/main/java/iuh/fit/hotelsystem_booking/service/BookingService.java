@@ -277,6 +277,12 @@ public class BookingService {
                 && now.toLocalTime().isBefore(LocalTime.of(BookingConstants.CHECK_IN_HOUR, 0))) {
             double fee = checkInOutService.calculateEarlyCheckInFee(booking, now);
             if (fee > 0.01) {
+                // Cho phep thu phi check-in som chung voi lan thu "remaining" (tai quay/QR),
+                // khi do paidAmount co the vuot finalTotal.
+                double extraCollected = Math.max(0.0, valueOrZero(booking.getPaidAmount()) - valueOrZero(booking.getFinalTotal()));
+                if (extraCollected + 0.01 >= fee) {
+                    // Da thu du phu thu, khong can tao giao dich EARLY_CHECKIN_FEE rieng.
+                } else {
                 PaymentStatusResponse earlyFeeStatus = paymentServiceClient.getEarlyCheckinFeeStatus(bookingId);
                 boolean earlyFeePaid = earlyFeeStatus != null && 
                     ("PAID".equalsIgnoreCase(earlyFeeStatus.getStatus()) || "SUCCESS".equalsIgnoreCase(earlyFeeStatus.getStatus()));
@@ -287,6 +293,7 @@ public class BookingService {
                     feeRequest.setAmount(fee);
                     paymentServiceClient.createEarlyCheckinFee(bookingId, feeRequest);
                     throw new IllegalStateException("Early check-in fee payment is required. Amount: " + fee);
+                }
                 }
             }
         }

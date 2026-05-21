@@ -82,7 +82,7 @@ services:
   postgres-auth:
     image: postgres:15
     ports:
-      - "55421:5432"
+      - "56421:5432"
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
@@ -93,7 +93,7 @@ services:
   postgres-user:
     image: postgres:15
     ports:
-      - "55422:5432"
+      - "56422:5432"
     environment:
       POSTGRES_DB: hotel_user
       POSTGRES_USER: postgres
@@ -155,7 +155,7 @@ services:
   postgres-room:
     image: postgres:15
     ports:
-      - "55423:5432"
+      - "56423:5432"
     environment:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
@@ -202,7 +202,7 @@ services:
   postgres-booking:
     image: postgres:15
     ports:
-      - "55424:5432"
+      - "56424:5432"
     environment:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
@@ -242,7 +242,7 @@ services:
   postgres-payment:
     image: postgres:15
     ports:
-      - "55425:5432"
+      - "56425:5432"
     environment:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
@@ -288,7 +288,7 @@ services:
   postgres-notification:
     image: postgres:15
     ports:
-      - "55426:5432"
+      - "56426:5432"
     environment:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres

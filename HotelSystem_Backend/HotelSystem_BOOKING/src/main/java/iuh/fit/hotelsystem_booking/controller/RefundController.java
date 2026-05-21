@@ -87,14 +87,6 @@ public class RefundController {
         return ResponseEntity.ok(refundService.approveRefundByStaff(id, staffId));
     }
 
-    @PostMapping("/{id}/reject")
-    public ResponseEntity<RefundTransaction> reject(@PathVariable Long id,
-                                                    @RequestBody(required = false) Map<String, Object> body) {
-        String reason = body != null && body.get("reason") != null ? String.valueOf(body.get("reason")) : "Refund rejected by staff";
-        Long staffId = parseLong(body != null ? body.get("staffId") : null);
-        return ResponseEntity.ok(refundService.rejectRefundByStaff(id, staffId, reason));
-    }
-
     @PostMapping("/{id}/assign")
     public ResponseEntity<RefundTransaction> assign(@PathVariable Long id,
                                                     @RequestBody(required = false) Map<String, Object> body) {

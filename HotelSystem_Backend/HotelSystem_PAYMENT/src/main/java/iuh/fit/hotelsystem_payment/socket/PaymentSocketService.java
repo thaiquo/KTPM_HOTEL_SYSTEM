@@ -38,6 +38,10 @@ public class PaymentSocketService {
                 + "\"amount\":" + payload.getAmount() + ","
                 + "\"status\":\"" + escape(payload.getStatus()) + "\","
                 + "\"checkinStatus\":" + nullableString(payload.getCheckinStatus())
+                + ",\"payerGuestId\":" + nullableNumber(payload.getPayerGuestId())
+                + ",\"payerName\":" + nullableString(payload.getPayerName())
+                + ",\"payerPhone\":" + nullableString(payload.getPayerPhone())
+                + ",\"payerCccd\":" + nullableString(payload.getPayerCccd())
                 + "}}";
         for (WebSocketSession session : sessions) {
             if (session.isOpen()) {
@@ -52,6 +56,10 @@ public class PaymentSocketService {
 
     private String nullableString(String value) {
         return value == null ? "null" : "\"" + escape(value) + "\"";
+    }
+
+    private String nullableNumber(Long value) {
+        return value == null ? "null" : String.valueOf(value);
     }
 
     private String escape(String value) {

@@ -41,6 +41,8 @@ public interface RefundTransactionRepository extends JpaRepository<RefundTransac
 
     boolean existsByIdempotencyKey(String idempotencyKey);
 
+    Optional<RefundTransaction> findFirstByBookingIdAndReasonOrderByCreatedAtDesc(Long bookingId, String reason);
+
     long countByAssignedToAndStatusIn(Long assignedTo, List<RefundStatus> statuses);
 
     long countByAssignedToAndStatus(Long assignedTo, RefundStatus status);

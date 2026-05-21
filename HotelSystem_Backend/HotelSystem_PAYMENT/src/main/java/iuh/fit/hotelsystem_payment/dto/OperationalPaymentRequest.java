@@ -7,6 +7,7 @@ public class OperationalPaymentRequest {
     private Long payerGuestId;
     private String payerName;
     private String payerPhone;
+    private String payerCccd;
     private Double amount;
     private String method;
     private String transactionId;
@@ -28,6 +29,9 @@ public class OperationalPaymentRequest {
 
     public String getPayerPhone() { return payerPhone; }
     public void setPayerPhone(String payerPhone) { this.payerPhone = payerPhone; }
+
+    public String getPayerCccd() { return payerCccd; }
+    public void setPayerCccd(String payerCccd) { this.payerCccd = payerCccd; }
 
     public Double getAmount() { return amount; }
     public void setAmount(Double amount) { this.amount = amount; }

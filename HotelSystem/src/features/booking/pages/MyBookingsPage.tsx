@@ -394,6 +394,10 @@ export default function MyBookingsPage() {
                           <span className="font-black text-on-surface">{formatCurrency(policy.paidAmount)}</span>
                         </div>
                         <div className="flex items-center justify-between gap-5">
+                          <span className="font-medium text-on-surface-variant">Số tiền giữ lại / hao hụt</span>
+                          <span className="font-black text-error">{formatCurrency(Math.max(0, Number(policy.paidAmount || 0) - Number(policy.refundAmount || 0)))}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-5">
                           <span className="font-medium text-on-surface-variant">Phí hủy ({getCancelTypeText(policy.cancelType)})</span>
                           <span className="font-black text-error">{formatCurrency(policy.cancellationFee)}</span>
                         </div>
@@ -408,7 +412,7 @@ export default function MyBookingsPage() {
                       <div className="flex items-start gap-3">
                         <Info size={18} className="mt-0.5 shrink-0 text-primary" />
                         <p className="text-sm font-medium leading-relaxed text-on-surface-variant">
-                          {getPolicyReasonText(policy.reason)} Chính sách áp dụng cho {getPolicyTypeText(policy.policyType)}.
+                          {getPolicyReasonText(policy.reason)} Chính sách áp dụng cho {getPolicyTypeText(policy.policyType)}. Số tiền hoàn dựa trên tiền thực đã thanh toán, không vượt quá số tiền khách đã trả.
                         </p>
                       </div>
                     </div>

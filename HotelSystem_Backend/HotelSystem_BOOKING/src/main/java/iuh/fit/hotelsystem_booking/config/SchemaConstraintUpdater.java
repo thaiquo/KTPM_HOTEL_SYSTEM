@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.config;
 
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
+import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,19 @@ public class SchemaConstraintUpdater {
             log.info("Updated bookings_status_check with allowed statuses: {}", allowed);
         } catch (Exception ex) {
             log.warn("Skip updating bookings_status_check due to error: {}", ex.getMessage());
+        }
+
+        try {
+            String allowedRefundStatuses = Arrays.stream(RefundStatus.values())
+                    .map(Enum::name)
+                    .map(v -> "'" + v + "'")
+                    .collect(Collectors.joining(","));
+
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS refund_transactions DROP CONSTRAINT IF EXISTS refund_transactions_status_check");
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS refund_transactions ADD CONSTRAINT refund_transactions_status_check CHECK (status in (" + allowedRefundStatuses + "))");
+            log.info("Updated refund_transactions_status_check with allowed statuses: {}", allowedRefundStatuses);
+        } catch (Exception ex) {
+            log.warn("Skip updating refund_transactions_status_check due to error: {}", ex.getMessage());
         }
     }
 }

@@ -83,7 +83,8 @@ class RefundAssignmentServiceTest {
                 refundRepository,
                 workloadService,
                 producer,
-                mock(RefundAuditService.class));
+            mock(RefundAuditService.class),
+            mock(iuh.fit.hotelsystem_booking.client.UserServiceClient.class));
         return new TestFixture(refundRepository, producer, assignmentService);
     }
 

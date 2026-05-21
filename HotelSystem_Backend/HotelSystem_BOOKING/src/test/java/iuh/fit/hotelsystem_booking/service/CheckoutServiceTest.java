@@ -47,7 +47,7 @@ class CheckoutServiceTest {
         when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        Clock clock = fixedClock("2026-05-01T04:00:00Z");
+        Clock clock = fixedClock("2026-05-01T05:00:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
@@ -125,7 +125,7 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), any());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
         verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
     }
 
@@ -369,7 +369,8 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), any());
+        assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
         verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
     }
 
@@ -435,7 +436,8 @@ class CheckoutServiceTest {
 
         CheckoutResponse response = service.checkout(1L, request);
         assertTrue(response.isEarlyCheckout());
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), any());
+        assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
     }
 
     private Clock fixedClock(String isoInstant) {

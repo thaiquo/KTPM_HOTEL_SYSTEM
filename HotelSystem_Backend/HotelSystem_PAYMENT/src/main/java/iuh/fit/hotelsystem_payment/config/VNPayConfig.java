@@ -15,6 +15,9 @@ public class VNPayConfig {
     @Value("${vnpay.payUrl:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}")
     private String payUrl;
 
+    @Value("${vnpay.apiUrl:https://sandbox.vnpayment.vn/merchant_webapi/api/transaction}")
+    private String apiUrl;
+
     @Value("${vnpay.returnUrl:http://localhost:8085/payments/vnpay-return}")
     private String returnUrl;
 
@@ -39,6 +42,10 @@ public class VNPayConfig {
 
     public String getPayUrl() {
         return payUrl;
+    }
+
+    public String getApiUrl() {
+        return apiUrl;
     }
 
     public String getReturnUrl() {

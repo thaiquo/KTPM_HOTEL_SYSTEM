@@ -32,7 +32,9 @@ class BookingModificationServiceTest {
                 pricingService,
                 mock(CheckInOutService.class),
                 mock(BookingGuestService.class),
-                mock(CheckoutService.class));
+            mock(CheckoutService.class),
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class),
+            mock(iuh.fit.hotelsystem_booking.client.RoomServiceClient.class));
 
         Booking booking = booking(RatePlan.FLEXIBLE, true);
         PricingResult pricing = new PricingResult();
@@ -70,7 +72,9 @@ class BookingModificationServiceTest {
                 mock(PricingService.class),
                 mock(CheckInOutService.class),
                 mock(BookingGuestService.class),
-                mock(CheckoutService.class));
+            mock(CheckoutService.class),
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class),
+            mock(iuh.fit.hotelsystem_booking.client.RoomServiceClient.class));
 
         when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking(RatePlan.NON_REFUNDABLE, false)));
 

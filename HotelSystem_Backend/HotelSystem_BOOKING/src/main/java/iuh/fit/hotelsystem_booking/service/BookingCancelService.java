@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 
 @Service
 public class BookingCancelService {
@@ -41,14 +42,15 @@ public class BookingCancelService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
 
-        CancellationPolicyResult policyResult = policyService.calculateCancellationPolicy(booking, LocalDateTime.now());
+        LocalDateTime now = ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime();
+        CancellationPolicyResult policyResult = policyService.calculateCancellationPolicy(booking, now);
         if (!policyResult.isCanCancel()) {
             log.info("Cancel rejected. bookingId={}, reason={}", bookingId, policyResult.getReason());
             return policyResult;
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
-        booking.setCancelledAt(LocalDateTime.now());
+        booking.setCancelledAt(now);
         booking.setCancellationReason(reason != null && !reason.isBlank() ? reason : policyResult.getReason());
         booking.setPaymentStatus(resolvePaymentStatusAfterCancel(booking, policyResult));
         bookingRepository.save(booking);

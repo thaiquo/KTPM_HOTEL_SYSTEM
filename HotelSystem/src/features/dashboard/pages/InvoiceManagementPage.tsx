@@ -65,7 +65,7 @@ const getCategoryBadge = (category?: string) => {
     case 'CHECKOUT':
       return <span className="px-2 py-0.5 text-[9px] font-black bg-rose-50 text-rose-600 rounded border border-rose-100 uppercase whitespace-nowrap">Giai đoạn Checkout</span>;
     case 'REFUND':
-      return <span className="px-2 py-0.5 text-[9px] font-black bg-cyan-50 text-cyan-600 rounded border border-cyan-100 uppercase whitespace-nowrap">Hoàn trả / Hủy</span>;
+      return <span className="px-2 py-0.5 text-[9px] font-black bg-cyan-50 text-cyan-600 rounded border border-cyan-100 uppercase whitespace-nowrap">Hoàn trả</span>;
     default:
       return null;
   }
@@ -118,7 +118,7 @@ const getPaymentTypeLabel = (type?: string) => {
     case 'EARLY_CHECKIN_FEE': return 'Phí check-in sớm';
     case 'LATE_CHECKOUT_FEE': return 'Phí checkout trễ';
     case 'EARLY_CHECKOUT_REFUND': return 'Hoàn tiền checkout sớm';
-    case 'REFUND': return 'Hoàn tiền hủy phòng';
+    case 'REFUND': return 'Hóa đơn hoàn trả';
     default: return type;
   }
 };
@@ -312,9 +312,30 @@ const InvoiceManagementPage: React.FC = () => {
           .includes(keyword)
       );
     }
+    // Hide cancelled/failed invoices that are not refunds to match backend rule:
+    // booking invoices should only show real payment invoices; cancellations without refund shouldn't create visible cancel invoices.
+    result = result.filter(inv => {
+      const isRefund = (inv.paymentType || '').toUpperCase() === 'REFUND' || ((inv.invoiceCategory || '').toUpperCase() === 'REFUND');
+      const isCancelledLike = (inv.status === 'CANCELLED' || inv.status === 'FAILED');
+      if (isCancelledLike && !isRefund) return false;
+      return true;
+    });
     
     return result;
   }, [invoices, searchTerm, activeCategory, timeRange, customDate]);
+
+  const refundStats = useMemo(() => {
+    const refundInvoices = invoices.filter((inv) => getInvoiceCategory(inv) === 'REFUND');
+    const refundedSuccess = refundInvoices.filter((inv) => normalizeInvoiceStatus(inv) === 'REFUNDED');
+    const refundedPending = refundInvoices.filter((inv) => normalizeInvoiceStatus(inv) === 'PENDING');
+    const refundAmount = refundInvoices.reduce((sum, inv) => sum + Number(inv.amount || inv.totalAmount || 0), 0);
+    return {
+      total: refundInvoices.length,
+      success: refundedSuccess.length,
+      pending: refundedPending.length,
+      amount: refundAmount,
+    };
+  }, [invoices]);
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -357,6 +378,16 @@ const InvoiceManagementPage: React.FC = () => {
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Đang chờ thanh toán</p>
           <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(summary.pendingTotal)}</p>
           <p className="text-[11px] text-gray-400 mt-1 font-medium">{summary.pendingCount} hóa đơn chưa tất toán</p>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm transition-hover hover:shadow-md duration-300">
+          <div className="p-3 bg-cyan-50 rounded-2xl w-fit mb-4">
+            <HiOutlineCurrencyDollar className="w-6 h-6 text-cyan-600" />
+          </div>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hoàn tiền</p>
+          <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(refundStats.amount)}</p>
+          <p className="text-[11px] text-gray-400 mt-1 font-medium">
+            {refundStats.success}/{refundStats.total} hóa đơn refund đã thành công · {refundStats.pending} chờ xử lý
+          </p>
         </div>
       </div>
 
@@ -481,6 +512,11 @@ const InvoiceManagementPage: React.FC = () => {
                       <td className="px-6 py-5">
                         <div className="flex flex-col space-y-1">
                           {getCategoryBadge(getInvoiceCategory(invoice))}
+                          {getInvoiceCategory(invoice) === 'REFUND' && (
+                            <span className="inline-flex items-center rounded bg-cyan-50 px-1.5 py-0.5 text-[9px] font-black text-cyan-700 uppercase border border-cyan-200 w-fit mt-0.5">
+                              {normalizeInvoiceStatus(invoice) === 'REFUNDED' ? 'Hoàn tiền thành công' : 'Hóa đơn hoàn tiền'}
+                            </span>
+                          )}
                           <span className="text-xs font-bold text-gray-700">{getPaymentTypeLabel(invoice.paymentType)}</span>
                           {invoice.paymentType === 'DEPOSIT' && (
                             <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-700 uppercase border border-amber-200 w-fit mt-0.5">Hóa đơn cọc</span>
@@ -627,10 +663,18 @@ const InvoiceManagementPage: React.FC = () => {
                           <div className="text-[10px] text-gray-400 uppercase font-bold">Trạng thái</div>
                           <div className="mt-1">{getStatusBadge(normalizeInvoiceStatus(selectedInvoice))}</div>
                         </div>
+                          <div>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">Loại hóa đơn</div>
+                            <div className="mt-1">{getCategoryBadge(getInvoiceCategory(selectedInvoice))}</div>
+                          </div>
                         <div>
                           <div className="text-[10px] text-gray-400 uppercase font-bold">Mã Booking</div>
                           <div className="mt-1 text-sm font-black text-gray-900">#Booking {selectedInvoice.bookingId}</div>
                         </div>
+                          <div>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">Mã giao dịch hóa đơn</div>
+                            <div className="mt-1 text-sm font-black text-gray-900 break-all">{selectedInvoice.transactionId || '-'}</div>
+                          </div>
                         <div>
                           <div className="text-[10px] text-gray-400 uppercase font-bold">Thời gian GD</div>
                           <div className="mt-1 text-sm font-black text-gray-900 flex items-center gap-1">
@@ -719,7 +763,7 @@ const InvoiceManagementPage: React.FC = () => {
                             <span className="text-gray-900">{bookingDetails.checkIn}</span>
                             {bookingDetails.actualCheckInAt && (
                               <span className="text-[10px] text-emerald-600 block font-bold text-ellipsis overflow-hidden">
-                                Thực tế: {new Date(bookingDetails.actualCheckInAt).toLocaleDateString('vi-VN')}
+                                Thực tế: {new Date(bookingDetails.actualCheckInAt).toLocaleString('vi-VN')}
                               </span>
                             )}
                           </div>
@@ -728,7 +772,7 @@ const InvoiceManagementPage: React.FC = () => {
                             <span className="text-gray-900">{bookingDetails.checkOut}</span>
                             {bookingDetails.actualCheckOutAt && (
                               <span className="text-[10px] text-sky-600 block font-bold text-ellipsis overflow-hidden">
-                                Thực tế: {new Date(bookingDetails.actualCheckOutAt).toLocaleDateString('vi-VN')}
+                                Thực tế: {new Date(bookingDetails.actualCheckOutAt).toLocaleString('vi-VN')}
                               </span>
                             )}
                           </div>
@@ -742,6 +786,11 @@ const InvoiceManagementPage: React.FC = () => {
                     <div className="space-y-5">
                       <div className="border border-indigo-100 rounded-2xl bg-indigo-50/20 p-5 space-y-4">
                         <h4 className="text-xs font-black text-indigo-600 uppercase tracking-wider">Chi tiết nghiệp vụ</h4>
+                        {getInvoiceCategory(selectedInvoice) === 'REFUND' && (
+                          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
+                            Đây là hóa đơn hoàn tiền. Nếu trạng thái là <span className="font-black">Đã hoàn tiền</span>, giao dịch refund đã được ghi nhận thành công.
+                          </div>
+                        )}
                         
                         {/* ĐỐI TƯỢNG VÀ THỜI GIAN GIAO DỊCH GHI NHẬN TỪ DỮ LIỆU */}
                         {(() => {
@@ -847,7 +896,7 @@ const InvoiceManagementPage: React.FC = () => {
                         {(selectedInvoice.invoiceCategory === 'REFUND' || ['EARLY_CHECKOUT_REFUND', 'REFUND'].includes(selectedInvoice.paymentType?.toUpperCase() || '')) && (
                           <div className="space-y-3">
                             <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 text-[10px] font-black bg-cyan-100 text-cyan-600 rounded">HOÀN TRẢ / HỦY PHÒNG</span>
+                              <span className="px-2 py-0.5 text-[10px] font-black bg-cyan-100 text-cyan-600 rounded">HOÀN TRẢ</span>
                             </div>
                             
                             {selectedInvoice.paymentType === 'EARLY_CHECKOUT_REFUND' ? (
@@ -861,10 +910,20 @@ const InvoiceManagementPage: React.FC = () => {
                               </div>
                             ) : (
                               <div className="text-xs font-bold text-gray-600 space-y-1">
-                                <p className="text-gray-900 font-black">Nghiệp vụ: Hoàn trả hủy phòng (Hóa đơn hủy)</p>
-                                <p className="text-[11px] text-gray-400 font-bold">Giao dịch hoàn trả tiền cọc cho khách hàng do hủy phòng theo chính sách.</p>
+                                <p className="text-gray-900 font-black">Nghiệp vụ: Hoàn trả hủy phòng</p>
+                                <p className="text-[11px] text-gray-400 font-bold">Giao dịch hoàn trả tiền cọc cho khách hàng khi hủy phòng theo chính sách.</p>
                               </div>
                             )}
+                            <div className="mt-3 rounded-2xl border border-cyan-100 bg-white p-3 text-[11px] font-bold text-gray-700">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-gray-400 uppercase tracking-wider">Số tiền refund</span>
+                                <span className="text-cyan-700">{formatCurrency(selectedInvoice.amount || selectedInvoice.totalAmount)}</span>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-3 border-t border-gray-100 pt-2">
+                                <span className="text-gray-400 uppercase tracking-wider">Trạng thái refund</span>
+                                <span className="text-emerald-700">{normalizeInvoiceStatus(selectedInvoice) === 'REFUNDED' ? 'Thành công' : normalizeInvoiceStatus(selectedInvoice)}</span>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>

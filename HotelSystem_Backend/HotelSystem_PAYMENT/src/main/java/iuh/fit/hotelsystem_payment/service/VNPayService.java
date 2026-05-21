@@ -10,8 +10,14 @@ import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -39,13 +45,79 @@ public class VNPayService {
     private final PaymentRepository paymentRepository;
     private final RabbitTemplate rabbitTemplate;
     private final VNPayConfig vnPayConfig;
+    private final RestTemplate restTemplate;
 
     public VNPayService(PaymentRepository paymentRepository,
                         RabbitTemplate rabbitTemplate,
-                        VNPayConfig vnPayConfig) {
+                        VNPayConfig vnPayConfig,
+                        RestTemplateBuilder restTemplateBuilder) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.vnPayConfig = vnPayConfig;
+        this.restTemplate = restTemplateBuilder.build();
+    }
+
+    public VNPayRefundResult refund(String transactionRef,
+                                    String transactionDate,
+                                    Double amount,
+                                    String createdBy,
+                                    String ipAddress,
+                                    String orderInfo,
+                                    String transactionType,
+                                    String transactionNo) {
+        if (transactionRef == null || transactionRef.isBlank()) {
+            throw new IllegalArgumentException("transactionRef is required");
+        }
+        if (amount == null || amount <= 0) {
+            throw new IllegalArgumentException("amount must be greater than zero");
+        }
+
+        String requestId = LocalDateTime.now(VNP_TIMEZONE).format(DateTimeFormatter.ofPattern("HHmmss"));
+        String createDate = LocalDateTime.now(VNP_TIMEZONE).format(VNP_DATE_FORMAT);
+        String vnpVersion = "2.1.0";
+        String vnpCommand = "refund";
+        String txnType = (transactionType == null || transactionType.isBlank()) ? "02" : transactionType;
+        String txnNo = (transactionNo == null || transactionNo.isBlank()) ? "0" : transactionNo;
+        String txnDate = (transactionDate == null || transactionDate.isBlank()) ? createDate : transactionDate;
+        String created = (createdBy == null || createdBy.isBlank()) ? "SYSTEM" : createdBy;
+        String info = (orderInfo == null || orderInfo.isBlank()) ? ("Refund for " + transactionRef) : orderInfo;
+
+        String data = requestId + "|" + vnpVersion + "|" + vnpCommand + "|" + vnPayConfig.getTmnCode()
+                + "|" + txnType + "|" + transactionRef + "|" + toVnpAmount(amount) + "|" + txnNo
+                + "|" + txnDate + "|" + created + "|" + createDate + "|" + normalizeIp(ipAddress)
+                + "|" + info;
+        String secureHash = hmacSHA512(vnPayConfig.getHashSecret(), data);
+
+        Map<String, String> payload = new HashMap<>();
+        payload.put("vnp_RequestId", requestId);
+        payload.put("vnp_Version", vnpVersion);
+        payload.put("vnp_Command", vnpCommand);
+        payload.put("vnp_TmnCode", vnPayConfig.getTmnCode());
+        payload.put("vnp_TransactionType", txnType);
+        payload.put("vnp_TxnRef", transactionRef);
+        payload.put("vnp_Amount", toVnpAmount(amount));
+        payload.put("vnp_TransactionNo", txnNo);
+        payload.put("vnp_TransactionDate", txnDate);
+        payload.put("vnp_CreateBy", created);
+        payload.put("vnp_OrderInfo", info);
+        payload.put("vnp_CreateDate", createDate);
+        payload.put("vnp_IpAddr", normalizeIp(ipAddress));
+        payload.put("vnp_SecureHash", secureHash);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(payload, headers);
+        ResponseEntity<Map> response = restTemplate.postForEntity(vnPayConfig.getApiUrl(), entity, Map.class);
+        Map<String, Object> body = response.getBody() != null ? response.getBody() : new HashMap<>();
+        String responseCode = String.valueOf(body.getOrDefault("vnp_ResponseCode", "99"));
+        String message = String.valueOf(body.getOrDefault("vnp_Message", "Unknown"));
+        String refundTxnNo = body.get("vnp_TransactionNo") != null
+                ? String.valueOf(body.get("vnp_TransactionNo"))
+                : null;
+        return new VNPayRefundResult("00".equals(responseCode), responseCode, message, refundTxnNo);
+    }
+
+    public record VNPayRefundResult(boolean success, String responseCode, String message, String transactionNo) {
     }
 
     public VNPayResponse createPayment(CreateVNPayRequest request, String ipAddress) {
@@ -57,6 +129,7 @@ public class VNPayService {
         if (paymentType == PaymentType.REMAINING) {
             throw new IllegalArgumentException("Use /payments/vnpay/create-remaining for remaining payment");
         }
+        ensurePaymentNotCompleted(request.getBookingId(), paymentType);
 
         return createAndBuildUrl(request.getBookingId(), request.getUserId(), request.getTotalAmount(), paymentType, request, ipAddress);
     }
@@ -86,6 +159,12 @@ public class VNPayService {
                 : successfulDeposit.getTotalAmount();
 
         return createAndBuildUrl(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, ipAddress);
+    }
+
+    private void ensurePaymentNotCompleted(Long bookingId, PaymentType paymentType) {
+        if (paymentRepository.existsByBookingIdAndPaymentTypeAndStatus(bookingId, paymentType, PaymentStatus.SUCCESS)) {
+            throw new IllegalStateException(paymentType + " payment already completed for this booking");
+        }
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {

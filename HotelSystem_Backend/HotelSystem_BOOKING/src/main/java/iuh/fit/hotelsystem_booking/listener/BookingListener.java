@@ -4,7 +4,6 @@ import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
-import iuh.fit.hotelsystem_booking.dto.PaymentMessage;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
@@ -44,17 +43,8 @@ public class BookingListener {
         System.out.println("Room held for booking: " + booking.getId());
 
         // Gửi yêu cầu thanh toán sang Payment Service
-        PaymentMessage paymentMsg = new PaymentMessage();
-        paymentMsg.setBookingId(booking.getId());
-        paymentMsg.setUserId(booking.getUserId());
-        paymentMsg.setAmount(booking.getFinalTotal() != null ? booking.getFinalTotal().doubleValue() : 0.0);
-        paymentMsg.setIdempotencyKey("BOOKING_PAYMENT_" + booking.getId());
-
-        rabbitTemplate.convertAndSend(
-                RabbitConfig.EXCHANGE,
-                "payment.request",
-                paymentMsg
-        );
+        // Payment (coc/full) duoc khoi tao tu client qua Payment service (VNPAY/MoMo/thu tai quay),
+        // sau do Payment service phat event PAYMENT_RESULT de confirm booking.
     }
 
     // =========================================

@@ -53,6 +53,7 @@ public class MoMoService {
         if (paymentType == PaymentType.REMAINING) {
             throw new IllegalArgumentException("Use /payments/momo/create-remaining for remaining payment");
         }
+        ensurePaymentNotCompleted(request.getBookingId(), paymentType);
 
         return createAndRequestMoMo(request.getBookingId(), request.getUserId(), request.getTotalAmount(), paymentType, request);
     }
@@ -82,6 +83,12 @@ public class MoMoService {
                 : successfulDeposit.getTotalAmount();
 
         return createAndRequestMoMo(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request);
+    }
+
+    private void ensurePaymentNotCompleted(Long bookingId, PaymentType paymentType) {
+        if (paymentRepository.existsByBookingIdAndPaymentTypeAndStatus(bookingId, paymentType, PaymentStatus.SUCCESS)) {
+            throw new IllegalStateException(paymentType + " payment already completed for this booking");
+        }
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {

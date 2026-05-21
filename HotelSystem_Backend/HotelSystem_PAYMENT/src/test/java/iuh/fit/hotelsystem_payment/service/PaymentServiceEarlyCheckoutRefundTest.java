@@ -39,7 +39,8 @@ class PaymentServiceEarlyCheckoutRefundTest {
         refundTransactionRepository = mock(RefundTransactionRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
         PaymentSocketService socketService = mock(PaymentSocketService.class);
-        paymentService = new PaymentService(paymentRepository, refundTransactionRepository, rabbitTemplate, socketService);
+        VNPayService vnPayService = mock(VNPayService.class);
+        paymentService = new PaymentService(paymentRepository, refundTransactionRepository, rabbitTemplate, socketService, vnPayService);
         when(refundTransactionRepository.save(any(RefundTransaction.class))).thenAnswer(inv -> {
             RefundTransaction rt = inv.getArgument(0);
             if (rt.getId() == null) {

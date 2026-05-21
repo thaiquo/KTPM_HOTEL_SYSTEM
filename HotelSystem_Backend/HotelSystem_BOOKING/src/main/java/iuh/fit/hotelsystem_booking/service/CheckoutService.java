@@ -182,7 +182,7 @@ public class CheckoutService {
                 stayExisting != null ? stayExisting.getLateCheckoutFee() : BigDecimal.ZERO, 
                 early, booking, false);
             applyRepresentativeToResponse(response, rep);
-            response.setMessage("Booking đã hoàn tất checkout trước đó.");
+            response.setMessage("Booking Ä‘Ã£ hoÃ n táº¥t checkout trÆ°á»›c Ä‘Ã³.");
             return response;
         }
 
@@ -212,7 +212,7 @@ public class CheckoutService {
         }
 
         if (booking.getStatus() != BookingStatus.CHECKED_IN && booking.getStatus() != BookingStatus.CHECKOUT_PENDING_PAYMENT) {
-            throw new IllegalArgumentException("Trạng thái booking không hợp lệ để thực hiện checkout: " + booking.getStatus());
+            throw new IllegalArgumentException("Tráº¡ng thÃ¡i booking khÃ´ng há»£p lá»‡ Ä‘á»ƒ thá»±c hiá»‡n checkout: " + booking.getStatus());
         }
         
         validateCheckoutVerifier(rep, request);
@@ -253,30 +253,7 @@ public class CheckoutService {
         }
 
         if (refundRequired) {
-            boolean isImmediate = BookingConstants.PAYMENT_TYPE_HOTEL.equalsIgnoreCase(booking.getPaymentType());
-            
-            if (isImmediate) {
-                booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUNDED);
-                Map<String, Object> refundReq = new HashMap<>();
-                refundReq.put("amount", finalAmount.abs().doubleValue());
-                refundReq.put("reason", "EARLY_CHECKOUT_NET");
-                refundReq.put("processedByStaffId", request.getStaffId());
-                refundReq.put("forceImmediate", true);
-                try {
-                    paymentServiceClient.requestEarlyCheckoutRefund(bookingId, refundReq);
-                } catch (Exception ex) {
-                    throw new IllegalStateException("Không thể xử lý hoàn tiền. Vui lòng kiểm tra lại kết nối với Payment Service.", ex);
-                }
-            } else {
-                // For refunds that should be processed via app (non-hotel payments), create
-                // an internal refund transaction so staff can review and process it.
-                booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUND_PENDING);
-                try {
-                    refundService.createEarlyCheckoutRefundTransaction(booking, early);
-                } catch (Exception ex) {
-                    throw new IllegalStateException("Không thể tạo yêu cầu hoàn tiền nội bộ cho staff.", ex);
-                }
-            }
+            booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUND_PENDING);
         }
 
         if (paymentRequired) {
@@ -301,14 +278,14 @@ public class CheckoutService {
                 lateReq.setAmount(fee.doubleValue());
                 paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateReq);
             } catch (Exception e) {
-                throw new IllegalStateException("Không thể tạo yêu cầu thanh toán checkout trễ do Payment Service không phản hồi. Vui lòng thử lại sau.", e);
+                throw new IllegalStateException("KhÃ´ng thá»ƒ táº¡o yÃªu cáº§u thanh toÃ¡n checkout trá»… do Payment Service khÃ´ng pháº£n há»“i. Vui lÃ²ng thá»­ láº¡i sau.", e);
             }
         }
 
         try {
-            // Khi bắt đầu checkout (kể cả có phí trễ hay không), khách rời phòng nên luôn dọn dẹp và đặt CLEANING lập tức
+            // Khi báº¯t Ä‘áº§u checkout (ká»ƒ cáº£ cÃ³ phÃ­ trá»… hay khÃ´ng), khÃ¡ch rá»i phÃ²ng nÃªn luÃ´n dá»n dáº¹p vÃ  Ä‘áº·t CLEANING láº­p tá»©c
             scheduledService.initCleaningTimer(saved);
-            saved = bookingRepository.save(saved); // Lưu lại cleaningStartAt và cleaningEndAt
+            saved = bookingRepository.save(saved); // LÆ°u láº¡i cleaningStartAt vÃ  cleaningEndAt
             setRoomStatus(saved.getRoomId(), "CLEANING");
         } catch (Exception e) {
             log.error("Post-checkout processing failed for room {}: {}", saved.getRoomId(), e.getMessage());
@@ -409,11 +386,11 @@ public class CheckoutService {
     private String buildMessage(CheckoutResponse response, Booking booking, boolean preview) {
         if (response == null) return null;
         if (response.isPaymentRequired()) {
-            return "Cần thu phí checkout trễ trước khi hoàn tất checkout.";
+            return "Cáº§n thu phÃ­ checkout trá»… trÆ°á»›c khi hoÃ n táº¥t checkout.";
         }
         if (preview && CheckoutType.EARLY.name().equals(response.getCheckoutType())
                 && Boolean.TRUE.equals(response.getRefundRequired())) {
-            return "Checkout sớm (Hệ thống sẽ hoàn tiền).";
+            return "Checkout sá»›m (Há»‡ thá»‘ng sáº½ hoÃ n tiá»n).";
         }
         return "Checkout calculated successfully.";
     }

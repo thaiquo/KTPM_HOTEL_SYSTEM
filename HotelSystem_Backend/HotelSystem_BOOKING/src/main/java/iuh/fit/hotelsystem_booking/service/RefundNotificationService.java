@@ -25,10 +25,18 @@ public class RefundNotificationService {
     }
 
     public void notifyCreated(RefundTransaction refund, Booking booking) {
-        publish(refund, booking, "REFUND_REQUESTED",
-                "Yêu cầu hoàn tiền của bạn đã được ghi nhận. Mã yêu cầu: " + refund.getId()
-                        + ". Số tiền dự kiến hoàn: " + money(refund.getRefundAmount())
-                        + ". Thời gian xử lý: 1-3 ngày làm việc.");
+        boolean isEarlyCheckout = "EARLY_CHECKOUT_REFUND".equals(refund.getReason());
+        if (isEarlyCheckout) {
+            publish(refund, booking, "EARLY_CHECKOUT_REFUND_REQUESTED",
+                    "Đặt phòng #" + refund.getBookingId() + " đã checkout sớm. "
+                            + "Số tiền hoàn trả dự kiến: " + money(refund.getRefundAmount())
+                            + ". Hoàn tiền sẽ được xử lý trong 1-3 ngày làm việc.");
+        } else {
+            publish(refund, booking, "REFUND_REQUESTED",
+                    "Yêu cầu hoàn tiền của bạn đã được ghi nhận. Mã yêu cầu: " + refund.getId()
+                            + ". Số tiền dự kiến hoàn: " + money(refund.getRefundAmount())
+                            + ". Thời gian xử lý: 1-3 ngày làm việc.");
+        }
     }
 
     public void notifyApproved(RefundTransaction refund) {
@@ -38,9 +46,17 @@ public class RefundNotificationService {
     }
 
     public void notifyRefunded(RefundTransaction refund, String gatewayRefundTransactionId) {
-        publish(refund, resolveBooking(refund), "REFUND_SUCCESS",
-                "Hoàn tiền thành công. Số tiền: " + money(refund.getRefundAmount())
-                        + ". Mã giao dịch hoàn tiền: " + gatewayRefundTransactionId + ".");
+        boolean isEarlyCheckout = "EARLY_CHECKOUT_REFUND".equals(refund.getReason());
+        if (isEarlyCheckout) {
+            publish(refund, resolveBooking(refund), "EARLY_CHECKOUT_REFUND_SUCCESS",
+                    "Hoàn tiền checkout sớm thành công cho đặt phòng #" + refund.getBookingId()
+                            + ". Số tiền hoàn: " + money(refund.getRefundAmount())
+                            + ". Tiền đã được chuyển về phương thức thanh toán ban đầu.");
+        } else {
+            publish(refund, resolveBooking(refund), "REFUND_SUCCESS",
+                    "Hoàn tiền thành công. Số tiền: " + money(refund.getRefundAmount())
+                            + ". Mã giao dịch hoàn tiền: " + gatewayRefundTransactionId + ".");
+        }
     }
 
     public void notifyRejected(RefundTransaction refund, String reason) {

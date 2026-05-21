@@ -6,15 +6,42 @@ import * as QRCode from 'qrcode';
 import { buildPaymentSocketUrl, paymentApi, roomApi, staffBookingApi, userApi, vietnamTodayISO, type CheckinQrPayment, type CheckInOutStats } from '../../../services/api';
 import type { Booking, BookingGuest, Room } from '../../../types';
 
-// Import axios to make API calls for fetching user names
-import api from '../../../services/api';
-
 type BookingRow = Booking & { room?: Room; guestList?: BookingGuest[]; remainingAmount: number };
 type PaymentMethod = 'BANK_TRANSFER' | 'CASH';
+type CheckInTab = 'OVERDUE' | 'TODAY' | 'DONE';
+
+type ApiErrorLike = {
+  response?: {
+    status?: number;
+    data?: { message?: string };
+  };
+  message?: string;
+};
 
 const formatCurrency = (value: number) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`;
 const isValidCccd = (value: string | undefined) => /^\d{12}$/.test((value || '').trim());
 const isValidPhone = (value: string | undefined) => /^\d{10}$/.test((value || '').trim());
+const getDisplayPaidAmount = (booking: Booking) => {
+  if (booking.status === 'deposit_paid') {
+    return Number(booking.depositAmount || booking.paidAmount || 0);
+  }
+
+  if (booking.status === 'confirmed'
+    || booking.status === 'checked_in'
+    || booking.status === 'checkout_pending_payment'
+    || booking.status === 'checked_out'
+    || booking.status === 'completed') {
+    return Number(booking.totalPrice || booking.paidAmount || 0);
+  }
+
+  return Number(booking.paidAmount || 0);
+};
+const getErrorMessage = (error: unknown, fallback: string) => {
+  const err = error as ApiErrorLike;
+  const status = err.response?.status;
+  const message = err.response?.data?.message || err.message || fallback;
+  return status ? `[${status}] ${message}` : message;
+};
 const ageOn = (dateOfBirth?: string) => {
   if (!dateOfBirth) return -1;
   const birth = new Date(dateOfBirth);
@@ -27,10 +54,25 @@ const ageOn = (dateOfBirth?: string) => {
 };
 const isAdultGuest = (guest: BookingGuest) => guest.type === 'ADULT' || ageOn(guest.dateOfBirth) >= 18;
 
+const calculateEarlyCheckInFee = (booking: BookingRow, now: Date = new Date()) => {
+  if (!booking.checkIn) return 0;
+  const checkInDate = new Date(booking.checkIn);
+  const sameDay = now.toDateString() === checkInDate.toDateString();
+  if (!sameDay) return 0;
+
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  if (currentHour >= 12) return 0;
+
+  const nights = Math.max(1, Math.round((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 60 * 60 * 24)));
+  const baseNightly = Number(booking.totalPrice || 0) / nights;
+  const percent = currentHour < 7 ? 1 : 0.5;
+  return Math.round(baseNightly * percent);
+};
+
 const StaffCheckInPage: React.FC = () => {
   const [items, setItems] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'OVERDUE' | 'TODAY' | 'DONE'>('TODAY');
+  const [activeTab, setActiveTab] = useState<CheckInTab>('TODAY');
   const [statsDate, setStatsDate] = useState(vietnamTodayISO());
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [stats, setStats] = useState<CheckInOutStats | null>(null);
@@ -91,7 +133,7 @@ const StaffCheckInPage: React.FC = () => {
           staffBookingApi.getGuests(booking.id).catch(() => []),
         ]);
         const totalPrice = booking.totalPrice || 0;
-        const paidAmount = Math.min(totalPrice, Number(booking.paidAmount || 0));
+        const paidAmount = Math.min(totalPrice, getDisplayPaidAmount(booking));
         return {
           ...booking,
           room,
@@ -126,7 +168,7 @@ const StaffCheckInPage: React.FC = () => {
             } else {
               userNames.set(booking.id, `User #${booking.userId}`);
             }
-          } catch (error) {
+          } catch {
             // Nếu API call fail, fallback
             userNames.set(booking.id, `User #${booking.userId}`);
           }
@@ -134,9 +176,6 @@ const StaffCheckInPage: React.FC = () => {
       );
       const userNameObj = Object.fromEntries(userNames);
       setUserNameByBooking(userNameObj);
-      // Debug: log fetched user names so staff can inspect in browser DevTools
-      // (remove this after verification)
-      // eslint-disable-next-line no-console
       console.log('StaffCheckIn - userNameByBooking', userNameObj);
 
       setRepresentativeByBooking((prev) => {
@@ -151,11 +190,9 @@ const StaffCheckInPage: React.FC = () => {
       });
 
       setItems(enriched);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Fetch data error:', error);
-      const status = error?.response?.status;
-      const msg = error?.response?.data?.message || error?.message || 'Không thể tải dữ liệu';
-      toast.error(status ? `[${status}] ${msg}` : msg);
+      toast.error(getErrorMessage(error, 'Không thể tải dữ liệu'));
       setItems([]);
     } finally {
       setLoading(false);
@@ -216,6 +253,8 @@ const StaffCheckInPage: React.FC = () => {
       }
     };
     return () => socket.close();
+  // The effect only needs to restart when the active QR session changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrPayment?.paymentCode, selectedBooking]);
 
   const filteredItems = useMemo(() => {
@@ -289,8 +328,8 @@ const StaffCheckInPage: React.FC = () => {
       setSelectedBooking(null);
       setEarlyFeeBooking(null);
       fetchData();
-    } catch (error: any) {
-      const message = error?.response?.data?.message || 'Check-in thất bại';
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Check-in thất bại');
       const match = String(message).match(/Early check-in fee payment is required\. Amount:\s*([0-9]+(?:\.[0-9]+)?)/i);
       if (match && Number(match[1] || 0) > 0) {
         setEarlyFeeBooking(booking);
@@ -308,10 +347,11 @@ const StaffCheckInPage: React.FC = () => {
 
   const confirmRemainingPayment = async () => {
     if (!selectedBooking) return;
-    const requiredAmount = selectedBooking.remainingAmount;
+    const earlyCheckInFee = calculateEarlyCheckInFee(selectedBooking);
+    const requiredAmount = selectedBooking.remainingAmount + earlyCheckInFee;
     const received = Number(cashReceived || 0);
     if (paymentMethod === 'CASH' && received < requiredAmount) {
-      toast.error('Số tiền khách đưa chưa đủ để thanh toán phần còn lại');
+      toast.error('Số tiền khách đưa chưa đủ để thanh toán phần cần thu');
       return;
     }
     try {
@@ -338,8 +378,8 @@ const StaffCheckInPage: React.FC = () => {
       });
       setQrPayment(qr);
       setQrStatus('PENDING');
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể tạo giao dịch QR');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Không thể tạo giao dịch QR'));
     } finally {
       setProcessing(false);
     }
@@ -352,8 +392,8 @@ const StaffCheckInPage: React.FC = () => {
       await paymentApi.cancelCheckinQr(qrPayment.paymentCode);
       setQrPayment(null);
       setQrStatus('PENDING');
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể hủy giao dịch');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Không thể hủy giao dịch'));
     } finally {
       setProcessing(false);
     }
@@ -386,18 +426,20 @@ const StaffCheckInPage: React.FC = () => {
       await paymentApi.markEarlyCheckinPaid(String(earlyFeeBooking.id), earlyFeeMethod);
       toast.success('Đã ghi nhận đã thu phí check-in sớm');
       await doCheckIn(earlyFeeBooking);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể ghi nhận thu phí check-in sớm');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Không thể ghi nhận thu phí check-in sớm'));
     } finally {
       setProcessing(false);
     }
   };
 
   const isReadOnly = activeTab !== 'TODAY';
-  const changeDue = selectedBooking && paymentMethod === 'CASH' ? Math.max(0, Number(cashReceived || 0) - selectedBooking.remainingAmount) : 0;
+  const earlyCheckInFee = selectedBooking ? calculateEarlyCheckInFee(selectedBooking) : 0;
+  const checkInPaymentDue = selectedBooking ? selectedBooking.remainingAmount + earlyCheckInFee : 0;
+  const changeDue = selectedBooking && paymentMethod === 'CASH' ? Math.max(0, Number(cashReceived || 0) - checkInPaymentDue) : 0;
   const qrRemainingSeconds = qrPayment ? Math.max(0, Math.floor((new Date(qrPayment.expiredAt).getTime() - nowTick) / 1000)) : 0;
   const qrCountdown = `${String(Math.floor(qrRemainingSeconds / 60)).padStart(2, '0')}:${String(qrRemainingSeconds % 60).padStart(2, '0')}`;
-  const requiresRemainingPayment = selectedBooking ? selectedBooking.remainingAmount > 0 : false;
+  const requiresRemainingPayment = selectedBooking ? checkInPaymentDue > 0 : false;
   const isDepositPaidBookingWithRemaining = false;
   const missingCheckInInfo = selectedBooking ? !getSelectedRepresentative(selectedBooking) || !isValidPhone(getRepresentativePhone(selectedBooking)) || !isValidCccd(cccdByBooking[selectedBooking.id]) : true;
 
@@ -415,7 +457,7 @@ const StaffCheckInPage: React.FC = () => {
           <HiOutlineFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
           <select
             value={activeTab}
-            onChange={(e) => setActiveTab(e.target.value as any)}
+            onChange={(e) => setActiveTab(e.target.value as CheckInTab)}
             className="appearance-none bg-white border border-gray-200 rounded-xl pl-9 pr-10 py-2 text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all cursor-pointer shadow-sm"
           >
             <option value="TODAY">Check-in hôm nay</option>
@@ -558,7 +600,7 @@ const StaffCheckInPage: React.FC = () => {
                             return 0;
                           })[0];
                           
-                          const repPhone = rep?.phone || rep?.phoneNumber || '-';
+                          const repPhone = rep?.phone || '-';
                           const repName = rep?.fullName || 'Chưa có thông tin';
 
                           return (
@@ -597,7 +639,7 @@ const StaffCheckInPage: React.FC = () => {
                       <div className="text-sm font-bold text-gray-900">{formatCurrency(booking.totalPrice)}</div>
                       {booking.status === 'deposit_paid' ? (
                         <>
-                          <div className="mt-1 text-[11px] font-bold text-blue-600">Đã đặt cọc {formatCurrency(booking.paidAmount || 0)}</div>
+                          <div className="mt-1 text-[11px] font-bold text-blue-600">Đã đặt cọc {formatCurrency(getDisplayPaidAmount(booking))}</div>
                           {booking.remainingAmount > 0 && (
                             <div className="mt-1 text-[11px] font-bold text-rose-500">Còn thiếu {formatCurrency(booking.remainingAmount)}</div>
                           )}
@@ -762,7 +804,7 @@ const StaffCheckInPage: React.FC = () => {
                         </div>
                         <div className="text-right">
                           <div className="text-[10px] font-bold text-gray-400 uppercase">{selectedBooking.status === 'deposit_paid' ? 'Đã đặt cọc' : 'Đã thanh toán'}</div>
-                          <div className="text-lg font-black text-emerald-600">{formatCurrency(selectedBooking.paidAmount || 0)}</div>
+                          <div className="text-lg font-black text-emerald-600">{formatCurrency(getDisplayPaidAmount(selectedBooking))}</div>
                         </div>
                       </div>
                       {selectedBooking.remainingAmount > 0 && (
@@ -771,7 +813,13 @@ const StaffCheckInPage: React.FC = () => {
                           <span className="text-xl font-black text-rose-600">{formatCurrency(selectedBooking.remainingAmount)}</span>
                         </div>
                       )}
-                      {selectedBooking.remainingAmount > 0 ? (
+                      {earlyCheckInFee > 0 && (
+                        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+                          <span className="text-xs font-bold text-amber-700 uppercase">Phụ thu check-in sớm</span>
+                          <span className="text-xl font-black text-amber-600">{formatCurrency(earlyCheckInFee)}</span>
+                        </div>
+                      )}
+                      {checkInPaymentDue > 0 ? (
                         isDepositPaidBookingWithRemaining ? (
                           <div className="pt-4 border-t border-gray-200 text-center text-sm text-gray-600">
                             Booking đã đặt cọc, vẫn có thể nhận phòng. Số tiền còn lại sẽ được thu sau khi nhận phòng.
@@ -779,7 +827,7 @@ const StaffCheckInPage: React.FC = () => {
                         ) : (
                           <div className="pt-4 border-t border-gray-200">
                             <div className="flex justify-between items-center mb-4">
-                              <span className="text-sm font-bold text-rose-600">Còn thiếu: {formatCurrency(selectedBooking.remainingAmount)}</span>
+                              <span className="text-sm font-bold text-rose-600">Cần thu: {formatCurrency(checkInPaymentDue)}</span>
                               <div className="flex bg-white p-1 rounded-xl border border-gray-200 gap-1">
                                 <button type="button" onClick={() => setPaymentMethod('BANK_TRANSFER')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${paymentMethod === 'BANK_TRANSFER' ? 'bg-sky-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Chuyển khoản</button>
                                 <button type="button" onClick={() => setPaymentMethod('CASH')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${paymentMethod === 'CASH' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Tiền mặt</button>
@@ -794,6 +842,11 @@ const StaffCheckInPage: React.FC = () => {
                                 </div>
                               </div>
                             )}
+                            {paymentMethod === 'BANK_TRANSFER' && checkInPaymentDue > 0 && (
+                              <div className="mt-3 rounded-xl bg-sky-50 border border-sky-100 px-4 py-3 text-xs font-bold text-sky-700">
+                                QR sẽ bao gồm {selectedBooking.remainingAmount > 0 ? 'tiền còn lại' : ''}{selectedBooking.remainingAmount > 0 && earlyCheckInFee > 0 ? ' + ' : ''}{earlyCheckInFee > 0 ? 'phụ thu check-in sớm' : ''}.
+                              </div>
+                            )}
                           </div>
                         )
                       ) : <div className="pt-4 border-t border-gray-200 text-center"><div className="inline-flex items-center gap-2 text-emerald-600 font-bold py-2"><HiOutlineClipboardCheck className="w-5 h-5" /> Đã thanh toán đủ</div></div>}
@@ -803,7 +856,7 @@ const StaffCheckInPage: React.FC = () => {
 
                 <div className="pt-4 flex justify-end gap-3">
                   <button type="button" onClick={() => setSelectedBooking(null)} className="rounded-2xl border border-gray-200 px-8 py-3 text-sm font-bold text-gray-500 hover:bg-gray-50 transition-all">Hủy bỏ</button>
-                  <button type="button" disabled={processing || missingCheckInInfo || (requiresRemainingPayment && paymentMethod === 'CASH' && Number(cashReceived || 0) < selectedBooking.remainingAmount)} onClick={requiresRemainingPayment ? confirmRemainingPayment : () => doCheckIn(selectedBooking)} className="rounded-2xl bg-sky-600 px-10 py-3 text-sm font-bold text-white shadow-lg hover:bg-sky-700 disabled:opacity-50 transition-all">
+                  <button type="button" disabled={processing || missingCheckInInfo || (requiresRemainingPayment && paymentMethod === 'CASH' && Number(cashReceived || 0) < checkInPaymentDue)} onClick={requiresRemainingPayment ? confirmRemainingPayment : () => doCheckIn(selectedBooking)} className="rounded-2xl bg-sky-600 px-10 py-3 text-sm font-bold text-white shadow-lg hover:bg-sky-700 disabled:opacity-50 transition-all">
                     {processing ? 'Đang xử lý...' : (requiresRemainingPayment ? 'Thanh toán & Check-in' : 'Xác nhận Check-in')}
                   </button>
                 </div>
@@ -850,8 +903,8 @@ const StaffCheckInPage: React.FC = () => {
                       } else {
                         toast.error('Giao dịch chưa được hoàn tất hoặc chưa thanh toán.');
                       }
-                    } catch (err: any) {
-                      toast.error(err?.response?.data?.message || 'Không thể kiểm tra trạng thái thanh toán');
+                    } catch (err: unknown) {
+                      toast.error(getErrorMessage(err, 'Không thể kiểm tra trạng thái thanh toán'));
                     } finally {
                       setProcessing(false);
                     }

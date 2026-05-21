@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "start": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli start --max-workers 1",
+    "android": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli start --android --max-workers 1",
+    "android:clear": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli start --android --max-workers 1 --clear",
+    "ios": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli start --ios --max-workers 1",
+    "web": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli start --web --max-workers 1",
+    "export:android": "set NODE_OPTIONS=--max-old-space-size=16384&& node --max-old-space-size=16384 node_modules/expo/bin/cli export --platform android --clear --max-workers 1",
+    "debug:node": "node -e \"console.log({ node: process.version, platform: process.platform, arch: process.arch, execArgv: process.execArgv, NODE_OPTIONS: process.env.NODE_OPTIONS });\""
   },
   "dependencies": {
     "expo": "~54.0.33",

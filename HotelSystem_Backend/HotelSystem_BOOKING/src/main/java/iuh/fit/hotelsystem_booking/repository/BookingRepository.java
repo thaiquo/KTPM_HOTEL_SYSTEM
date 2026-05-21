@@ -249,5 +249,29 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             ORDER BY b.checkOut DESC, b.id DESC
             """)
     List<Booking> findCompletedCheckOutAll(@Param("statuses") List<BookingStatus> statuses);
+
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.status = iuh.fit.hotelsystem_booking.entity.BookingStatus.CANCELLED
+              AND b.cancellationReason = 'EARLY_CHECKOUT_REFUND'
+              AND (
+                    b.checkOut = :date
+                    OR (b.actualCheckOutAt IS NOT NULL
+                        AND b.actualCheckOutAt >= :startOfDay
+                        AND b.actualCheckOutAt < :endOfDay)
+                  )
+            ORDER BY b.checkOut DESC, b.id DESC
+            """)
+    List<Booking> findLegacyEarlyCheckoutOnDate(@Param("date") LocalDate date,
+                                               @Param("startOfDay") LocalDateTime startOfDay,
+                                               @Param("endOfDay") LocalDateTime endOfDay);
+
+    @Query("""
+            SELECT b FROM Booking b
+            WHERE b.status = iuh.fit.hotelsystem_booking.entity.BookingStatus.CANCELLED
+              AND b.cancellationReason = 'EARLY_CHECKOUT_REFUND'
+            ORDER BY b.checkOut DESC, b.id DESC
+            """)
+    List<Booking> findLegacyEarlyCheckoutAll();
 }
 

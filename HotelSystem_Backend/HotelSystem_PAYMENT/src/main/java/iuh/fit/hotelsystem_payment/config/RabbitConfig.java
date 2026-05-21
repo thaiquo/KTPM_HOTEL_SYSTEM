@@ -18,6 +18,11 @@ public class RabbitConfig {
     public static final String PAYMENT_REQUEST_ROUTING_KEY = "payment.request";
     public static final String PAYMENT_RESULT_ROUTING_KEY = "payment.result";
     public static final String DLQ_ROUTING_KEY = "dlq.payment.request";
+    
+    // Room service routing keys
+    public static final String ROOM_RELEASE_ROUTING_KEY = "room.release";
+    public static final String ROOM_HOLD_ROUTING_KEY = "room.hold";
+    public static final String ROOM_CONFIRM_ROUTING_KEY = "room.confirm";
 
     @Bean
     public TopicExchange exchange() {

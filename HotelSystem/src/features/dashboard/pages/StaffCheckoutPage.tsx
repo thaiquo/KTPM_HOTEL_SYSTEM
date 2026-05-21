@@ -1,12 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { HiOutlineCash, HiOutlineCreditCard, HiOutlineFilter, HiOutlineChartBar, HiOutlineSearch, HiOutlineLogout, HiOutlineCalendar } from 'react-icons/hi';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as QRCode from 'qrcode';
 import {
   paymentApi,
   roomApi,
   staffBookingApi,
+  staffRefundApi,
   vietnamTodayISO,
+  type CheckinQrPayment,
   type CheckInOutStats,
   type CheckoutResponse,
   type RefundAllocationLine,
@@ -65,6 +69,7 @@ const purposeVi = (p?: string) => {
 };
 
 const StaffCheckoutPage: React.FC = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'TODAY' | 'STAYING' | 'DONE'>('TODAY');
@@ -80,6 +85,9 @@ const StaffCheckoutPage: React.FC = () => {
   const [activeStep, setActiveStep] = useState<'PREVIEW' | 'PAYMENT' | null>(null);
   const [lateFeeMethod, setLateFeeMethod] = useState<PaymentMethod>('BANK_TRANSFER');
   const [lateFeeCashReceived, setLateFeeCashReceived] = useState('');
+  const [lateFeeQrPayment, setLateFeeQrPayment] = useState<CheckinQrPayment | null>(null);
+  const [lateFeeQrStatus, setLateFeeQrStatus] = useState<'PENDING' | 'SUCCESS'>('PENDING');
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const fetchData = React.useCallback(async () => {
     try {
@@ -182,10 +190,33 @@ const StaffCheckoutPage: React.FC = () => {
       }
 
       await staffBookingApi.completeCheckout(String(activeBooking.id));
-      toast.success('Checkout thành công');
-      setActiveBooking(null);
-      setActiveStep(null);
-      fetchData();
+      
+      // Check if early checkout with refund through app
+      const hasEarlyCheckoutRefund = result.checkoutType?.includes('EARLY') && Number(result.refundAmount || 0) > 0;
+      
+      if (hasEarlyCheckoutRefund) {
+        try {
+          // Create refund request for early checkout with ASSIGNED status
+          await staffRefundApi.createEarlyCheckoutRefund(
+            String(activeBooking.id),
+            Number(result.refundAmount || 0)
+          );
+          toast.success('Checkout thành công & tạo đơn hoàn tiền');
+          setActiveBooking(null);
+          setActiveStep(null);
+          // Redirect to assigned early-checkout refund queue for this staff.
+          navigate('/staff/refunds?tab=ASSIGNED&type=EARLY_CHECKOUT');
+        } catch (refundError: any) {
+          console.error('Refund creation error:', refundError);
+          toast.error(refundError?.response?.data?.message || 'Tạo đơn hoàn tiền thất bại, nhưng checkout đã hoàn tất');
+          fetchData();
+        }
+      } else {
+        toast.success('Checkout thành công');
+        setActiveBooking(null);
+        setActiveStep(null);
+        fetchData();
+      }
     } catch (error: any) {
       console.error('Checkout error:', error);
       if (error.code === 'ECONNABORTED') {
@@ -208,7 +239,40 @@ const StaffCheckoutPage: React.FC = () => {
     }
     try {
       setProcessing(true);
-      await paymentApi.markLateCheckoutPaid(String(activeBooking.id), lateFeeMethod);
+      if (lateFeeMethod === 'BANK_TRANSFER') {
+        if (lateFeeQrPayment) {
+          await refreshLateFeeQrStatus();
+          return;
+        }
+        const qr = await paymentApi.createCheckinQr({
+          bookingId: String(activeBooking.id),
+          amount: lateFeeAmount,
+          method: 'BANK_TRANSFER',
+          type: 'LATE_CHECKOUT_FEE',
+        });
+        setLateFeeQrPayment(qr);
+        setLateFeeQrStatus('PENDING');
+        setProcessing(false);
+        return;
+      }
+      // Try to include payer info (name/phone/cccd) from booking guests if available
+      let payerPayload: { payerName?: string; payerPhone?: string; payerGuestId?: number; payerCccd?: string } | undefined;
+      try {
+        const guests = await staffBookingApi.getGuests(activeBooking.id).catch(() => []);
+        const representative = guests?.find((g: any) => g.checkInPerson) || guests?.find((g: any) => g.primaryGuest) || guests?.find((g: any) => g.type === 'ADULT') || guests?.[0];
+        if (representative) {
+          payerPayload = {
+            payerName: representative.fullName || representative.name || '',
+            payerPhone: representative.phone || '',
+            payerGuestId: representative.id,
+            payerCccd: representative.cccd || representative.identityNumber || undefined,
+          };
+        }
+      } catch (e) {
+        // ignore and proceed without payer info
+      }
+
+      await paymentApi.markLateCheckoutPaid(String(activeBooking.id), lateFeeMethod, payerPayload);
       await staffBookingApi.completeCheckout(String(activeBooking.id));
       toast.success('Đã thu phí trễ và hoàn tất checkout');
       setActiveBooking(null);
@@ -225,6 +289,46 @@ const StaffCheckoutPage: React.FC = () => {
       setProcessing(false);
     }
   };
+
+  useEffect(() => {
+    if (!lateFeeQrPayment?.confirmUrl || !qrCanvasRef.current) return;
+    QRCode.toCanvas(qrCanvasRef.current, lateFeeQrPayment.confirmUrl, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#0f172a', light: '#ffffff' },
+    }).catch(() => undefined);
+  }, [lateFeeQrPayment?.confirmUrl]);
+
+  const refreshLateFeeQrStatus = async () => {
+    if (!lateFeeQrPayment || !activeBooking) return;
+    try {
+      setProcessing(true);
+      const result = await paymentApi.getCheckinQr(lateFeeQrPayment.paymentCode);
+      if (result.status === 'SUCCESS' || result.status === 'PAID') {
+        setLateFeeQrStatus('SUCCESS');
+        await staffBookingApi.completeCheckout(String(activeBooking.id));
+        toast.success('Thanh toán thành công. Đã hoàn tất checkout');
+        setLateFeeQrPayment(null);
+        setActiveBooking(null);
+        setActiveStep(null);
+        fetchData();
+      } else {
+        toast.error('Giao dịch chưa hoàn tất');
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Không thể kiểm tra trạng thái thanh toán');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeBooking) {
+      setLateFeeQrPayment(null);
+      setLateFeeQrStatus('PENDING');
+    }
+  }, [activeBooking]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -587,6 +691,38 @@ const StaffCheckoutPage: React.FC = () => {
                     <button onClick={() => setLateFeeMethod('CASH')} className={`rounded-xl border p-4 text-left ${lateFeeMethod === 'CASH' ? 'border-sky-500 bg-sky-50' : 'border-gray-100'}`}><div className="font-black">Tiền mặt</div></button>
                   </div>
                   {lateFeeMethod === 'CASH' && <input type="number" value={lateFeeCashReceived} onChange={(e) => setLateFeeCashReceived(e.target.value)} className="w-full rounded-xl border border-gray-200 px-4 py-3 text-lg font-black" />}
+                  {lateFeeMethod === 'BANK_TRANSFER' && (
+                    <div className="space-y-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+                      <div className="text-sm font-black text-sky-700">Tạo QR cho khách quét chuyển khoản</div>
+                      {lateFeeQrPayment ? (
+                        <>
+                          <div className="rounded-2xl border border-white bg-white p-4 text-center">
+                            <canvas ref={qrCanvasRef} className="mx-auto h-[220px] w-[220px] rounded-xl bg-white p-2" />
+                          </div>
+                          <div className={`rounded-2xl px-4 py-3 text-center text-sm font-black ${lateFeeQrStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {lateFeeQrStatus === 'SUCCESS' ? 'Thanh toán thành công' : 'Đang chờ thanh toán'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={refreshLateFeeQrStatus}
+                            disabled={processing}
+                            className="w-full rounded-2xl bg-sky-600 px-4 py-3 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
+                          >
+                            Kiểm tra trạng thái thanh toán
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={confirmLateFeePaymentAndComplete}
+                          disabled={processing}
+                          className="w-full rounded-2xl bg-sky-600 px-4 py-3 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
+                        >
+                          Tạo QR thanh toán
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -618,7 +754,11 @@ const StaffCheckoutPage: React.FC = () => {
                         Đang xử lý...
                       </div>
                     ) : (
-                      'Xác nhận'
+                      activeStep === 'PAYMENT'
+                        ? lateFeeMethod === 'BANK_TRANSFER'
+                          ? (lateFeeQrPayment ? 'Kiểm tra thanh toán' : 'Tạo QR')
+                          : 'Xác nhận thu tiền'
+                        : 'Xác nhận'
                     )}
                   </button>
                 </>

@@ -28,6 +28,10 @@ Service **Cổng Thanh toán** (Payment Gateway) chịu trách nhiệm tích h�
    - API cho phép nhân viên khách sạn xác nhận thanh toán ngoại tuyến (Offline Confirm) bằng tiền mặt thông qua Web Dashboard hoặc quét mã QR qua Mobile App.
    - Hỗ trợ API xử lý hoàn tiền tự động hoàn trả ngân quỹ qua cổng kiểm thử VNPAY.
 
+6. **Hai luồng refund chính**:
+   - **Refund do hủy phòng**: yêu cầu refund được tạo từ Booking Service và đưa vào Refund Queue chung; nhân viên **claim** thủ công để xử lý; SLA tối đa **48 giờ**.
+   - **Refund do checkout sớm**: nhân viên đang checkout **xử lý trực tiếp**, không qua queue; hệ thống gọi **VNPAY Sandbox Refund API** nếu giao dịch gốc là VNPAY, còn thanh toán tại quầy hoàn trực tiếp.
+
 ---
 
 ## 🔌 Cấu hình kết nối
@@ -42,14 +46,14 @@ Service **Cổng Thanh toán** (Payment Gateway) chịu trách nhiệm tích h�
 
 ## 📡 Danh sách REST API Endpoints (Gọi qua Gateway:8080)
 
-| Method | Endpoint | Yêu cầu JWT | Mô tả chức năng nghiệp vụ |
-| :--- | :--- | :---: | :--- |
-| `POST` | `/payment-api/payments/vnpay/create` | Có | Sinh link URL thanh toán VNPAY SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`). |
-| `POST` | `/payment-api/payments/momo/create` | Có | Sinh link URL thanh toán MoMo SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`). |
-| `GET` | `/payment-api/payments/vnpay-return` | Không | Điểm nhận điều hướng của người dùng sau khi thanh toán xong từ VNPAY. |
-| `GET` | `/payment-api/payments/vnpay-ipn` | Không | Điểm nhận phản hồi ngầm đáng tin cậy từ máy chủ VNPAY gửi về. |
-| `GET` | `/payment-api/payments/checkin-qr` | Không | Tra cứu nhanh thông tin hóa đơn khi quét QR (dành cho Mobile App). |
-| `POST` | `/payment-api/payments/{code}/confirm` | Không | Xác nhận đã thanh toán tiền mặt/ngoại tuyến tại quầy (từ Web/Mobile). |
+| Method | Endpoint                               | Yêu cầu JWT | Mô tả chức năng nghiệp vụ                                                            |
+| :----- | :------------------------------------- | :---------: | :----------------------------------------------------------------------------------- |
+| `POST` | `/payment-api/payments/vnpay/create`   |     Có      | Sinh link URL thanh toán VNPAY SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`). |
+| `POST` | `/payment-api/payments/momo/create`    |     Có      | Sinh link URL thanh toán MoMo SandBox (hỗ trợ loại `DEPOSIT`, `FULL`, `REMAINING`).  |
+| `GET`  | `/payment-api/payments/vnpay-return`   |    Không    | Điểm nhận điều hướng của người dùng sau khi thanh toán xong từ VNPAY.                |
+| `GET`  | `/payment-api/payments/vnpay-ipn`      |    Không    | Điểm nhận phản hồi ngầm đáng tin cậy từ máy chủ VNPAY gửi về.                        |
+| `GET`  | `/payment-api/payments/checkin-qr`     |    Không    | Tra cứu nhanh thông tin hóa đơn khi quét QR (dành cho Mobile App).                   |
+| `POST` | `/payment-api/payments/{code}/confirm` |    Không    | Xác nhận đã thanh toán tiền mặt/ngoại tuyến tại quầy (từ Web/Mobile).                |
 
 ---
 
@@ -77,8 +81,9 @@ MOMO_PAY_URL=https://test-payment.momo.vn/v2/gateway/api/create
 ## 🔄 Phân loại Giao dịch thanh toán (Payment Types)
 
 Hệ thống phân biệt rõ các loại giao dịch dựa trên quy tắc đặt phòng:
-* `DEPOSIT`: Thanh toán tiền đặt cọc (thường là 30% ngày thường hoặc 50% ngày lễ).
-* `FULL`: Thanh toán trả trước toàn bộ 100% tiền phòng.
-* `REMAINING`: Thanh toán phần tiền còn lại (ví dụ cọc trước 30% thì trả nốt 70% khi nhận phòng).
+
+- `DEPOSIT`: Thanh toán tiền đặt cọc (thường là 30% ngày thường hoặc 50% ngày lễ).
+- `FULL`: Thanh toán trả trước toàn bộ 100% tiền phòng.
+- `REMAINING`: Thanh toán phần tiền còn lại (ví dụ cọc trước 30% thì trả nốt 70% khi nhận phòng).
 
 Khi thanh toán bất kỳ loại nào thành công, PAYMENT service sẽ xuất bản sự kiện tương ứng lên RabbitMQ (`FULL_PAID`, `DEPOSIT_PAID`, `REMAINING_PAID`) để BOOKING service tự động đồng bộ hóa trạng thái tức thì.
