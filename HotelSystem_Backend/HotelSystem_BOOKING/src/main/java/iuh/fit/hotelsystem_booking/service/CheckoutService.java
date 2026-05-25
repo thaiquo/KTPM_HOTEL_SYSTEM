@@ -217,7 +217,7 @@ public class CheckoutService {
             return bookingInvoiceService.listInvoices();
         }
         if (invoiceRepository == null) return java.util.Collections.emptyList();
-        java.util.List<BookingInvoiceDto> out = new java.util.ArrayList<>();
+        java.util.Map<Long, BookingInvoiceDto> outByBooking = new java.util.LinkedHashMap<>();
         ObjectMapper mapper = new ObjectMapper();
         for (iuh.fit.hotelsystem_booking.entity.BookingInvoice inv : invoiceRepository.findAll()) {
             BookingInvoiceDto dto = new BookingInvoiceDto();
@@ -227,9 +227,9 @@ public class CheckoutService {
             dto.setCurrency(inv.getCurrency());
             try { dto.setLines(mapper.readValue(inv.getLinesJson() != null ? inv.getLinesJson() : "{}", Object.class)); } catch (Exception e) { dto.setLines(inv.getLinesJson()); }
             dto.setCreatedAt(inv.getCreatedAt());
-            out.add(dto);
+            outByBooking.putIfAbsent(inv.getBookingId(), dto);
         }
-        return out;
+        return new java.util.ArrayList<>(outByBooking.values());
     }
 
     private void attachRefundAllocationPreview(Long bookingId, EarlyCheckoutRefundResult early, CheckoutResponse response) {
@@ -492,6 +492,7 @@ public class CheckoutService {
             bookingStayRepository.save(stay);
             booking.setPaidAmount(invoiceTotal.doubleValue());
             booking.setPaymentStatus("PAID");
+            amountDue = BigDecimal.ZERO;
         }
 
         if (booking.getActualCheckOutAt() == null && stay.getActualCheckOutAt() != null) {

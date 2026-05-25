@@ -5,12 +5,16 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "booking_invoices")
+@Table(
+        name = "booking_invoices",
+        uniqueConstraints = @UniqueConstraint(name = "uk_booking_invoices_booking_id", columnNames = "booking_id")
+)
 public class BookingInvoice {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "booking_id", nullable = false)
     private Long bookingId;
 
     private BigDecimal amount;

@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,12 +49,15 @@ public class BookingInvoiceService {
     @Transactional
     public BookingInvoice saveCheckoutInvoice(Long bookingId, BigDecimal amount, String currency, Map<String, Object> lines) {
         try {
-            BookingInvoice invoice = new BookingInvoice();
-            invoice.setBookingId(bookingId);
+            BookingInvoice invoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId)
+                    .orElseGet(BookingInvoice::new);
+            if (invoice.getId() == null) {
+                invoice.setBookingId(bookingId);
+                invoice.setCreatedAt(LocalDateTime.now());
+            }
             invoice.setAmount(amount != null ? amount : BigDecimal.ZERO);
             invoice.setCurrency(currency != null ? currency : "VND");
             invoice.setLinesJson(objectMapper.writeValueAsString(lines != null ? lines : Map.of()));
-            invoice.setCreatedAt(LocalDateTime.now());
             return invoiceRepository.save(invoice);
         } catch (Exception ex) {
             throw new IllegalStateException("Could not save checkout invoice", ex);
@@ -69,11 +73,11 @@ public class BookingInvoiceService {
 
     @Transactional(readOnly = true)
     public List<BookingInvoiceDto> listInvoices() {
-        List<BookingInvoiceDto> result = new ArrayList<>();
+        Map<Long, BookingInvoiceDto> resultByBooking = new LinkedHashMap<>();
         for (BookingInvoice invoice : invoiceRepository.findAllByOrderByCreatedAtDesc()) {
-            result.add(toDto(invoice));
+            resultByBooking.putIfAbsent(invoice.getBookingId(), toDto(invoice));
         }
-        return result;
+        return new ArrayList<>(resultByBooking.values());
     }
 
     private BookingInvoiceDto toDto(BookingInvoice invoice) {
