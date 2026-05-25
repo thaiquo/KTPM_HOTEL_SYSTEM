@@ -23,7 +23,7 @@ import static org.mockito.Mockito.*;
 class BookingCheckInServiceTest {
 
     @Test
-    void depositPaidBookingCanBeCheckedInEvenWhenInvoiceIsPartial() {
+    void depositPaidBookingCanBeCheckedInAfterRemainingPaymentIsCollected() {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository bookingStayRepository = mock(BookingStayRepository.class);
         BookingValidator bookingValidator = mock(BookingValidator.class);
@@ -55,7 +55,7 @@ class BookingCheckInServiceTest {
         booking.setStatus(BookingStatus.DEPOSIT_PAID);
         booking.setFinalTotal(2000000.0);
         booking.setDepositAmount(500000.0);
-        booking.setPaidAmount(500000.0);
+        booking.setPaidAmount(2000000.0);
 
         BookingGuest guest = new BookingGuest();
         guest.setId(10L);
@@ -74,9 +74,9 @@ class BookingCheckInServiceTest {
         when(bookingGuestService.saveGuests(eq(1L), any())).thenReturn(List.of(guest));
 
         PaymentStatusResponse paymentStatus = new PaymentStatusResponse();
-        paymentStatus.setStatus("PARTIAL");
-        paymentStatus.setPaidAmount(500000.0);
-        paymentStatus.setRemainingAmount(1500000.0);
+        paymentStatus.setStatus("PAID");
+        paymentStatus.setPaidAmount(2000000.0);
+        paymentStatus.setRemainingAmount(0.0);
         when(paymentServiceClient.getInvoiceStatus(1L)).thenReturn(paymentStatus);
 
         CheckInRequest request = new CheckInRequest();

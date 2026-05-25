@@ -11,7 +11,8 @@ import {
   HiOutlinePhone,
 } from 'react-icons/hi';
 import toast from 'react-hot-toast';
-import { staffInvoiceApi, bookingApi, roomApi, userApi, type InvoiceSummary, type PaymentRecord } from '../../../services/api';
+import { staffInvoiceApi, bookingApi, userApi, type InvoiceSummary, type PaymentRecord } from '../../../services/api';
+import { roomApi } from '../../../services/roomApi';
 import type { Booking, Room } from '../../../types';
 
 const formatCurrency = (value: number) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
@@ -116,7 +117,7 @@ const getPaymentTypeLabel = (type?: string) => {
     case 'FULL': return 'Thanh toán trọn gói';
     case 'REMAINING': return 'Thanh toán còn lại';
     case 'EARLY_CHECKIN_FEE': return 'Phí check-in sớm';
-    case 'LATE_CHECKOUT_FEE': return 'Phí checkout trễ';
+    case 'LATE_CHECKOUT_FEE': return 'Thanh toán checkout';
     case 'EARLY_CHECKOUT_REFUND': return 'Hoàn tiền checkout sớm';
     case 'REFUND': return 'Hóa đơn hoàn trả';
     default: return type;
@@ -143,6 +144,7 @@ const InvoiceManagementPage: React.FC = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<Booking | null>(null);
   const [roomDetails, setRoomDetails] = useState<Room | null>(null);
+  const [roomList, setRoomList] = useState<Room[]>([]);
   const [guestList, setGuestList] = useState<any[]>([]);
 
   // Cache states for table rows
@@ -223,10 +225,17 @@ const InvoiceManagementPage: React.FC = () => {
       const booking = await bookingApi.getById(String(invoice.bookingId)).catch(() => null);
       if (booking) {
         setBookingDetails(booking);
-        // Fetch room details
-        if (booking.roomId) {
-          const room = await roomApi.getById(String(booking.roomId)).catch(() => null);
-          setRoomDetails(room);
+        setRoomList([]);
+        // Fetch room details (support multi-room bookings)
+        const roomIds: string[] = (booking.items || []).map((it: any) => String(it.roomId)).filter(Boolean);
+        if (roomIds.length === 0 && booking.roomId) roomIds.push(String(booking.roomId));
+        if (roomIds.length > 0) {
+          const fetched = await Promise.all(roomIds.map(async (rid) => await roomApi.getById(rid).catch(() => null)));
+          const rooms = fetched.filter((r): r is Room => Boolean(r));
+          setRoomList(rooms);
+          setRoomDetails(rooms.length === 1 ? rooms[0] : null);
+        } else {
+          setRoomDetails(null);
         }
       }
       // Fetch guest list
@@ -398,7 +407,7 @@ const InvoiceManagementPage: React.FC = () => {
               { id: 'ALL', label: 'Tất cả' },
               { id: 'BOOKING', label: 'Đặt phòng' },
               { id: 'CHECKIN', label: 'Check-in' },
-              { id: 'CHECKOUT', label: 'Checkout' },
+              { id: 'CHECKOUT', label: 'Trả phòng' },
               { id: 'REFUND', label: 'Hoàn trả' }
             ].map((tab) => (
               <button
@@ -740,44 +749,63 @@ const InvoiceManagementPage: React.FC = () => {
                     {/* Phòng số mấy */}
                     <div className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100/50 space-y-3.5">
                       <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">Thông tin Phòng & Lưu trú</h4>
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-                          <HiOutlineOfficeBuilding className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-black text-indigo-600">
-                            {roomDetails ? `Phòng ${roomDetails.roomNumber}` : `Phòng ID ${bookingDetails?.roomId || selectedInvoice.bookingId}`}
-                          </div>
-                          {roomDetails && (
-                            <div className="text-[10px] text-gray-400 font-bold">
-                              Tầng {roomDetails.floor} • Loại {roomDetails.roomType?.name || 'Standard'}
+                      <div>
+                        {roomList.length > 0 ? (
+                          <div className="space-y-3">
+                            <div className="text-sm font-black text-indigo-600">Danh sách phòng ({roomList.length})</div>
+                            <div className="grid grid-cols-1 gap-2">
+                              {roomList.map((r) => (
+                                <div key={r.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-gray-100">
+                                  <div>
+                                    <div className="text-sm font-black text-gray-900">Phòng {r.roomNumber || r.id}</div>
+                                    <div className="text-[11px] text-gray-500">Tầng {r.floor || r.floorNumber || '-'} • {r.roomType?.name || r.roomType?.type || 'Loại không rõ'}</div>
+                                  </div>
+                                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-100">{r.status || 'UNKNOWN'}</div>
+                                </div>
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                              <HiOutlineOfficeBuilding className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="text-sm font-black text-indigo-600">
+                                {roomDetails ? `Phòng ${roomDetails.roomNumber}` : `Phòng ID ${bookingDetails?.roomId || selectedInvoice.bookingId}`}
+                              </div>
+                              {roomDetails && (
+                                <div className="text-[10px] text-gray-400 font-bold">
+                                  Tầng {roomDetails.floor} • Loại {roomDetails.roomType?.name || 'Standard'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
-                      {bookingDetails && (
-                        <div className="grid grid-cols-2 gap-4 text-xs font-bold text-gray-600 border-t border-gray-100 pt-3 mt-3">
-                          <div>
-                            <span className="text-[10px] text-gray-400 font-bold block">Ngày nhận (Check-in)</span>
-                            <span className="text-gray-900">{bookingDetails.checkIn}</span>
-                            {bookingDetails.actualCheckInAt && (
-                              <span className="text-[10px] text-emerald-600 block font-bold text-ellipsis overflow-hidden">
-                                Thực tế: {new Date(bookingDetails.actualCheckInAt).toLocaleString('vi-VN')}
-                              </span>
-                            )}
+                        {bookingDetails && (
+                          <div className="grid grid-cols-2 gap-4 text-xs font-bold text-gray-600 border-t border-gray-100 pt-3 mt-3">
+                            <div>
+                              <span className="text-[10px] text-gray-400 font-bold block">Ngày nhận (Check-in)</span>
+                              <span className="text-gray-900">{bookingDetails.checkIn}</span>
+                              {bookingDetails.actualCheckInAt && (
+                                <span className="text-[10px] text-emerald-600 block font-bold text-ellipsis overflow-hidden">
+                                  Thực tế: {new Date(bookingDetails.actualCheckInAt).toLocaleString('vi-VN')}
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-400 font-bold block">Ngày trả (Check-out)</span>
+                              <span className="text-gray-900">{bookingDetails.checkOut}</span>
+                              {bookingDetails.actualCheckOutAt && (
+                                <span className="text-[10px] text-sky-600 block font-bold text-ellipsis overflow-hidden">
+                                  Thực tế: {new Date(bookingDetails.actualCheckOutAt).toLocaleString('vi-VN')}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-[10px] text-gray-400 font-bold block">Ngày trả (Check-out)</span>
-                            <span className="text-gray-900">{bookingDetails.checkOut}</span>
-                            {bookingDetails.actualCheckOutAt && (
-                              <span className="text-[10px] text-sky-600 block font-bold text-ellipsis overflow-hidden">
-                                Thực tế: {new Date(bookingDetails.actualCheckOutAt).toLocaleString('vi-VN')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
 

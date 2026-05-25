@@ -4,8 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.io.Serializable;
-
 @Entity
 @Table(name = "room_type_images")
 @Getter
@@ -13,9 +11,7 @@ import java.io.Serializable;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RoomTypeImage implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+public class RoomTypeImage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

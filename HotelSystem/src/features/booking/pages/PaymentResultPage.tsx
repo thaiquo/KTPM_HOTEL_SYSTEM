@@ -26,10 +26,22 @@ export default function PaymentResultPage() {
     }
   }, [success, clearCart]);
 
-  if (loading) return null;
-  if (!user) {
-    const redirect = `${location.pathname}${location.search}`;
-    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background py-16 pb-32">
+        <div className="mx-auto flex max-w-2xl items-center justify-center px-6">
+          <Card className="w-full p-10 text-center border-outline-variant/10 shadow-xl">
+            <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-primary/15 border-t-primary" />
+            <h1 className="mt-6 text-3xl font-black tracking-tight text-on-surface font-headline">
+              Đang tải kết quả thanh toán...
+            </h1>
+            <p className="mt-3 text-on-surface-variant font-medium">
+              Hệ thống đang đồng bộ phiên đăng nhập và trạng thái booking. Nếu Docker/backend đang chậm, trang này sẽ vẫn hiển thị thay vì trắng màn hình.
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -75,6 +87,11 @@ export default function PaymentResultPage() {
             <Link to="/rooms">
               <Button variant="outline" className="w-full sm:w-auto rounded-2xl px-8">Tìm phòng khác</Button>
             </Link>
+            {!user && (
+              <Link to={`/login?redirect=${encodeURIComponent(`${location.pathname}${location.search}`)}`}>
+                <Button variant="outline" className="w-full sm:w-auto rounded-2xl px-8">Đăng nhập</Button>
+              </Link>
+            )}
           </div>
         </Card>
       </div>

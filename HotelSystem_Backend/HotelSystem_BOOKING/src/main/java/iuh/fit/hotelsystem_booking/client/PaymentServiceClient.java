@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.Map;
 
-@FeignClient(name = "payment-service", fallbackFactory = PaymentServiceFallbackFactory.class)
+@FeignClient(name = "payment-service", url = "${payment.service.url:http://localhost:8085}", fallbackFactory = PaymentServiceFallbackFactory.class)
 public interface PaymentServiceClient {
 
     @GetMapping("/payments/invoices/booking/{bookingId}/status")

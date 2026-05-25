@@ -3,6 +3,7 @@ package iuh.fit.hotelsystem_booking.dto;
 import java.time.LocalDate;
 
 public class GuestRequest {
+    private Long roomId;
     private String fullName;
     private LocalDate dateOfBirth;
     private String phone;
@@ -11,6 +12,9 @@ public class GuestRequest {
     private String note;
     private Boolean primary;
     private Boolean checkInPerson;
+
+    public Long getRoomId() { return roomId; }
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }

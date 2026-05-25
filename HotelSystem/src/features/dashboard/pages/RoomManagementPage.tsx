@@ -9,7 +9,7 @@ import {
   HiOutlinePlusCircle,
   HiOutlineMinusCircle
 } from 'react-icons/hi';
-import { roomApi } from '../../../services/api';
+import { roomApi } from '../../../services/roomApi';
 import type { Room } from '../../../types';
 import toast from 'react-hot-toast';
 

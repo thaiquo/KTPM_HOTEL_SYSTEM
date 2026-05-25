@@ -3,10 +3,11 @@ package iuh.fit.hotelsystem_booking.entity;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Booking entity — bổ sung đầy đủ fields nghiệp vụ:
- * pricing, payment type, holiday flag, hold expiry, cancel info.
+ * Booking entity — redesigned to support multiple rooms (BookingItems).
  */
 @Entity
 @Table(name = "bookings")
@@ -16,9 +17,36 @@ public class Booking {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ─── Thông tin cơ bản ───────────────────────────────────────
+    @Transient
     private Long roomId;
+
+    @Transient
+    private Double pricePerNight;
+
+    @Transient
+    private Integer nights;
+
+    @Column(name = "booking_code", unique = true)
+    private String bookingCode;
+
+    // ─── Relationships ──────────────────────────────────────────
+    @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BookingItem> items = new ArrayList<>();
+
+    // ─── Thông tin cơ bản ───────────────────────────────────────
     private Long userId;
+
+    private Integer totalRooms;
+
+    private Integer totalGuests;
+
+    @Column(length = 1000)
+    private String notes;
+
+    @Enumerated(EnumType.STRING)
+    private BookingSource source;
+
+    private String createdBy;
 
     private LocalDate checkIn;
     private LocalDate checkOut;
@@ -28,13 +56,18 @@ public class Booking {
 
     private LocalDateTime createdAt;
 
+    private LocalDateTime confirmedAt;
+
     private Long primaryGuestId;
 
     private Boolean preCheckinCompleted;
 
     private Integer guestCount;
 
-    private Integer roomCapacitySnapshot;
+    private LocalDateTime reservationExpiredAt;
+
+    @Enumerated(EnumType.STRING)
+    private BookingLockStatus lockStatus;
 
     @Enumerated(EnumType.STRING)
     private RatePlan ratePlan;
@@ -46,20 +79,26 @@ public class Booking {
     private Boolean allowModification;
 
     // ─── Pricing ────────────────────────────────────────────────
-    /** Giá gốc 1 đêm (chưa nhân multiplier) */
-    private Double pricePerNight;
-
-    /** Số đêm = checkOut - checkIn */
-    private Integer nights;
-
-    /** baseTotal = nights × pricePerNight */
+    /** baseTotal = sum of (nights × priceSnapshot) of all items */
     private Double baseTotal;
 
-    /** 1.0 (bình thường) hoặc 1.3 (ngày lễ) */
+    private Double subtotal;
+
+    private Double taxAmount;
+
+    private Double discountTotal;
+
+    /** 1.0 (bình thường) hoặc 1.3 (ngày lễ) hoặc 1.2 (cuối tuần - áp dụng tại item level nếu cần, hoặc đây là multiplier chung) */
     private Double priceMultiplier;
 
     /** finalTotal = baseTotal × priceMultiplier */
     private Double finalTotal;
+
+    private Double totalPrice;
+
+    private String currency = "VND";
+
+    private Integer priceSnapshotVersion;
 
     /** Số tiền cọc (depositPercent% của finalTotal) */
     private Double depositAmount;
@@ -68,26 +107,20 @@ public class Booking {
     private Double paidAmount;
 
     // ─── Payment type ────────────────────────────────────────────
-    /** FULL / DEPOSIT / HOTEL */
     private String paymentType;
 
-    /** UNPAID / PAID / DEPOSITED / REFUND_PENDING / REFUNDED / PARTIALLY_REFUNDED / NO_REFUND */
     private String paymentStatus;
 
-    /** Transaction ID from payment service/gateway, used for refund idempotency when available. */
     private String paymentTransactionId;
 
     // ─── Holiday flag ────────────────────────────────────────────
-    /** true nếu booking đụng ít nhất 1 ngày lễ Việt Nam */
     @Column(name = "is_holiday_booking")
     private Boolean isHolidayBooking;
 
-    /** true nếu áp dụng non-refundable policy */
     @Column(name = "non_refundable")
     private Boolean nonRefundable;
 
     // ─── Hold phòng ──────────────────────────────────────────────
-    /** Thời điểm hết hạn hold phòng — sau đây booking tự CANCELLED */
     private LocalDateTime holdExpiresAt;
 
     // ─── Cancel info ─────────────────────────────────────────────
@@ -95,17 +128,11 @@ public class Booking {
     private String cancellationReason;
 
     // ─── Check-in / Check-out tracking ────────────────────────────
-    /** Thời gian thực tế check-in (lưu vào DB) */
     private LocalDateTime actualCheckInAt;
-
-    /** Thời gian thực tế check-out (lưu vào DB) */
     private LocalDateTime actualCheckOutAt;
 
     // ─── Cleaning tracking ───────────────────────────────────────
-    /** Lúc bắt đầu dọn phòng (tính từ checkout) */
     private LocalDateTime cleaningStartAt;
-
-    /** Lúc dọn xong (calculated = cleaningStartAt + 20 phút) */
     private LocalDateTime cleaningEndAt;
 
     // ════════════════════════════════════════════════════════════
@@ -115,11 +142,70 @@ public class Booking {
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public Long getRoomId() { return roomId; }
-    public void setRoomId(Long roomId) { this.roomId = roomId; }
+    public String getBookingCode() { return bookingCode; }
+    public void setBookingCode(String bookingCode) { this.bookingCode = bookingCode; }
+
+    public List<BookingItem> getItems() { return items; }
+    public void setItems(List<BookingItem> items) { this.items = items; }
+    
+    public void addItem(BookingItem item) {
+        items.add(item);
+        item.setBooking(this);
+    }
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public Long getRoomId() {
+        if (roomId != null) {
+            return roomId;
+        }
+        if (items != null && !items.isEmpty()) {
+            return items.get(0).getRoomId();
+        }
+        return null;
+    }
+
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
+
+    public Double getPricePerNight() {
+        if (pricePerNight != null) {
+            return pricePerNight;
+        }
+        if (items != null && !items.isEmpty() && items.get(0).getPriceSnapshot() != null) {
+            return items.get(0).getPriceSnapshot();
+        }
+        return null;
+    }
+
+    public void setPricePerNight(Double pricePerNight) { this.pricePerNight = pricePerNight; }
+
+    public Integer getNights() {
+        if (nights != null) {
+            return nights;
+        }
+        if (checkIn != null && checkOut != null) {
+            return (int) java.time.temporal.ChronoUnit.DAYS.between(checkIn, checkOut);
+        }
+        return null;
+    }
+
+    public void setNights(Integer nights) { this.nights = nights; }
+
+    public Integer getTotalRooms() { return totalRooms; }
+    public void setTotalRooms(Integer totalRooms) { this.totalRooms = totalRooms; }
+
+    public Integer getTotalGuests() { return totalGuests; }
+    public void setTotalGuests(Integer totalGuests) { this.totalGuests = totalGuests; }
+
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+
+    public BookingSource getSource() { return source; }
+    public void setSource(BookingSource source) { this.source = source; }
+
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
 
     public LocalDate getCheckIn() { return checkIn; }
     public void setCheckIn(LocalDate checkIn) { this.checkIn = checkIn; }
@@ -133,6 +219,9 @@ public class Booking {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
+    public LocalDateTime getConfirmedAt() { return confirmedAt; }
+    public void setConfirmedAt(LocalDateTime confirmedAt) { this.confirmedAt = confirmedAt; }
+
     public Long getPrimaryGuestId() { return primaryGuestId; }
     public void setPrimaryGuestId(Long primaryGuestId) { this.primaryGuestId = primaryGuestId; }
 
@@ -142,8 +231,11 @@ public class Booking {
     public Integer getGuestCount() { return guestCount; }
     public void setGuestCount(Integer guestCount) { this.guestCount = guestCount; }
 
-    public Integer getRoomCapacitySnapshot() { return roomCapacitySnapshot; }
-    public void setRoomCapacitySnapshot(Integer roomCapacitySnapshot) { this.roomCapacitySnapshot = roomCapacitySnapshot; }
+    public LocalDateTime getReservationExpiredAt() { return reservationExpiredAt; }
+    public void setReservationExpiredAt(LocalDateTime reservationExpiredAt) { this.reservationExpiredAt = reservationExpiredAt; }
+
+    public BookingLockStatus getLockStatus() { return lockStatus; }
+    public void setLockStatus(BookingLockStatus lockStatus) { this.lockStatus = lockStatus; }
 
     public RatePlan getRatePlan() { return ratePlan; }
     public void setRatePlan(RatePlan ratePlan) { this.ratePlan = ratePlan; }
@@ -157,20 +249,41 @@ public class Booking {
     public Boolean getAllowModification() { return allowModification; }
     public void setAllowModification(Boolean allowModification) { this.allowModification = allowModification; }
 
-    public Double getPricePerNight() { return pricePerNight; }
-    public void setPricePerNight(Double pricePerNight) { this.pricePerNight = pricePerNight; }
-
-    public Integer getNights() { return nights; }
-    public void setNights(Integer nights) { this.nights = nights; }
-
     public Double getBaseTotal() { return baseTotal; }
     public void setBaseTotal(Double baseTotal) { this.baseTotal = baseTotal; }
+
+    public Double getSubtotal() { return subtotal != null ? subtotal : baseTotal; }
+    public void setSubtotal(Double subtotal) {
+        this.subtotal = subtotal;
+        this.baseTotal = subtotal;
+    }
+
+    public Double getTaxAmount() { return taxAmount; }
+    public void setTaxAmount(Double taxAmount) { this.taxAmount = taxAmount; }
+
+    public Double getDiscountTotal() { return discountTotal; }
+    public void setDiscountTotal(Double discountTotal) { this.discountTotal = discountTotal; }
 
     public Double getPriceMultiplier() { return priceMultiplier; }
     public void setPriceMultiplier(Double priceMultiplier) { this.priceMultiplier = priceMultiplier; }
 
     public Double getFinalTotal() { return finalTotal; }
-    public void setFinalTotal(Double finalTotal) { this.finalTotal = finalTotal; }
+    public void setFinalTotal(Double finalTotal) {
+        this.finalTotal = finalTotal;
+        this.totalPrice = finalTotal;
+    }
+
+    public Double getTotalPrice() { return totalPrice != null ? totalPrice : finalTotal; }
+    public void setTotalPrice(Double totalPrice) {
+        this.totalPrice = totalPrice;
+        this.finalTotal = totalPrice;
+    }
+
+    public String getCurrency() { return currency; }
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    public Integer getPriceSnapshotVersion() { return priceSnapshotVersion; }
+    public void setPriceSnapshotVersion(Integer priceSnapshotVersion) { this.priceSnapshotVersion = priceSnapshotVersion; }
 
     public Double getDepositAmount() { return depositAmount; }
     public void setDepositAmount(Double depositAmount) { this.depositAmount = depositAmount; }
@@ -214,7 +327,6 @@ public class Booking {
     public LocalDateTime getCleaningEndAt() { return cleaningEndAt; }
     public void setCleaningEndAt(LocalDateTime cleaningEndAt) { this.cleaningEndAt = cleaningEndAt; }
 
-    // ─── Helper ──────────────────────────────────────────────────
     public boolean isHoliday() {
         return Boolean.TRUE.equals(isHolidayBooking);
     }

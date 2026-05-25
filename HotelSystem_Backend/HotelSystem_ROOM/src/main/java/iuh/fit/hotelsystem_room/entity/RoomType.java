@@ -3,7 +3,6 @@ package iuh.fit.hotelsystem_room.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.io.Serializable;
 import java.util.List;
 
 @Entity
@@ -13,10 +12,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class RoomType implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+public class RoomType {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -38,6 +34,11 @@ public class RoomType implements Serializable {
     private String description;
 
     // 👉 ảnh theo loại phòng (UI dùng cái này)
-    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    private List<RoomTypeImage> images;
+    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 10)
+    private java.util.Set<RoomTypeImage> images;
+
+    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 10)
+    private java.util.Set<RoomTypeBedConfig> bedConfigs;
 }

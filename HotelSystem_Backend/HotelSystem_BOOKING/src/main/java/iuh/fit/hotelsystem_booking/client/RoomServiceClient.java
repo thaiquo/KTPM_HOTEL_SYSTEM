@@ -16,12 +16,12 @@ public interface RoomServiceClient {
     /**
      * Cập nhật status của room
      */
-    @PutMapping("/rooms/{id}/status")
+    @PutMapping("/rooms/internal/{id}/status")
     void updateRoomStatus(@PathVariable("id") Long id, @RequestBody RoomStatusUpdateDto dto);
 
     /**
      * Lấy thông tin room
      */
     @GetMapping("/rooms/{id}")
-    Object getRoomById(@PathVariable("id") Long id);
+    iuh.fit.hotelsystem_booking.dto.Room getRoomById(@PathVariable("id") Long id);
 }

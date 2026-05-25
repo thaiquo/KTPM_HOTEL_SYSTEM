@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { roomApi } from '../../../services/api';
+import { roomApi } from '../../../services/roomApi';
 import type { Room } from '../../../types';
 import HeroCarousel from '../components/HeroCarousel';
 import SearchBox from '../components/SearchBox';
@@ -75,7 +75,34 @@ const HomePage = () => {
     setError('');
     try {
       const roomList = await roomApi.getAll();
-      setRooms(roomList.slice(0, 6));
+      const featured = roomList.slice(0, 6);
+
+      // fetch server-calculated price for next night (today -> tomorrow)
+      try {
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const checkIn = today.toISOString().slice(0, 10);
+        const checkOut = tomorrow.toISOString().slice(0, 10);
+
+        const priced = await Promise.all(
+          featured.map(async (r) => {
+            try {
+              const resp = await roomApi.getPrice(r.id, checkIn, checkOut);
+              const data = (resp && (resp.data || resp)) || resp;
+              const nights = data?.nights ?? data?.nights ?? [];
+              const price = nights.length > 0 ? Number(nights[0].price) : Number(data?.baseRoomPrice ?? r.roomType.basePrice);
+              return { ...r, price };
+            } catch (e) {
+              return { ...r, price: r.roomType.basePrice };
+            }
+          })
+        );
+
+        setRooms(priced as typeof featured);
+      } catch (e) {
+        setRooms(featured);
+      }
     } catch (err) {
       console.error(err);
       setRooms([]);
@@ -163,17 +190,17 @@ const HomePage = () => {
                   className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
                 >
                   <img
-                    src={room.images?.[0] || fallbackImage}
+                    src={room.roomType.images?.[0]?.imageUrl || fallbackImage}
                     alt={room.name}
                     className="h-56 w-full object-cover"
                     loading="lazy"
                   />
                   <div className="p-5">
                     <h3 className="text-xl font-bold text-[#141414]">{room.name}</h3>
-                    <p className="mt-2 text-sm text-[#5a5a5a]">Loại phòng: {room.type}</p>
+                    <p className="mt-2 text-sm text-[#5a5a5a]">Loại phòng: {room.roomType.type}</p>
                     <div className="mt-5 flex items-center justify-between gap-4">
                       <div className="text-lg font-extrabold text-[#0f0f0f]">
-                        {room.price.toLocaleString('vi-VN')}đ
+                        {(room.price ?? room.roomType.basePrice).toLocaleString('vi-VN')}đ
                         <span className="ml-1 text-sm font-medium text-[#666]">/ đêm</span>
                       </div>
                       <Link to={`/rooms/${room.id}`}>
@@ -219,7 +246,7 @@ const HomePage = () => {
         </div>
       </section>
 
-      <section className="bg-gradient-to-b from-black to-[#1a1a1a] py-20 text-white">
+      <section className="bg-linear-to-b from-black to-[#1a1a1a] py-20 text-white">
         <div className="container-custom text-center">
           <h2 className="text-3xl font-black md:text-4xl">Sẵn sàng trải nghiệm TriStar?</h2>
           <p className="mx-auto mt-4 max-w-2xl text-base text-white/75 md:text-lg">
@@ -282,10 +309,10 @@ const FlipSquareCard = ({
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true }}
     transition={{ duration: 0.45, delay }}
-    className="group transition hover:scale-[1.02] [perspective:1000px]"
+    className="group transition hover:scale-[1.02] perspective-[1000px]"
   >
-    <div className="relative aspect-square w-full transition-transform duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-      <div className="absolute inset-0 rounded-2xl border border-black/10 bg-white p-6 shadow-md transition-all duration-300 group-hover:shadow-xl [backface-visibility:hidden]">
+    <div className="relative aspect-square w-full transition-transform duration-700 transform-3d group-hover:transform-[rotateY(180deg)]">
+      <div className="absolute inset-0 rounded-2xl border border-black/10 bg-white p-6 shadow-md transition-all duration-300 group-hover:shadow-xl backface-hidden">
         <div className="flex h-full flex-col items-center justify-between text-center">
           <div className="flex w-full items-center justify-between">
             <div className="inline-flex rounded-full bg-[#0f0f0f] p-3 text-[#d4af37]">
@@ -304,7 +331,7 @@ const FlipSquareCard = ({
         </div>
       </div>
 
-      <div className="absolute inset-0 rounded-2xl border border-[#d4af37]/25 bg-white p-6 shadow-[0_18px_40px_rgba(0,0,0,0.08)] [backface-visibility:hidden] [transform:rotateY(180deg)]">
+      <div className="absolute inset-0 rounded-2xl border border-[#d4af37]/25 bg-white p-6 shadow-[0_18px_40px_rgba(0,0,0,0.08)] backface-hidden transform-[rotateY(180deg)]">
         <div className="flex h-full flex-col items-center justify-center text-center">
           <div className="inline-flex rounded-full bg-[#0f0f0f] p-3 text-[#d4af37]">
             <Icon size={24} />

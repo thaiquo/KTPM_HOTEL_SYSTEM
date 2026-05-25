@@ -5,6 +5,8 @@ import iuh.fit.hotelsystem_booking.dto.CheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
 import iuh.fit.hotelsystem_booking.dto.RemainingPaymentRequest;
+import iuh.fit.hotelsystem_booking.dto.RoomChangeRequest;
+import iuh.fit.hotelsystem_booking.dto.RoomChangeResponse;
 import iuh.fit.hotelsystem_booking.dto.StaffCheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
 import iuh.fit.hotelsystem_booking.entity.Booking;
@@ -14,6 +16,7 @@ import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_booking.service.BookingService;
+import iuh.fit.hotelsystem_booking.service.CheckoutService;
 import iuh.fit.hotelsystem_booking.service.RefundAuditService;
 import iuh.fit.hotelsystem_booking.service.RefundAssignmentService;
 import iuh.fit.hotelsystem_booking.service.RefundQueueProducer;
@@ -41,6 +44,7 @@ public class StaffBookingController {
     private static final Logger log = LoggerFactory.getLogger(StaffBookingController.class);
 
     private final BookingService bookingService;
+    private final CheckoutService checkoutService;
     private final BookingRepository bookingRepository;
     private final RefundTransactionRepository refundRepository;
     private final RefundAssignmentService refundAssignmentService;
@@ -58,7 +62,8 @@ public class StaffBookingController {
                                   RefundAuditService refundAuditService,
                                   RefundQueueProducer refundQueueProducer,
                                   StaffAuthService staffAuthService,
-                                  StaffCheckInOutStatsService statsService) {
+                                  StaffCheckInOutStatsService statsService,
+                                  CheckoutService checkoutService) {
         this.bookingService = bookingService;
         this.bookingRepository = bookingRepository;
         this.refundRepository = refundRepository;
@@ -68,6 +73,7 @@ public class StaffBookingController {
         this.refundQueueProducer = refundQueueProducer;
         this.staffAuthService = staffAuthService;
         this.statsService = statsService;
+        this.checkoutService = checkoutService;
     }
 
     private StaffTokenInfo staff(HttpServletRequest request) {
@@ -135,6 +141,46 @@ public class StaffBookingController {
     @GetMapping("/bookings/{bookingId:\\d+}/check-in")
     public RedirectView checkInGetNotAllowed() {
         return new RedirectView("http://localhost:3000/staff/check-in");
+    }
+
+    @GetMapping("/bookings/{bookingId:\\d+}/invoice")
+    public iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto getInvoice(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
+        return checkoutService.getInvoice(bookingId);
+    }
+
+    @GetMapping("/invoices")
+    public java.util.List<iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto> listInvoices(HttpServletRequest request) {
+        ensureStaff(request);
+        return checkoutService.listInvoices();
+    }
+
+    @GetMapping("/bookings/{bookingId:\\d+}/services")
+    public java.util.List<iuh.fit.hotelsystem_booking.dto.ServiceLineDto> getServiceLines(HttpServletRequest request, @PathVariable Long bookingId) {
+        ensureStaff(request);
+        return bookingService.listServiceLines(bookingId);
+    }
+
+    @PostMapping("/bookings/{bookingId:\\d+}/services")
+    public iuh.fit.hotelsystem_booking.dto.ServiceLineDto addServiceLine(HttpServletRequest request, @PathVariable Long bookingId,
+                                                                         @RequestBody iuh.fit.hotelsystem_booking.dto.ServiceLineDto body) {
+        StaffTokenInfo staff = staff(request);
+        return bookingService.addServiceLine(bookingId, body, staff.getStaffId());
+    }
+
+    @DeleteMapping("/bookings/{bookingId:\\d+}/services/{lineId}")
+    public ResponseEntity<Void> deleteServiceLine(HttpServletRequest request, @PathVariable Long bookingId, @PathVariable Long lineId) {
+        StaffTokenInfo staff = staff(request);
+        bookingService.removeServiceLine(bookingId, lineId, staff.getStaffId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bookings/{bookingId:\\d+}/room-change")
+    public RoomChangeResponse changeRoom(HttpServletRequest request,
+                                         @PathVariable Long bookingId,
+                                         @RequestBody RoomChangeRequest body) {
+        StaffTokenInfo staff = staff(request);
+        return bookingService.changeRoom(bookingId, body, staff.getStaffId());
     }
 
     @PostMapping("/bookings/{bookingId:\\d+}/remaining-payment")

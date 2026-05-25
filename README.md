@@ -159,11 +159,17 @@ VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
 Đảm bảo bạn đã bật Docker Desktop trên máy (Windows với WSL2). Tại thư mục gốc dự án chạy:
 
 ```bash
-# Khởi động toàn bộ stack phát triển (Dev)
+# Khởi động stack backend/dev, không chạy frontend
 docker compose -f docker-compose.dev.yml up -d
 
 # Xem trạng thái hoạt động của các service
 docker compose -f docker-compose.dev.yml ps
+```
+
+Frontend đã được tách riêng bằng Docker profile `frontend`. Chỉ chạy Web UI ở cổng `3000` khi thật sự cần:
+
+```bash
+docker compose -f docker-compose.dev.yml --profile frontend up -d
 ```
 
 Nếu muốn build lại từ đầu hoặc chạy bản Production hoàn chỉnh:
@@ -182,6 +188,7 @@ docker compose up -d --build
   ```bash
   docker compose -f docker-compose.dev.yml down -v
   ```
+  Lưu ý: `down -v` xóa toàn bộ volume database. Sau thay đổi `spring.sql.init.mode=${SPRING_SQL_INIT_MODE:never}`, hệ thống sẽ không tự seed lại demo data khi khởi động lại. Nếu cần nạp lại demo data, chạy một lần với `SPRING_SQL_INIT_MODE=always` hoặc import SQL thủ công, rồi đổi lại `never` để tránh reset dữ liệu thao tác thật.
 
 ---
 
@@ -227,7 +234,6 @@ Hệ thống triển khai chặt chẽ bộ quy tắc vận hành khách sạn t
   - Trễ **từ 12:00 đến 14:00**: Phụ thu **20%** giá 1 đêm phòng.
   - Trễ **từ 14:00 đến 18:00**: Phụ thu **50%** giá 1 đêm phòng.
   - Trễ **sau 18:00**: Phụ thu **100%** giá 1 đêm phòng.
-
 ### 4. Quy định Rời phòng sớm (Early Check-out Policy)
 
 - Áp dụng khi khách rút ngắn kỳ lưu trú thực tế:

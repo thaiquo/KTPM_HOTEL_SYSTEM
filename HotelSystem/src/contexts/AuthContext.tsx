@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AxiosError } from 'axios';
 import { authApi, tokenStorage, userApi } from '../services/api';
+import { normalizeDateInputValue } from '../shared/lib/date';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -48,18 +49,29 @@ const buildUserFromAccessToken = (token: string): User | null => {
     id: payload.userId != null ? String(payload.userId) : email,
     email,
     name: inferredName,
+    fullName: inferredName,
     phone: '',
+    phoneNumber: '',
     role: payload.role || 'CUSTOMER',
+    dateOfBirth: '',
+    address: '',
+    imageUrl: '',
   };
 };
 
-const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string; phone?: string; phoneNumber?: string; dateOfBirth?: string }): User | null => {
+const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string; name?: string; phone?: string; phoneNumber?: string; dateOfBirth?: string; address?: string; imageUrl?: string }): User | null => {
   if (!current) return null;
+  const fullName = profile.fullName || profile.name || current.fullName || current.name;
+  const phone = profile.phone || profile.phoneNumber || current.phone || current.phoneNumber || '';
   return {
     ...current,
-    name: profile.fullName || current.name,
-    phone: profile.phone || profile.phoneNumber || current.phone,
-    dateOfBirth: profile.dateOfBirth || current.dateOfBirth,
+    name: fullName,
+    fullName,
+    phone,
+    phoneNumber: phone,
+    dateOfBirth: normalizeDateInputValue(profile.dateOfBirth || current.dateOfBirth),
+    address: profile.address || current.address,
+    imageUrl: profile.imageUrl || current.imageUrl,
   };
 };
 

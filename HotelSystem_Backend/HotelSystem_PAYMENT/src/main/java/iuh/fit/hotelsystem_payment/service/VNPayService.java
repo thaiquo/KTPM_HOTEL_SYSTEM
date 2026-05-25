@@ -2,6 +2,7 @@ package iuh.fit.hotelsystem_payment.service;
 
 import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import iuh.fit.hotelsystem_payment.config.VNPayConfig;
+import iuh.fit.hotelsystem_payment.client.BookingServiceClient;
 import iuh.fit.hotelsystem_payment.dto.CreateVNPayRequest;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
@@ -10,14 +11,18 @@ import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -39,21 +44,26 @@ import java.util.UUID;
 @Service
 public class VNPayService {
 
+    private static final Logger log = LoggerFactory.getLogger(VNPayService.class);
+
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ZoneId VNP_TIMEZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final PaymentRepository paymentRepository;
     private final RabbitTemplate rabbitTemplate;
     private final VNPayConfig vnPayConfig;
+    private final BookingServiceClient bookingServiceClient;
     private final RestTemplate restTemplate;
 
     public VNPayService(PaymentRepository paymentRepository,
                         RabbitTemplate rabbitTemplate,
                         VNPayConfig vnPayConfig,
+                        BookingServiceClient bookingServiceClient,
                         RestTemplateBuilder restTemplateBuilder) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.vnPayConfig = vnPayConfig;
+        this.bookingServiceClient = bookingServiceClient;
         this.restTemplate = restTemplateBuilder.build();
     }
 
@@ -131,7 +141,9 @@ public class VNPayService {
         }
         ensurePaymentNotCompleted(request.getBookingId(), paymentType);
 
-        return createAndBuildUrl(request.getBookingId(), request.getUserId(), request.getTotalAmount(), paymentType, request, ipAddress);
+        Double authoritativeTotalAmount = resolveBookingTotalAmount(request.getBookingId(), request.getTotalAmount());
+
+        return createAndBuildUrl(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request, ipAddress);
     }
 
     public VNPayResponse createRemainingPayment(CreateVNPayRequest request, String ipAddress) {
@@ -158,12 +170,64 @@ public class VNPayService {
                 ? request.getTotalAmount()
                 : successfulDeposit.getTotalAmount();
 
+        totalAmount = resolveBookingTotalAmount(request.getBookingId(), totalAmount);
+
         return createAndBuildUrl(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, ipAddress);
+    }
+
+    private Double resolveBookingTotalAmount(Long bookingId, Double requestedTotalAmount) {
+        if (bookingId == null) {
+            throw new IllegalArgumentException("bookingId is required");
+        }
+
+        Double bookingTotalAmount = null;
+        try {
+            Map<String, Object> booking = bookingServiceClient.getBooking(bookingId);
+            bookingTotalAmount = extractMoney(booking, "totalPrice");
+            if (bookingTotalAmount == null) {
+                bookingTotalAmount = extractMoney(booking, "finalTotal");
+            }
+        } catch (Exception ex) {
+            log.warn("Could not fetch booking total from booking-service. bookingId={}, error={}", bookingId, ex.getMessage());
+        }
+
+        if (bookingTotalAmount != null && bookingTotalAmount > 0) {
+            if (requestedTotalAmount != null && Math.abs(requestedTotalAmount - bookingTotalAmount) > 1.0) {
+                log.warn("Payment amount mismatch detected. bookingId={}, requested={}, booking={}. Use booking amount.",
+                        bookingId, requestedTotalAmount, bookingTotalAmount);
+            }
+            return roundVnd(bookingTotalAmount);
+        }
+
+        if (requestedTotalAmount != null && requestedTotalAmount > 0) {
+            return roundVnd(requestedTotalAmount);
+        }
+
+        throw new IllegalArgumentException("Cannot resolve totalAmount for booking " + bookingId);
+    }
+
+    private Double extractMoney(Map<String, Object> payload, String key) {
+        if (payload == null || key == null) {
+            return null;
+        }
+        Object raw = payload.get(key);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(raw));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private void ensurePaymentNotCompleted(Long bookingId, PaymentType paymentType) {
         if (paymentRepository.existsByBookingIdAndPaymentTypeAndStatus(bookingId, paymentType, PaymentStatus.SUCCESS)) {
-            throw new IllegalStateException(paymentType + " payment already completed for this booking");
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    paymentType + " payment already completed for this booking");
         }
     }
 

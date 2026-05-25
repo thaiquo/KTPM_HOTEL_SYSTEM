@@ -84,7 +84,7 @@ const statusOptions = ['WORK', 'ALL', 'ASSIGNED', 'PROCESSING', 'OVERDUE'] as co
 
 type StatusFilter = (typeof statusOptions)[number];
 
-const typeOptions = ['ALL_TYPES', 'CANCELLATION', 'EARLY_CHECKOUT'] as const;
+const typeOptions = ['ALL_TYPES', 'CANCELLATION', 'EARLY_CHECKOUT', 'ROOM_CHANGE'] as const;
 
 type TypeFilter = (typeof typeOptions)[number];
 
@@ -227,9 +227,11 @@ const StaffRefundPage: React.FC = () => {
       if (typeFilter === 'ALL_TYPES') {
         matchesType = true;
       } else if (typeFilter === 'CANCELLATION') {
-        matchesType = item.reason !== 'EARLY_CHECKOUT_REFUND';
+        matchesType = item.reason !== 'EARLY_CHECKOUT_REFUND' && item.reason !== 'ROOM_CHANGE_REFUND';
       } else if (typeFilter === 'EARLY_CHECKOUT') {
         matchesType = item.reason === 'EARLY_CHECKOUT_REFUND';
+      } else if (typeFilter === 'ROOM_CHANGE') {
+        matchesType = item.reason === 'ROOM_CHANGE_REFUND';
       }
 
       const haystack = [
@@ -334,6 +336,7 @@ const StaffRefundPage: React.FC = () => {
               if (t === 'ALL_TYPES') return 'Tất cả loại';
               if (t === 'CANCELLATION') return '🗑️ Xử lý hủy đơn';
               if (t === 'EARLY_CHECKOUT') return '⏱️ Xử lý checkout sớm';
+              if (t === 'ROOM_CHANGE') return '↔️ Hoàn đổi phòng';
               return t;
             };
             return (
@@ -390,7 +393,12 @@ const StaffRefundPage: React.FC = () => {
                             ⏱️ Checkout sớm
                           </span>
                         )}
-                        {refund.reason !== 'EARLY_CHECKOUT_REFUND' && (
+                        {refund.reason === 'ROOM_CHANGE_REFUND' && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-emerald-700">
+                            ↔️ Đổi phòng
+                          </span>
+                        )}
+                        {refund.reason !== 'EARLY_CHECKOUT_REFUND' && refund.reason !== 'ROOM_CHANGE_REFUND' && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-sky-700">
                             🗑️ Hủy đơn
                           </span>

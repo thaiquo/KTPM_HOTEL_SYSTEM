@@ -75,6 +75,7 @@ public class BookingGuestService {
     public BookingGuest updateGuest(Long bookingId, Long guestId, GuestRequest request) {
         BookingGuest guest = guestRepository.findByIdAndBookingId(guestId, bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Guest not found"));
+        guest.setRoomId(request.getRoomId());
         guest.setFullName(clean(request.getFullName()));
         guest.setDateOfBirth(request.getDateOfBirth());
         guest.setPhone(clean(request.getPhone()));
@@ -87,6 +88,7 @@ public class BookingGuestService {
 
     private BookingGuest toEntity(GuestRequest request, LocalDate checkIn) {
         BookingGuest guest = new BookingGuest();
+        guest.setRoomId(request.getRoomId());
         guest.setFullName(clean(request.getFullName()));
         guest.setDateOfBirth(request.getDateOfBirth());
         guest.setPhone(clean(request.getPhone()));

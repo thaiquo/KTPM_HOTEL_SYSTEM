@@ -23,6 +23,18 @@ public class CheckoutResponse {
     private BigDecimal effectivePricePerNight;
 
     private BigDecimal finalAmount;
+    private BigDecimal serviceTotal;
+    private BigDecimal roomCharge;
+    private BigDecimal actualRoomCharge;
+    private BigDecimal taxAmount;
+    private BigDecimal discountAmount;
+    private BigDecimal grandTotal;
+    private BigDecimal amountPaid;
+    private BigDecimal remainingRoomAmount;
+    private BigDecimal remainingBalance;
+    private BigDecimal refundSettlementAmount;
+    private String paymentStatus;
+    private java.util.List<iuh.fit.hotelsystem_booking.dto.ServiceLineDto> serviceLines;
     private String roomNextStatus;
     private String message;
 
@@ -35,6 +47,8 @@ public class CheckoutResponse {
     private String representativeFullName;
     private String representativePhone;
     private String representativeCccd;
+    private Long checkedInByStaffId;
+    private Long checkedOutByStaffId;
     private boolean immediateRefund;
 
     /** Preview phân bổ hoàn tiền theo người đã thanh toán (Payment Service). */
@@ -87,6 +101,42 @@ public class CheckoutResponse {
     public BigDecimal getFinalAmount() { return finalAmount; }
     public void setFinalAmount(BigDecimal finalAmount) { this.finalAmount = finalAmount; }
 
+    public BigDecimal getServiceTotal() { return serviceTotal != null ? serviceTotal : BigDecimal.ZERO; }
+    public void setServiceTotal(BigDecimal serviceTotal) { this.serviceTotal = serviceTotal; }
+
+    public BigDecimal getRoomCharge() { return roomCharge != null ? roomCharge : BigDecimal.ZERO; }
+    public void setRoomCharge(BigDecimal roomCharge) { this.roomCharge = roomCharge; }
+
+    public BigDecimal getActualRoomCharge() { return actualRoomCharge != null ? actualRoomCharge : BigDecimal.ZERO; }
+    public void setActualRoomCharge(BigDecimal actualRoomCharge) { this.actualRoomCharge = actualRoomCharge; }
+
+    public BigDecimal getTaxAmount() { return taxAmount != null ? taxAmount : BigDecimal.ZERO; }
+    public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+
+    public BigDecimal getDiscountAmount() { return discountAmount != null ? discountAmount : BigDecimal.ZERO; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
+    public BigDecimal getGrandTotal() { return grandTotal != null ? grandTotal : BigDecimal.ZERO; }
+    public void setGrandTotal(BigDecimal grandTotal) { this.grandTotal = grandTotal; }
+
+    public BigDecimal getAmountPaid() { return amountPaid != null ? amountPaid : BigDecimal.ZERO; }
+    public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
+
+    public BigDecimal getRemainingRoomAmount() { return remainingRoomAmount != null ? remainingRoomAmount : BigDecimal.ZERO; }
+    public void setRemainingRoomAmount(BigDecimal remainingRoomAmount) { this.remainingRoomAmount = remainingRoomAmount; }
+
+    public BigDecimal getRemainingBalance() { return remainingBalance != null ? remainingBalance : finalAmount; }
+    public void setRemainingBalance(BigDecimal remainingBalance) { this.remainingBalance = remainingBalance; }
+
+    public BigDecimal getRefundSettlementAmount() { return refundSettlementAmount != null ? refundSettlementAmount : BigDecimal.ZERO; }
+    public void setRefundSettlementAmount(BigDecimal refundSettlementAmount) { this.refundSettlementAmount = refundSettlementAmount; }
+
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+
+    public java.util.List<iuh.fit.hotelsystem_booking.dto.ServiceLineDto> getServiceLines() { return serviceLines; }
+    public void setServiceLines(java.util.List<iuh.fit.hotelsystem_booking.dto.ServiceLineDto> serviceLines) { this.serviceLines = serviceLines; }
+
     public String getRoomNextStatus() { return roomNextStatus; }
     public void setRoomNextStatus(String roomNextStatus) { this.roomNextStatus = roomNextStatus; }
 
@@ -116,6 +166,12 @@ public class CheckoutResponse {
 
     public String getRepresentativeCccd() { return representativeCccd; }
     public void setRepresentativeCccd(String representativeCccd) { this.representativeCccd = representativeCccd; }
+
+    public Long getCheckedInByStaffId() { return checkedInByStaffId; }
+    public void setCheckedInByStaffId(Long checkedInByStaffId) { this.checkedInByStaffId = checkedInByStaffId; }
+
+    public Long getCheckedOutByStaffId() { return checkedOutByStaffId; }
+    public void setCheckedOutByStaffId(Long checkedOutByStaffId) { this.checkedOutByStaffId = checkedOutByStaffId; }
 
     public boolean isImmediateRefund() { return immediateRefund; }
     public void setImmediateRefund(boolean immediateRefund) { this.immediateRefund = immediateRefund; }

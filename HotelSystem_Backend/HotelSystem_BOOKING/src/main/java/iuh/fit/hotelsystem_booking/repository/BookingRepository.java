@@ -15,54 +15,125 @@ import java.time.LocalDateTime;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-	List<Booking> findByUserId(Long userId);
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
+            WHERE b.userId = :userId
+            ORDER BY b.createdAt DESC, b.id DESC
+            """)
+    List<Booking> findByUserIdWithItems(@Param("userId") Long userId);
 
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
+            WHERE b.id = :id
+            """)
+    java.util.Optional<Booking> findByIdWithItems(@Param("id") Long id);
+
+    @Query("""
+            SELECT COUNT(bi) FROM Booking b
+            JOIN b.items bi
+            WHERE b.userId = :userId
+              AND b.status IN :statuses
+            """)
+    long countBookedRoomsByUserAndStatuses(@Param("userId") Long userId,
+                                           @Param("statuses") List<BookingStatus> statuses);
+
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.status IN :statuses
             ORDER BY b.checkIn ASC, b.id ASC
             """)
     List<Booking> findByStatusInOrderByCheckInAsc(@Param("statuses") List<BookingStatus> statuses);
 
-    @Query("SELECT b.roomId FROM Booking b WHERE b.status != 'CANCELLED' AND b.checkIn < :checkOut AND b.checkOut > :checkIn")
+    @Query("""
+            SELECT bi.roomId FROM BookingItem bi
+            JOIN bi.booking b
+            WHERE (
+                    b.status IN (
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
+                    )
+                    OR (
+                        b.status IN (
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.PENDING_PAYMENT,
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.PENDING,
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.CREATED
+                        )
+                        AND b.holdExpiresAt IS NOT NULL
+                        AND b.holdExpiresAt > CURRENT_TIMESTAMP
+                    )
+                  )
+              AND bi.checkIn < :checkOut
+              AND bi.checkOut > :checkIn
+            """)
     List<Long> findBookedRoomIds(@Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut);
 
+    // existsActiveOverlapForRoom moved to BookingItemRepository or updated here:
     @Query("""
             select count(b) > 0 from Booking b
-            where b.roomId = :roomId
-              and b.status not in (
-                  iuh.fit.hotelsystem_booking.entity.BookingStatus.CANCELLED,
-                  iuh.fit.hotelsystem_booking.entity.BookingStatus.NO_SHOW,
-                  iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_OUT,
-                  iuh.fit.hotelsystem_booking.entity.BookingStatus.COMPLETED
-              )
-              and b.checkIn < :checkOut
-              and b.checkOut > :checkIn
+            join b.items bi
+            where bi.roomId = :roomId
+              and (
+                    b.status in (
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
+                    )
+                    or (
+                        b.status in (
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.PENDING_PAYMENT,
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.PENDING,
+                            iuh.fit.hotelsystem_booking.entity.BookingStatus.CREATED
+                        )
+                        and b.holdExpiresAt is not null
+                        and b.holdExpiresAt > CURRENT_TIMESTAMP
+                    )
+                  )
+              and bi.checkIn < :checkOut
+              and bi.checkOut > :checkIn
             """)
     boolean existsActiveOverlapForRoom(@Param("roomId") Long roomId,
                                        @Param("checkIn") LocalDate checkIn,
                                        @Param("checkOut") LocalDate checkOut);
 
+    @Query("""
+            select count(b) > 0 from Booking b
+            join b.items bi
+            where b.id <> :bookingId
+              and bi.roomId = :roomId
+              and b.status in (
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
+              )
+              and bi.checkIn < :checkOut
+              and bi.checkOut > :checkIn
+            """)
+    boolean existsOtherCheckedInOverlapForRoom(@Param("bookingId") Long bookingId,
+                                               @Param("roomId") Long roomId,
+                                               @Param("checkIn") LocalDate checkIn,
+                                               @Param("checkOut") LocalDate checkOut);
+
     List<Booking> findByStatusAndHoldExpiresAtBefore(BookingStatus status, LocalDateTime now);
 
     @Query("""
             SELECT COUNT(b) > 0 FROM Booking b
-            WHERE b.roomId = :roomId
+            join b.items bi
+            WHERE bi.roomId = :roomId
               AND b.status IN (
                   iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
                   iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID
               )
               AND b.actualCheckInAt IS NULL
-              AND b.checkIn <= :today
-              AND b.checkOut >= :today
+              AND bi.checkIn <= :today
+              AND bi.checkOut >= :today
             """)
     boolean hasActiveUpcomingBookingToday(@Param("roomId") Long roomId, @Param("today") LocalDate today);
 
-    // ─── Check-in/out tracking queries ───────────────────────────
-    /**
-     * Tìm booking chưa check-in mà đã qua giờ checkout
-     * → để auto-cancel
-     */
     @Query("""
             SELECT b FROM Booking b
             WHERE b.checkOut = :checkOut
@@ -74,17 +145,16 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("status") BookingStatus status
     );
 
-    /**
-     * Tìm booking xong cleaning (cleaningEndAt <= now)
-     * → để auto set AVAILABLE
-     */
-    List<Booking> findByCleaningEndAtIsNotNullAndCleaningEndAtLessThanEqual(LocalDateTime now);
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
+            WHERE b.cleaningEndAt IS NOT NULL
+              AND b.cleaningEndAt <= :now
+            """)
+    List<Booking> findByCleaningEndAtIsNotNullAndCleaningEndAtLessThanEqual(@Param("now") LocalDateTime now);
 
     List<Booking> findByCleaningStartAtIsNotNullAndCleaningEndAtIsNotNull();
 
-    /**
-     * Tìm booking check-in hôm nay (checkIn = date)
-     */
     @Query("""
             SELECT b FROM Booking b
             WHERE b.checkIn = :checkIn
@@ -105,9 +175,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                                              @Param("endOfDay") LocalDateTime endOfDay,
                                              @Param("statuses") List<BookingStatus> statuses);
 
-    /**
-     * Tìm booking checkout hôm nay (checkOut = date)
-     */
     @Query("""
             SELECT b FROM Booking b
             WHERE b.checkOut = :checkOut
@@ -117,9 +184,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByCheckOutAndStatusOrderByCheckOutAsc(@Param("checkOut") LocalDate checkOut,
                                                             @Param("status") BookingStatus status);
 
-    /**
-     * Đếm booking check-in hôm nay + đã check-in
-     */
     @Query("""
             SELECT COUNT(b) FROM Booking b
             WHERE b.checkIn = :checkIn
@@ -129,9 +193,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     long countByCheckInAndStatusAndActualCheckInAtIsNotNull(@Param("checkIn") LocalDate checkIn,
                                                             @Param("status") BookingStatus status);
 
-    /**
-     * Đếm booking check-in hôm nay + chưa check-in
-     */
     @Query("""
             SELECT COUNT(b) FROM Booking b
             WHERE b.checkIn = :checkIn
@@ -151,9 +212,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                                      @Param("endOfDay") LocalDateTime endOfDay,
                                      @Param("statuses") List<BookingStatus> statuses);
 
-    /**
-     * Đếm booking checkout hôm nay + đã checkout
-     */
     @Query("""
             SELECT COUNT(b) FROM Booking b
             WHERE b.checkOut = :checkOut
@@ -163,9 +221,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     long countByCheckOutAndStatusAndActualCheckOutAtIsNotNull(@Param("checkOut") LocalDate checkOut,
                                                               @Param("status") BookingStatus status);
 
-    /**
-     * Đếm booking checkout hôm nay + chưa checkout
-     */
     @Query("""
             SELECT COUNT(b) FROM Booking b
             WHERE b.checkOut = :checkOut
@@ -175,11 +230,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     long countByCheckOutAndStatusAndActualCheckOutAtIsNull(@Param("checkOut") LocalDate checkOut,
                                                            @Param("status") BookingStatus status);
 
-    /**
-     * Booking sẵn sàng check-in đến hạn (checkIn &lt;= date), chưa có actualCheckInAt.
-     */
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.checkIn <= :date
               AND b.status IN :statuses
               AND b.actualCheckInAt IS NULL
@@ -188,11 +241,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findPendingCheckInOnOrBefore(@Param("date") LocalDate date,
                                                @Param("statuses") List<BookingStatus> statuses);
 
-    /**
-     * Booking đang lưu trú, đến hạn checkout (checkOut &lt;= date), chưa hoàn tất checkout.
-     */
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.checkOut <= :date
               AND b.status IN :statuses
               AND b.actualCheckOutAt IS NULL
@@ -201,11 +252,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findPendingCheckOutOnOrBefore(@Param("date") LocalDate date,
                                                 @Param("statuses") List<BookingStatus> statuses);
 
-    /**
-     * Booking đã checkout xong trong ngày (theo ngày checkOut hoặc actualCheckOutAt).
-     */
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.status IN :statuses
               AND (
                     b.checkOut = :date
@@ -221,7 +270,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                                              @Param("statuses") List<BookingStatus> statuses);
 
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.status IN :statuses
               AND b.actualCheckInAt IS NULL
             ORDER BY b.checkIn ASC, b.id ASC
@@ -229,7 +279,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findPendingCheckInAll(@Param("statuses") List<BookingStatus> statuses);
 
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.status IN :statuses
               AND b.actualCheckOutAt IS NULL
             ORDER BY b.checkOut ASC, b.id ASC
@@ -244,7 +295,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByStatusOrderByCheckInDesc(@Param("status") BookingStatus status);
 
     @Query("""
-            SELECT b FROM Booking b
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
             WHERE b.status IN :statuses
             ORDER BY b.checkOut DESC, b.id DESC
             """)
@@ -274,4 +326,3 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             """)
     List<Booking> findLegacyEarlyCheckoutAll();
 }
-

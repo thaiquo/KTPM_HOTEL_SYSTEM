@@ -12,8 +12,8 @@ import java.time.temporal.ChronoUnit;
 public class BookingValidator {
 
     public void validate(Booking request) {
-        if (request.getRoomId() == null) {
-            throw new IllegalArgumentException("Room ID is required");
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new IllegalArgumentException("At least one room is required");
         }
         if (request.getUserId() == null) {
             throw new IllegalArgumentException("User ID is required");
@@ -48,8 +48,16 @@ public class BookingValidator {
             throw new IllegalArgumentException("Booking cannot be created after the standard check-out time");
         }
 
-        if (request.getPricePerNight() == null || request.getPricePerNight() <= 0) {
-            throw new IllegalArgumentException("Valid price per night is required");
+        for (iuh.fit.hotelsystem_booking.entity.BookingItem item : request.getItems()) {
+            if (item.getRoomId() == null) {
+                throw new IllegalArgumentException("Room ID is required for all items");
+            }
+            if (item.getRoomTypeId() == null) {
+                throw new IllegalArgumentException("Room type ID is required for room " + item.getRoomId());
+            }
+            if (item.getPriceSnapshot() == null || item.getPriceSnapshot() <= 0) {
+                throw new IllegalArgumentException("Valid price snapshot is required for room " + item.getRoomId());
+            }
         }
     }
 }

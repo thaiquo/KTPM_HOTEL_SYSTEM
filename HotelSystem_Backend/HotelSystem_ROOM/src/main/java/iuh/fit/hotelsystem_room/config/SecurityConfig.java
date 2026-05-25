@@ -19,17 +19,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer webSecurityCustomizer() {
-        return web -> web.ignoring()
-                .requestMatchers(org.springframework.http.HttpMethod.GET, "/rooms", "/rooms/**", "/room-types", "/room-types/**")
-                .requestMatchers("/actuator/**", "/error");
-    }
-
-    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                // We rely on the Gateway for CORS, but keeping a permissive one here doesn't hurt.
                 .cors(cors -> cors.configurationSource(request -> {
                     var corsConfig = new org.springframework.web.cors.CorsConfiguration();
                     corsConfig.setAllowedOrigins(java.util.List.of("*"));
@@ -39,8 +31,14 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Make everything public for now to identify the source of 403
-                        .anyRequest().permitAll()
+                    // Cho phép truy cập public cho mọi GET để frontend có thể load danh sách phòng và loại phòng
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/**").permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.PUT, "/rooms/internal/**").permitAll()
+                    // Các thao tác ghi chỉ dành cho ADMIN và STAFF
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/**").hasAnyRole("ADMIN", "STAFF")
+                    .requestMatchers(org.springframework.http.HttpMethod.PUT, "/**").hasAnyRole("ADMIN", "STAFF")
+                    .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/**").hasAnyRole("ADMIN", "STAFF")
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

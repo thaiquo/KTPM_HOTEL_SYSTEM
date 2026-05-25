@@ -30,7 +30,7 @@ public class RefundCalculationService {
                 : actualCheckoutAt;
         
         // Checkout là SỚM chỉ khi thời điểm checkout thực tế TRƯỚC thời điểm checkout dự kiến (12:00 ngày kết thúc)
-        boolean early = actualCheckoutAt.isBefore(plannedCheckoutDateTime);
+        boolean early = plannedCheckout != null && actualCheckoutAt.toLocalDate().isBefore(plannedCheckout);
 
         EarlyCheckoutRefundResult result = new EarlyCheckoutRefundResult();
         result.setEarlyCheckout(early);

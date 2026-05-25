@@ -21,12 +21,13 @@ import PaymentConfirmPage from './features/booking/pages/PaymentConfirmPage';
 
 import ProtectedRoute from './shared/components/auth/ProtectedRoute';
 import RoomManagementPage from './features/dashboard/pages/RoomManagementPage';
-import InvoiceManagementPage from './features/dashboard/pages/InvoiceManagementPage';
 import EmployeeManagementPage from './features/dashboard/pages/EmployeeManagementPage';
 import RoomTypeManagementPage from './features/dashboard/pages/RoomTypeManagementPage';
 import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
+import StaffInvoicesPage from './features/dashboard/pages/StaffInvoicesPage';
+import StaffRoomChangePage from './features/dashboard/pages/StaffRoomChangePage';
 
 
 
@@ -56,12 +57,12 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/payment/confirm" element={<PaymentConfirmPage />} />
+            <Route path="/payment-result" element={<PaymentResultPage />} />
             
             <Route element={<ProtectedRoute />}>
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/booking" element={<BookingInfoPage />} />
               <Route path="/my-bookings" element={<MyBookingsPage />} />
-              <Route path="/payment-result" element={<PaymentResultPage />} />
             </Route>
           </Route>
 
@@ -82,8 +83,9 @@ function App() {
               <Route path="/staff/rooms" element={<RoomManagementPage />} />
               <Route path="/staff/check-in" element={<StaffCheckInPage />} />
               <Route path="/staff/checkout" element={<StaffCheckoutPage />} />
+              <Route path="/staff/room-change" element={<StaffRoomChangePage />} />
               <Route path="/staff/refunds" element={<StaffRefundPage />} />
-              <Route path="/staff/invoices" element={<InvoiceManagementPage />} />
+              <Route path="/staff/invoices" element={<StaffInvoicesPage />} />
               <Route path="/staff" element={<Navigate to="/staff/rooms" replace />} />
             </Route>
           </Route>

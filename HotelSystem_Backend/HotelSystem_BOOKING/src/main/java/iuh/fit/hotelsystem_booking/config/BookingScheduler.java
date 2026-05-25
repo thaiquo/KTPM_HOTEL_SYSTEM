@@ -3,6 +3,7 @@ package iuh.fit.hotelsystem_booking.config;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingLockStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -38,15 +39,18 @@ public class BookingScheduler {
 
     private void expireBooking(Booking booking) {
         booking.setStatus(BookingStatus.CANCELLED);
+        booking.setLockStatus(BookingLockStatus.EXPIRED);
         booking.setCancellationReason("Payment hold expired (11 minutes)");
         booking.setCancelledAt(LocalDateTime.now());
         bookingRepository.save(booking);
 
-        // 1. Giải phóng phòng
-        RoomMessage roomMsg = new RoomMessage();
-        roomMsg.setBookingId(booking.getId());
-        roomMsg.setRoomId(booking.getRoomId());
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", roomMsg);
+        // 1. Giải phóng tất cả các phòng trong đơn đặt
+        for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+            RoomMessage roomMsg = new RoomMessage();
+            roomMsg.setBookingId(booking.getId());
+            roomMsg.setRoomId(item.getRoomId());
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", roomMsg);
+        }
         
         // 2. Gửi thông báo hết hạn
         BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), "EXPIRED");

@@ -1,136 +1,111 @@
 package iuh.fit.hotelsystem_room.service;
 
-import iuh.fit.hotelsystem_room.client.BookingServiceClient;
-import iuh.fit.hotelsystem_room.dto.RoomResponse;
-import iuh.fit.hotelsystem_room.entity.Bed;
 import iuh.fit.hotelsystem_room.entity.Room;
+import iuh.fit.hotelsystem_room.entity.RoomBedOverride;
+import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
 import iuh.fit.hotelsystem_room.repository.RoomTypeRepository;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.List;
 import java.time.LocalDate;
-import java.util.stream.Collectors;
-import java.util.Arrays;
 import java.util.ArrayList;
-import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class RoomService {
 
     private final RoomRepository roomRepository;
     private final RoomTypeRepository roomTypeRepository;
-    private final BookingServiceClient bookingServiceClient;
+    private final RestTemplate restTemplate;
 
-    public RoomService(RoomRepository roomRepository, RoomTypeRepository roomTypeRepository,
-                       BookingServiceClient bookingServiceClient) {
+    @Value("${booking.service.url:http://booking-service:8084}")
+    private String bookingServiceUrl;
+
+    public RoomService(RoomRepository roomRepository, RoomTypeRepository roomTypeRepository, RestTemplate restTemplate) {
         this.roomRepository = roomRepository;
         this.roomTypeRepository = roomTypeRepository;
-        this.bookingServiceClient = bookingServiceClient;
+        this.restTemplate = restTemplate;
     }
 
-    /**
-     * Cache danh sách tất cả phòng (TTL: 5 phút).
-     * Key mặc định = tên method.
-     */
-    @Transactional(readOnly = true)
-    @Cacheable(value = "rooms:all:v2")
-    public List<RoomResponse> getAllRooms() {
-        return roomRepository.findAll().stream()
-                .map(RoomResponse::from)
-                .collect(Collectors.toList());
+    public List<Room> getAllRooms() {
+        return roomRepository.findAllWithDetails();
     }
 
-    /**
-     * Cache chi tiết phòng theo ID (TTL: 10 phút).
-     */
-    @Transactional(readOnly = true)
-    @Cacheable(value = "rooms:detail:v2", key = "#id")
-    public RoomResponse getRoomById(Long id) {
-        return roomRepository.findById(id)
-                .map(RoomResponse::from)
-                .orElse(null);
+    public Room getRoomById(Long id) {
+        return roomRepository.findByIdWithDetails(id).orElse(null);
     }
 
-    /**
-     * Cache danh sách phòng trống theo roomTypeId + checkIn + checkOut (TTL: 2 phút).
-     * Key bao gồm tất cả tham số để tránh cache nhầm.
-     */
-    @Transactional(readOnly = true)
-    @Cacheable(value = "rooms:available:v2", key = "#roomTypeId + '_' + #checkIn + '_' + #checkOut")
-    public List<RoomResponse> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
-        // 1. Lấy danh sách ID phòng đã được đặt trong khoảng thời gian này từ booking-service
-        List<Long> bookedRoomIds = new ArrayList<>();
-        try {
-            Long[] ids = bookingServiceClient.getBookedRoomIds(checkIn.toString(), checkOut.toString());
-            if (ids != null) {
-                bookedRoomIds = Arrays.asList(ids);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            // Nếu lỗi gọi booking-service, coi như không có phòng nào đặt
+    public List<Room> getAvailableRoomsByStatus(RoomStatus status) {
+        return roomRepository.findByStatusWithDetails(status);
+    }
+
+    public List<Room> getRoomsByRoomType(Long roomTypeId) {
+        if (roomTypeId == null) {
+            return roomRepository.findByStatusWithDetails(RoomStatus.AVAILABLE);
+        }
+        return roomRepository.findByRoomTypeIdAndStatusWithDetails(roomTypeId, RoomStatus.AVAILABLE);
+    }
+
+    public List<Room> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
+        if (checkIn == null || checkOut == null || !checkIn.isBefore(checkOut)) {
+            throw new IllegalArgumentException("checkIn/checkOut invalid");
         }
 
-        // 2. Lấy tất cả các phòng thuộc roomTypeId có status = AVAILABLE
-        List<Room> allRoomsOfType = roomRepository.findByRoomTypeIdAndStatus(roomTypeId, RoomStatus.AVAILABLE);
+        List<Room> inventory = roomRepository.findAllWithDetails().stream()
+                .filter(room -> roomTypeId == null
+                        || (room.getRoomType() != null && roomTypeId.equals(room.getRoomType().getId())))
+                .filter(room -> isBookableInventoryStatus(room.getStatus()))
+                .toList();
 
-        // 3. Lọc ra các phòng không nằm trong danh sách bookedRoomIds
-        List<Long> finalBookedRoomIds = bookedRoomIds;
-        return allRoomsOfType.stream()
-                .filter(room -> !finalBookedRoomIds.contains(room.getId()))
-                .map(RoomResponse::from)
-                .collect(Collectors.toList());
+        Set<Long> bookedRoomIds = fetchBookedRoomIds(checkIn, checkOut);
+        List<Room> availableRooms = new ArrayList<>();
+        for (Room room : inventory) {
+            if (room.getId() != null && !bookedRoomIds.contains(room.getId())) {
+                availableRooms.add(room);
+            }
+        }
+        return availableRooms;
     }
 
-    /**
-     * Tạo phòng mới và xoá cache rooms:all (vì danh sách đã thay đổi).
-     */
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "rooms:all", allEntries = true),
-            @CacheEvict(value = "rooms:all:v2", allEntries = true),
-            @CacheEvict(value = "rooms:available", allEntries = true),
-            @CacheEvict(value = "rooms:available:v2", allEntries = true)
-    })
     public Room createRoom(Room room) {
-        if (room.getBeds() != null) {
-            for (Bed bed : room.getBeds()) {
+        if (room.getBedOverrides() != null) {
+            for (RoomBedOverride bed : room.getBedOverrides()) {
                 bed.setRoom(room);
             }
         }
         return roomRepository.save(room);
     }
 
-    /**
-     * Cập nhật phòng: xoá cache chi tiết phòng đó + toàn bộ rooms:all.
-     */
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "rooms:all", allEntries = true),
-            @CacheEvict(value = "rooms:all:v2", allEntries = true),
-            @CacheEvict(value = "rooms:detail", key = "#id"),
-            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
-            @CacheEvict(value = "rooms:available", allEntries = true),
-            @CacheEvict(value = "rooms:available:v2", allEntries = true)
-    })
     public Room updateRoom(Long id, Room roomDetails) {
         return roomRepository.findById(id).map(room -> {
             room.setRoomNumber(roomDetails.getRoomNumber());
             room.setRoomType(roomDetails.getRoomType());
             room.setStatus(roomDetails.getStatus());
-            room.setFloor(roomDetails.getFloor());
-            room.setNote(roomDetails.getNote());
-            room.setActualCapacity(roomDetails.getActualCapacity());
+            room.setFloorNumber(roomDetails.getFloorNumber());
+            room.setAreaM2(roomDetails.getAreaM2());
+            room.setViewType(roomDetails.getViewType());
+            room.setHasBalcony(roomDetails.getHasBalcony());
+            room.setHasBathtub(roomDetails.getHasBathtub());
+            room.setSmokingPolicy(roomDetails.getSmokingPolicy());
+            room.setIsAccessible(roomDetails.getIsAccessible());
+            room.setIsConnecting(roomDetails.getIsConnecting());
+            room.setConnectedRoomId(roomDetails.getConnectedRoomId());
+            room.setFloorLevel(roomDetails.getFloorLevel());
+            room.setMaintenanceStatus(roomDetails.getMaintenanceStatus());
 
-            if (roomDetails.getBeds() != null) {
-                room.getBeds().clear();
-                for (Bed bed : roomDetails.getBeds()) {
+            if (roomDetails.getBedOverrides() != null) {
+                room.getBedOverrides().clear();
+                for (RoomBedOverride bed : roomDetails.getBedOverrides()) {
                     bed.setRoom(room);
-                    room.getBeds().add(bed);
+                    room.getBedOverrides().add(bed);
                 }
             }
 
@@ -139,14 +114,6 @@ public class RoomService {
     }
 
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "rooms:all", allEntries = true),
-            @CacheEvict(value = "rooms:all:v2", allEntries = true),
-            @CacheEvict(value = "rooms:detail", key = "#id"),
-            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
-            @CacheEvict(value = "rooms:available", allEntries = true),
-            @CacheEvict(value = "rooms:available:v2", allEntries = true)
-    })
     public Room updateRoomStatus(Long id, RoomStatus status) {
         return roomRepository.findById(id).map(room -> {
             room.setStatus(status);
@@ -154,19 +121,41 @@ public class RoomService {
         }).orElse(null);
     }
 
-    /**
-     * Xoá phòng: xoá tất cả cache liên quan.
-     */
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "rooms:all", allEntries = true),
-            @CacheEvict(value = "rooms:all:v2", allEntries = true),
-            @CacheEvict(value = "rooms:detail", key = "#id"),
-            @CacheEvict(value = "rooms:detail:v2", key = "#id"),
-            @CacheEvict(value = "rooms:available", allEntries = true),
-            @CacheEvict(value = "rooms:available:v2", allEntries = true)
-    })
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);
+    }
+
+    private Set<Long> fetchBookedRoomIds(LocalDate checkIn, LocalDate checkOut) {
+        String url = UriComponentsBuilder
+                .fromHttpUrl(bookingServiceUrl)
+                .path("/bookings/booked-rooms")
+                .queryParam("checkIn", checkIn)
+                .queryParam("checkOut", checkOut)
+                .toUriString();
+        try {
+            Long[] bookedRoomIds = restTemplate.getForObject(url, Long[].class);
+            if (bookedRoomIds == null) {
+                return Set.of();
+            }
+            Set<Long> ids = new LinkedHashSet<>();
+            for (Long roomId : bookedRoomIds) {
+                if (roomId != null) {
+                    ids.add(roomId);
+                }
+            }
+            return ids;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Could not verify room availability from booking-service", ex);
+        }
+    }
+
+    private boolean isBookableInventoryStatus(RoomStatus status) {
+        if (status == null) {
+            return false;
+        }
+        return status != RoomStatus.MAINTENANCE
+                && status != RoomStatus.OUT_OF_SERVICE
+                && status != RoomStatus.BLOCKED;
     }
 }

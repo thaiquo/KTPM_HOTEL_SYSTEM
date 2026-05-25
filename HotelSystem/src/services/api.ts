@@ -34,6 +34,32 @@ export interface UpdateEmployeePayload {
   active?: boolean;
 }
 
+type RoomAmenityBackend = {
+  id: number;
+  amenity: {
+    id: number;
+    code: string;
+    name: string;
+    category: string;
+    isChargeable: boolean;
+    icon?: string;
+  };
+  isActive: boolean;
+};
+
+type RoomBedOverrideBackend = {
+  id: number;
+  bedType: { id: number; code: string; name: string; maxOccupantsPerBed?: number };
+  quantity: number;
+};
+
+type RoomTypeBedConfigBackend = {
+  id: number;
+  bedType: { id: number; code: string; name: string; maxOccupantsPerBed?: number };
+  quantity: number;
+  isPrimary: boolean;
+};
+
 type RoomBackend = {
   id: number;
   roomNumber: string;
@@ -44,24 +70,47 @@ type RoomBackend = {
     maxCapacity: number;
     defaultCapacity: number;
     description: string;
-    images: { imageUrl: string; isThumbnail: boolean }[];
+    images: { id?: number; imageUrl: string; isThumbnail: boolean }[];
+    bedConfigs?: RoomTypeBedConfigBackend[];
   };
   status: string;
-  floor: number;
-  beds: { type: string; quantity: number }[];
+  // cũ: floor — mới: floorNumber + floorLevel
+  floor?: number;
+  floorNumber?: number;
+  floorLevel?: string;
   note?: string;
-  actualCapacity: number;
+  actualCapacity?: number;
+  areaM2?: number;
+  viewType?: string;
+  hasBalcony?: boolean;
+  hasBathtub?: boolean;
+  smokingPolicy?: string;
+  isAccessible?: boolean;
+  isConnecting?: boolean;
+  connectedRoomId?: number;
+  maintenanceStatus?: string;
+  // Được nạp lazy bởi Hibernate BatchSize
+  amenities?: RoomAmenityBackend[];
+  bedOverrides?: RoomBedOverrideBackend[];
 };
 
 type BookingBackend = {
   id?: number | string;
-  roomId?: number | string;
+  bookingCode?: string;
   userId?: number | string;
+  roomId?: number | string;
   checkIn?: string;
   checkOut?: string;
   status?: string;
   createdAt?: string;
+  confirmedAt?: string;
+  subtotal?: number;
+  discountTotal?: number;
+  taxAmount?: number;
   finalTotal?: number;
+  totalPrice?: number;
+  totalRooms?: number;
+  totalGuests?: number;
   depositAmount?: number;
   paidAmount?: number;
   ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
@@ -72,11 +121,19 @@ type BookingBackend = {
   cancellationReason?: string;
   actualCheckInAt?: string;
   actualCheckOutAt?: string;
+  reservationExpiredAt?: string;
+  lockStatus?: string;
+  source?: string;
+  notes?: string;
+  currency?: string;
+  guests?: number;
+  items?: any[];
 };
 
 type BookingGuestBackend = {
   id?: number | string;
   bookingId?: number | string;
+  roomId?: number | string;
   fullName?: string;
   dateOfBirth?: string;
   phone?: string;
@@ -187,6 +244,32 @@ export type UserNotification = {
   createdAt: string;
 };
 
+export type BookingInvoiceRecord = {
+  id: string;
+  bookingId: string;
+  bookingCode?: string;
+  bookingStatus?: string;
+  customerUserId?: string;
+  customerName?: string;
+  representativeName?: string;
+  representativePhone?: string;
+  representativeCccd?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  totalRooms?: number;
+  checkoutStaffId?: string;
+  checkinStaffId?: string;
+  checkedInAt?: string;
+  checkedOutAt?: string;
+  refundTransactionId?: string;
+  refundStatus?: string;
+  refundSettlementAmount?: number;
+  amount: number;
+  currency?: string;
+  lines?: any;
+  createdAt?: string;
+};
+
 export type RefundRecord = {
   id: string;
   bookingId: string;
@@ -216,11 +299,10 @@ export type BookingGuestPayload = {
 };
 
 export type CreateBookingPayload = {
-  roomId: number;
+  rooms: { roomId: number; priceSnapshot: number }[];
   userId: number;
   checkIn: string;
   checkOut: string;
-  pricePerNight: number;
   paymentType?: PaymentType;
   ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
   guestCount: number;
@@ -231,7 +313,7 @@ export type CreateBookingPayload = {
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_BOOKING_API_URL || '/booking-api',
-  timeout: 30000, // 30s timeout for stability
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -239,6 +321,7 @@ const api = axios.create({
 
 const authHttp = axios.create({
   baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -247,6 +330,7 @@ const authHttp = axios.create({
 
 const userHttp = axios.create({
   baseURL: import.meta.env.VITE_USER_API_URL || '/user-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -254,6 +338,7 @@ const userHttp = axios.create({
 
 const roomHttp = axios.create({
   baseURL: import.meta.env.VITE_ROOM_API_URL || '/room-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -261,6 +346,7 @@ const roomHttp = axios.create({
 
 const paymentHttp = axios.create({
   baseURL: import.meta.env.VITE_PAYMENT_API_URL || '/payment-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -268,6 +354,7 @@ const paymentHttp = axios.create({
 
 const notificationHttp = axios.create({
   baseURL: import.meta.env.VITE_NOTIFICATION_API_URL || '/notification-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -275,6 +362,7 @@ const notificationHttp = axios.create({
 
 const authResourceHttp = axios.create({
   baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -349,21 +437,89 @@ const attachAuthInterceptors = (client: typeof api) => {
 };
 
 const mapRoom = (room: RoomBackend): Room => {
+  const capacity = room.actualCapacity || room.roomType?.maxCapacity || 2;
+  const floorNumber = room.floorNumber ?? room.floor ?? 0;
+  const floorLevel = room.floorLevel || (floorNumber >= 8 ? 'TOP' : floorNumber >= 6 ? 'HIGH' : floorNumber >= 4 ? 'MID' : 'LOW');
+
+  // Map amenities từ room_amenities (Set<RoomAmenity> của backend)
+  const amenities = (room.amenities ?? []).map((ra) => ({
+    id: ra.id,
+    amenity: {
+      id: ra.amenity.id,
+      code: ra.amenity.code,
+      name: ra.amenity.name,
+      isChargeable: ra.amenity.isChargeable ?? false,
+      isActive: ra.isActive ?? true,
+    },
+    isActive: ra.isActive ?? true,
+  }));
+
+  // Map beds từ bedOverrides (ưu tiên) hoặc bedConfigs của roomType
+  let beds: { type: string; quantity: number }[] = [];
+  if (room.bedOverrides && room.bedOverrides.length > 0) {
+    beds = room.bedOverrides.map((b) => ({ type: b.bedType?.name ?? b.bedType?.code ?? 'Bed', quantity: b.quantity }));
+  } else if (room.roomType?.bedConfigs && room.roomType.bedConfigs.length > 0) {
+    beds = room.roomType.bedConfigs
+      .filter((bc: any) => bc.isPrimary !== false)
+      .map((bc: any) => ({ type: bc.bedType?.name ?? bc.bedType?.code ?? 'Bed', quantity: bc.quantity }));
+  }
+
+  // Sắp xếp ảnh: thumbnail trước
+  const images = [...(room.roomType?.images ?? [])].sort((a, b) =>
+    (b.isThumbnail ? 1 : 0) - (a.isThumbnail ? 1 : 0)
+  );
+
+  const bedConfigs = (room.roomType?.bedConfigs ?? []).map((bc) => ({
+    id: bc.id,
+    quantity: bc.quantity,
+    isPrimary: bc.isPrimary ?? false,
+    bedType: {
+      id: bc.bedType.id,
+      code: bc.bedType.code,
+      name: bc.bedType.name,
+      maxOccupantsPerBed: bc.bedType.maxOccupantsPerBed ?? 0,
+    },
+  }));
+
   return {
     id: String(room.id),
-    name: `${room.roomType.type} ${room.roomNumber ? `- ${room.roomNumber}` : ''}`.trim(),
+    name: `Phòng ${room.roomNumber}`,
     roomNumber: room.roomNumber,
-    type: room.roomType.type,
-    price: room.roomType.basePrice,
-    maxGuests: room.actualCapacity || room.roomType.maxCapacity,
-    images: room.roomType.images?.map(img => img.imageUrl) || [],
-    amenities: [],
-    description: room.roomType.description,
-    available: room.status === 'AVAILABLE',
+    maxCapacity: capacity,
+    viewType: room.viewType || 'City View',
+    areaM2: room.areaM2 || 0,
+    hasBalcony: !!room.hasBalcony,
+    hasBathtub: !!room.hasBathtub,
+    smokingPolicy: (room.smokingPolicy || 'NON_SMOKING') as any,
+    isAccessible: !!room.isAccessible,
+    isConnecting: !!room.isConnecting,
+    connectedRoomId: room.connectedRoomId,
+    floorNumber,
+    floorLevel,
     status: room.status,
-    floor: room.floor,
-    bedType: room.beds?.map(b => `${b.quantity} ${b.type}`).join(', ') || 'Chưa cấu hình',
+    maintenanceStatus: room.maintenanceStatus || 'OK',
+    roomType: {
+      id: String(room.roomType.id),
+      type: room.roomType.type,
+      basePrice: room.roomType.basePrice,
+      maxCapacity: room.roomType.maxCapacity,
+      defaultCapacity: room.roomType.defaultCapacity,
+      description: room.roomType.description,
+      images,
+      bedConfigs: bedConfigs as any,
+    },
+    beds,
+    amenities,
   };
+};
+
+const normalizeOptionalId = (value: unknown): string | undefined => {
+  if (value == null) return undefined;
+  const normalized = String(value).trim();
+  if (!normalized || normalized === 'undefined' || normalized === 'null' || normalized === 'NaN') {
+    return undefined;
+  }
+  return normalized;
 };
 
 const mapBooking = (booking: BookingBackend): Booking => {
@@ -372,18 +528,38 @@ const mapBooking = (booking: BookingBackend): Booking => {
     'pending_payment', 'pending', 'deposit_paid', 'confirmed',
     'checked_in', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
   ].includes(rawStatus) ? rawStatus : 'pending_payment') as Booking['status'];
+  const primaryRoomId = normalizeOptionalId(booking.roomId)
+    || normalizeOptionalId(booking.items?.[0]?.roomId);
 
   return {
     id: String(booking.id ?? ''),
-    roomId: String(booking.roomId ?? ''),
+    bookingCode: booking.bookingCode,
     userId: String(booking.userId ?? ''),
+    roomId: primaryRoomId,
     checkIn: booking.checkIn || '',
     checkOut: booking.checkOut || '',
-    totalPrice: Number(booking.finalTotal || 0),
+    subtotal: Number(booking.subtotal || booking.finalTotal || 0),
+    discountTotal: Number(booking.discountTotal || 0),
+    taxAmount: Number(booking.taxAmount || 0),
+    totalPrice: Number(booking.totalPrice || booking.finalTotal || 0),
+    totalRooms: Number(booking.totalRooms || 0),
+    totalGuests: Number(booking.totalGuests || booking.guests || 0),
     status,
-    guests: 0,
-    rooms: 0,
+    guests: Number(booking.guests || 0),
+    items: ((booking.items || []).map((item: any) => ({
+      id: String(item.id),
+      roomId: normalizeOptionalId(item.roomId),
+      roomTypeId: normalizeOptionalId(item.roomTypeId),
+      priceSnapshot: Number(item.priceSnapshot ?? item.pricePerNightAtBooking ?? 0),
+      finalPrice: Number(item.finalPrice || 0),
+      discount: Number(item.discount || 0),
+      status: item.status,
+      checkIn: item.checkIn,
+      checkOut: item.checkOut,
+      nights: item.nights
+    })) as any),
     createdAt: booking.createdAt || '',
+    confirmedAt: booking.confirmedAt,
     ratePlan: booking.ratePlan,
     paymentType: booking.paymentType,
     paymentStatus: booking.paymentStatus,
@@ -394,6 +570,11 @@ const mapBooking = (booking: BookingBackend): Booking => {
     cancellationReason: booking.cancellationReason,
     actualCheckInAt: booking.actualCheckInAt,
     actualCheckOutAt: booking.actualCheckOutAt,
+    reservationExpiredAt: booking.reservationExpiredAt,
+    lockStatus: booking.lockStatus as any,
+    source: booking.source as Booking['source'],
+    notes: booking.notes,
+    currency: booking.currency,
   };
 };
 
@@ -452,20 +633,53 @@ attachAuthInterceptors(roomHttp);
 attachAuthInterceptors(paymentHttp);
 attachAuthInterceptors(notificationHttp);
 
+const ROOM_CACHE_TTL_MS = 30_000;
+const roomByIdCache = new Map<string, { room: Room; expiresAt: number }>();
+const roomByIdPending = new Map<string, Promise<Room>>();
+
+const cacheRoom = (room: Room) => {
+  if (!room?.id) return room;
+  roomByIdCache.set(String(room.id), { room, expiresAt: Date.now() + ROOM_CACHE_TTL_MS });
+  return room;
+};
+
+const clearRoomCache = (id?: string) => {
+  if (id) {
+    roomByIdCache.delete(String(id));
+    roomByIdPending.delete(String(id));
+    return;
+  }
+  roomByIdCache.clear();
+  roomByIdPending.clear();
+};
+
 // Room APIs
 export const roomApi = {
   getAll: async (filters?: SearchFilters): Promise<Room[]> => {
-    const response = await roomHttp.get<unknown>('/rooms', { params: filters });
-    return extractRoomList(response.data);
+    const response = await roomHttp.get<unknown>('/public/rooms', { params: filters });
+    const rooms = extractRoomList(response.data);
+    rooms.forEach(cacheRoom);
+    return rooms;
   },
 
   getById: async (id: string): Promise<Room> => {
-    const response = await roomHttp.get<unknown>(`/rooms/${id}`);
-    return extractSingleRoom(response.data);
+    const normalizedId = String(id);
+    const cached = roomByIdCache.get(normalizedId);
+    if (cached && cached.expiresAt > Date.now()) return cached.room;
+
+    const pending = roomByIdPending.get(normalizedId);
+    if (pending) return pending;
+
+    const request = roomHttp.get<unknown>(`/public/rooms/${normalizedId}`)
+      .then((response) => cacheRoom(extractSingleRoom(response.data)))
+      .finally(() => roomByIdPending.delete(normalizedId));
+
+    roomByIdPending.set(normalizedId, request);
+    return request;
   },
 
-  getAvailableRooms: async (roomTypeId: string, checkIn: string, checkOut: string): Promise<Room[]> => {
-    const response = await roomHttp.get<unknown>('/rooms/available', {
+  getAvailableRooms: async (roomTypeId: string | undefined, checkIn: string, checkOut: string): Promise<Room[]> => {
+    const response = await roomHttp.get<unknown>('/public/rooms/available', {
       params: { roomTypeId, checkIn, checkOut }
     });
     return extractRoomList(response.data);
@@ -473,25 +687,37 @@ export const roomApi = {
 
   create: async (room: Partial<Room>): Promise<Room> => {
     const response = await roomHttp.post<unknown>('/rooms', room);
-    return extractSingleRoom(response.data);
+    const created = extractSingleRoom(response.data);
+    cacheRoom(created);
+    return created;
   },
 
   update: async (id: string, room: Partial<Room>): Promise<Room> => {
     const response = await roomHttp.put<unknown>(`/rooms/${id}`, room);
-    return extractSingleRoom(response.data);
+    const updated = extractSingleRoom(response.data);
+    cacheRoom(updated);
+    return updated;
   },
 
   updateStatus: async (id: string, status: string): Promise<Room> => {
     const response = await roomHttp.put<unknown>(`/rooms/${id}/status`, { roomId: Number(id), status });
-    return extractSingleRoom(response.data);
+    const updated = extractSingleRoom(response.data);
+    cacheRoom(updated);
+    return updated;
   },
 
   remove: async (id: string): Promise<void> => {
     await roomHttp.delete(`/rooms/${id}`);
+    clearRoomCache(id);
   },
 
   getRoomTypes: async (): Promise<any[]> => {
     const response = await roomHttp.get<any[]>('/room-types');
+    return response.data;
+  },
+
+  getPrice: async (id: string, checkIn: string, checkOut: string): Promise<any> => {
+    const response = await roomHttp.get<unknown>(`/public/rooms/${id}/price`, { params: { checkIn, checkOut } });
     return response.data;
   },
 
@@ -540,9 +766,9 @@ export const bookingApi = {
     return response.data;
   },
 
-  getGuests: async (id: string): Promise<any[]> => {
-    const response = await api.get<any[]>(`/bookings/${id}/guests`);
-    return response.data;
+  getGuests: async (id: string): Promise<BookingGuest[]> => {
+    const response = await api.get<unknown>(`/bookings/${id}/guests`);
+    return extractBookingGuestList(response.data);
   },
 
   submitPreCheckin: async (id: string, documents: Array<{
@@ -720,7 +946,9 @@ export type CheckoutResponse = {
   lateMinutes: number;
   lateCheckoutFee: number;
   paymentRequired: boolean;
+  refundRequired?: boolean;
   bookingStatus: string;
+  actualCheckoutAt?: string;
   checkoutType?: string;
   totalNights?: number;
   refundAmount?: number;
@@ -728,6 +956,16 @@ export type CheckoutResponse = {
   /** Giá 1 đêm tham chiếu từ backend (công thức hoàn tiền) */
   effectivePricePerNight?: number;
   finalAmount?: number;
+  roomCharge?: number;
+  actualRoomCharge?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  grandTotal?: number;
+  amountPaid?: number;
+  remainingRoomAmount?: number;
+  remainingBalance?: number;
+  refundSettlementAmount?: number;
+  paymentStatus?: string;
   usedNights?: number;
   chargeNights?: number;
   unusedNights?: number;
@@ -735,8 +973,19 @@ export type CheckoutResponse = {
   representativeFullName?: string;
   representativePhone?: string;
   representativeCccd?: string;
+  checkedInByStaffId?: string;
+  checkedOutByStaffId?: string;
   message?: string;
   refundAllocations?: RefundAllocationLine[];
+  serviceTotal?: number;
+  serviceLines?: {
+    id?: string;
+    bookingId?: string;
+    name?: string;
+    quantity?: number;
+    unitPrice?: number;
+    lineTotal?: number;
+  }[];
 };
 
 export type CheckInOutStats = {
@@ -747,6 +996,20 @@ export type CheckInOutStats = {
   alreadyCheckedOut: number;
   notYetCheckedOut: number;
   inCleaningNow: number;
+};
+
+export type RoomChangeResponse = {
+  bookingId: string;
+  fromRoomId: string;
+  toRoomId: string;
+  remainingNights: number;
+  oldNightlyPrice: number;
+  newNightlyPrice: number;
+  priceDifferencePerNight: number;
+  totalDifference: number;
+  paymentAction: 'COLLECT' | 'REFUND' | 'NONE' | string;
+  oldRoomNextStatus: string;
+  booking?: Booking;
 };
 
 /** Ngày hiện tại theo múi giờ VN (yyyy-MM-dd) — đồng bộ với backend staff APIs. */
@@ -775,6 +1038,7 @@ const extractCheckInOutStats = (payload: unknown): CheckInOutStats => {
 const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
   id: String(guest.id ?? ''),
   bookingId: String(guest.bookingId ?? ''),
+  roomId: normalizeOptionalId(guest.roomId),
   fullName: guest.fullName || '',
   dateOfBirth: guest.dateOfBirth,
   phone: guest.phone,
@@ -784,7 +1048,7 @@ const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
   type: (guest.type || undefined) as BookingGuest['type'],
   primaryGuest: Boolean(guest.primaryGuest),
   checkInPerson: Boolean(guest.checkInPerson),
-});
+} as any);
 
 const extractBookingGuestList = (payload: unknown): BookingGuest[] => {
   if (Array.isArray(payload)) {
@@ -955,12 +1219,25 @@ function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): 
     lateMinutes: Number(data?.lateMinutes || 0),
     lateCheckoutFee: Number(data?.lateCheckoutFee || 0),
     paymentRequired: Boolean(data?.paymentRequired),
+    refundRequired: data?.refundRequired != null ? Boolean(data.refundRequired) : undefined,
     bookingStatus: String(data?.bookingStatus || ''),
+    actualCheckoutAt: data?.actualCheckoutAt != null ? String(data.actualCheckoutAt) : undefined,
     checkoutType: data?.checkoutType != null ? String(data.checkoutType) : undefined,
     totalNights: data?.totalNights != null ? Number(data.totalNights) : undefined,
     refundAmount: data?.refundAmount != null ? Number(data.refundAmount) : undefined,
     refundRate: data?.refundRate != null ? Number(data.refundRate) : undefined,
     finalAmount: data?.finalAmount != null ? Number(data.finalAmount) : undefined,
+    roomCharge: data?.roomCharge != null ? Number(data.roomCharge) : undefined,
+    actualRoomCharge: data?.actualRoomCharge != null ? Number(data.actualRoomCharge) : undefined,
+    taxAmount: data?.taxAmount != null ? Number(data.taxAmount) : undefined,
+    discountAmount: data?.discountAmount != null ? Number(data.discountAmount) : undefined,
+    grandTotal: data?.grandTotal != null ? Number(data.grandTotal) : undefined,
+    amountPaid: data?.amountPaid != null ? Number(data.amountPaid) : undefined,
+    remainingRoomAmount: data?.remainingRoomAmount != null ? Number(data.remainingRoomAmount) : undefined,
+    remainingBalance: data?.remainingBalance != null ? Number(data.remainingBalance) : undefined,
+    refundSettlementAmount:
+      data?.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+    paymentStatus: data?.paymentStatus != null ? String(data.paymentStatus) : undefined,
     usedNights: data?.usedNights != null ? Number(data.usedNights) : undefined,
     chargeNights: data?.chargeNights != null ? Number(data.chargeNights) : undefined,
     unusedNights: data?.unusedNights != null ? Number(data.unusedNights) : undefined,
@@ -972,8 +1249,49 @@ function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): 
       data?.representativeFullName != null ? String(data.representativeFullName) : undefined,
     representativePhone: data?.representativePhone != null ? String(data.representativePhone) : undefined,
     representativeCccd: data?.representativeCccd != null ? String(data.representativeCccd) : undefined,
+    checkedInByStaffId: data?.checkedInByStaffId != null ? String(data.checkedInByStaffId) : undefined,
+    checkedOutByStaffId: data?.checkedOutByStaffId != null ? String(data.checkedOutByStaffId) : undefined,
     message: data?.message != null ? String(data.message) : undefined,
     refundAllocations,
+    serviceTotal: data?.serviceTotal != null ? Number(data.serviceTotal) : undefined,
+    serviceLines: Array.isArray(data?.serviceLines)
+      ? data.serviceLines.map((l: any) => ({
+          id: l.id != null ? String(l.id) : undefined,
+          bookingId: l.bookingId != null ? String(l.bookingId) : undefined,
+          name: l.name != null ? String(l.name) : undefined,
+          quantity: l.quantity != null ? Number(l.quantity) : undefined,
+          unitPrice: l.unitPrice != null ? Number(l.unitPrice) : undefined,
+          lineTotal: l.lineTotal != null ? Number(l.lineTotal) : undefined,
+        }))
+      : undefined,
+  };
+}
+
+function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
+  return {
+    id: String(data?.id ?? ''),
+    bookingId: String(data?.bookingId ?? ''),
+    bookingCode: data?.bookingCode != null ? String(data.bookingCode) : undefined,
+    bookingStatus: data?.bookingStatus != null ? String(data.bookingStatus) : undefined,
+    customerUserId: data?.customerUserId != null ? String(data.customerUserId) : undefined,
+    customerName: data?.customerName != null ? String(data.customerName) : undefined,
+    representativeName: data?.representativeName != null ? String(data.representativeName) : undefined,
+    representativePhone: data?.representativePhone != null ? String(data.representativePhone) : undefined,
+    representativeCccd: data?.representativeCccd != null ? String(data.representativeCccd) : undefined,
+    checkInDate: data?.checkInDate != null ? String(data.checkInDate) : undefined,
+    checkOutDate: data?.checkOutDate != null ? String(data.checkOutDate) : undefined,
+    totalRooms: data?.totalRooms != null ? Number(data.totalRooms) : undefined,
+    checkoutStaffId: data?.checkoutStaffId != null ? String(data.checkoutStaffId) : undefined,
+    checkinStaffId: data?.checkinStaffId != null ? String(data.checkinStaffId) : undefined,
+    checkedInAt: data?.checkedInAt != null ? String(data.checkedInAt) : undefined,
+    checkedOutAt: data?.checkedOutAt != null ? String(data.checkedOutAt) : undefined,
+    refundTransactionId: data?.refundTransactionId != null ? String(data.refundTransactionId) : undefined,
+    refundStatus: data?.refundStatus != null ? String(data.refundStatus) : undefined,
+    refundSettlementAmount: data?.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+    amount: Number(data?.amount || 0),
+    currency: data?.currency != null ? String(data.currency) : undefined,
+    lines: data?.lines,
+    createdAt: data?.createdAt != null ? String(data.createdAt) : undefined,
   };
 }
 
@@ -1097,6 +1415,59 @@ export const staffBookingApi = {
   completeCheckout: async (bookingId: string): Promise<Booking> => {
     const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/checkout/complete`);
     return extractSingleBooking(response.data);
+  },
+
+  getInvoice: async (bookingId: string): Promise<BookingInvoiceRecord> => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/invoice`);
+    return mapBookingInvoiceRecord(response.data?.data ?? response.data);
+  },
+
+  getInvoices: async (): Promise<BookingInvoiceRecord[]> => {
+    const response = await api.get<unknown>(`/api/staff/invoices`);
+    const payload = Array.isArray(response.data) ? response.data : response.data?.data ?? [];
+    return Array.isArray(payload) ? payload.map(mapBookingInvoiceRecord) : [];
+  },
+
+  // Service lines (room service) management for staff
+  getServiceLines: async (bookingId: string) => {
+    const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/services`);
+    return Array.isArray(response.data) ? response.data : response.data?.data ?? [];
+  },
+
+  addServiceLine: async (bookingId: string, payload: { name: string; quantity?: number; unitPrice?: number }) => {
+    const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/services`, payload);
+    return response.data?.data ?? response.data;
+  },
+
+  deleteServiceLine: async (bookingId: string, lineId: string) => {
+    const response = await api.delete<unknown>(`/api/staff/bookings/${bookingId}/services/${lineId}`);
+    return response.data;
+  },
+
+  changeRoom: async (
+    bookingId: string,
+    payload: { fromRoomId?: string; toRoomId: string; oldRoomNextStatus?: 'CLEANING' | 'AVAILABLE'; reason?: string }
+  ): Promise<RoomChangeResponse> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/room-change`, {
+      fromRoomId: payload.fromRoomId ? Number(payload.fromRoomId) : undefined,
+      toRoomId: Number(payload.toRoomId),
+      oldRoomNextStatus: payload.oldRoomNextStatus || 'CLEANING',
+      reason: payload.reason,
+    });
+    const data = response.data?.data ?? response.data;
+    return {
+      bookingId: String(data.bookingId ?? bookingId),
+      fromRoomId: String(data.fromRoomId ?? ''),
+      toRoomId: String(data.toRoomId ?? ''),
+      remainingNights: Number(data.remainingNights || 0),
+      oldNightlyPrice: Number(data.oldNightlyPrice || 0),
+      newNightlyPrice: Number(data.newNightlyPrice || 0),
+      priceDifferencePerNight: Number(data.priceDifferencePerNight || 0),
+      totalDifference: Number(data.totalDifference || 0),
+      paymentAction: String(data.paymentAction || 'NONE'),
+      oldRoomNextStatus: String(data.oldRoomNextStatus || 'CLEANING'),
+      booking: data.booking ? mapBooking(data.booking as BookingBackend) : undefined,
+    };
   },
 };
 

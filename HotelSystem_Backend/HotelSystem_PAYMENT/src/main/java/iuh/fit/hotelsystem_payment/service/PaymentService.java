@@ -130,8 +130,9 @@ public class PaymentService {
         payment.setAmount(request.getAmount());
         payment.setPaidAmount(0.0);
         payment.setTotalAmount(request.getAmount());
-        payment.setPaymentType(PaymentType.valueOf(request.getType() != null ? request.getType() : "CHECKIN_REMAINING_PAYMENT"));
-        payment.setInvoiceCategory(InvoiceCategory.CHECKIN);
+        PaymentType paymentType = PaymentType.valueOf(request.getType() != null ? request.getType() : "CHECKIN_REMAINING_PAYMENT");
+        payment.setPaymentType(paymentType);
+        payment.setInvoiceCategory(paymentType == PaymentType.LATE_CHECKOUT_FEE ? InvoiceCategory.CHECKOUT : InvoiceCategory.CHECKIN);
         payment.setMethod(request.getMethod() != null ? request.getMethod() : "CASH");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setPaymentCode(paymentCode);
@@ -424,6 +425,27 @@ public class PaymentService {
 
     @Transactional
     public Payment createLateCheckoutFee(Long bookingId, OperationalPaymentRequest request) {
+        List<Payment> pendingFees = paymentRepository.findByBookingId(bookingId).stream()
+                .filter(p -> p.getPaymentType() == PaymentType.LATE_CHECKOUT_FEE)
+                .filter(p -> p.getStatus() == PaymentStatus.PENDING)
+                .toList();
+        if (!pendingFees.isEmpty()) {
+            Payment existing = pendingFees.stream()
+                    .max(Comparator.comparing(
+                            Payment::getCreatedAt,
+                            Comparator.nullsLast(Comparator.naturalOrder())
+                    ))
+                    .orElse(pendingFees.get(pendingFees.size() - 1));
+            existing.setUserId(request.getUserId());
+            existing.setAmount(request.getAmount());
+            existing.setPaidAmount(0.0);
+            existing.setTotalAmount(request.getAmount());
+            existing.setInvoiceCategory(InvoiceCategory.CHECKOUT);
+            existing.setMethod("PENDING");
+            existing.setExpiredAt(nowVi().plusMinutes(30));
+            return paymentRepository.save(existing);
+        }
+
         Payment payment = new Payment();
         payment.setBookingId(bookingId);
         payment.setUserId(request.getUserId());
@@ -472,7 +494,11 @@ public class PaymentService {
                 .filter(p -> p.getStatus() == PaymentStatus.PENDING)
                 .toList();
         if (fees.isEmpty()) return null;
-        Payment fee = fees.get(0);
+        Payment fee = fees.stream()
+                .max(Comparator
+                        .comparing(Payment::getAmount, Comparator.nullsLast(Double::compareTo))
+                        .thenComparing(Payment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(fees.get(fees.size() - 1));
         fee.setStatus(PaymentStatus.SUCCESS);
         fee.setPaidAmount(fee.getAmount());
         fee.setPaidAt(nowVi());
@@ -557,9 +583,31 @@ public class PaymentService {
                 .filter(p -> p.getPaymentType() == PaymentType.LATE_CHECKOUT_FEE)
                 .toList();
         if (fees.isEmpty()) return new PaymentStatusResponse(bookingId, "NONE", 0.0, 0.0);
-        Payment fee = fees.get(0);
+
+        double requiredAmount = fees.stream()
+                .map(Payment::getAmount)
+                .filter(Objects::nonNull)
+                .max(Double::compareTo)
+                .orElse(0.0);
+        double paidAmount = fees.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.SUCCESS)
+                .map(Payment::getPaidAmount)
+                .filter(Objects::nonNull)
+                .max(Double::compareTo)
+                .orElse(0.0);
+
+        if (paidAmount >= requiredAmount && requiredAmount > 0) {
+            return new PaymentStatusResponse(bookingId, "PAID", requiredAmount, paidAmount);
+        }
+
+        Optional<Payment> latest = fees.stream()
+                .max(Comparator.comparing(
+                        Payment::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ));
+        Payment fee = latest.orElse(fees.get(fees.size() - 1));
         String statusStr = fee.getStatus() == PaymentStatus.SUCCESS ? "PAID" : fee.getStatus().name();
-        return new PaymentStatusResponse(bookingId, statusStr, fee.getAmount(), fee.getPaidAmount());
+        return new PaymentStatusResponse(bookingId, statusStr, requiredAmount, paidAmount);
     }
 
     public PaymentStatusResponse getEarlyCheckinFeeStatus(Long bookingId) {

@@ -12,11 +12,11 @@ import {
 } from 'react-icons/hi';
 import { isAxiosError } from 'axios';
 import {
-  employeeApi,
   type CreateEmployeePayload,
   type EmployeeBackend,
   type UpdateEmployeePayload,
 } from '../../../services/api';
+import { employeeApi } from '../../../services/userApi';
 
 type EmployeeStatus = 'ACTIVE' | 'INACTIVE';
 

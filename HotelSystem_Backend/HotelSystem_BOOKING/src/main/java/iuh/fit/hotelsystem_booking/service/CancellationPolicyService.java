@@ -14,9 +14,13 @@ import java.util.EnumSet;
 @Service
 public class CancellationPolicyService {
 
+    private static final int PARTIAL_REFUND_CUTOFF_HOURS = 2;
+    private static final double LATE_CANCEL_REFUND_RATE = 0.8;
+
     private static final EnumSet<BookingStatus> NOT_CANCELABLE_STATUSES = EnumSet.of(
             BookingStatus.CHECKED_IN,
             BookingStatus.COMPLETED,
+            BookingStatus.CANCEL_REQUESTED,
             BookingStatus.CANCELLED,
             BookingStatus.NO_SHOW
     );
@@ -58,27 +62,43 @@ public class CancellationPolicyService {
 
         result.setCanCancel(true);
         boolean holiday = booking.isHoliday();
-        int freeCancelHours = holiday
-                ? BookingConstants.HOLIDAY_FREE_CANCEL_HOURS
-                : BookingConstants.NORMAL_FREE_CANCEL_HOURS;
         result.setPolicyType(holiday ? "HOLIDAY" : "NORMAL");
 
         long hoursUntilCheckIn = ChronoUnit.HOURS.between(cancelTime, checkInDateTime);
         if (noShow) {
             result.setCancelType("NO_SHOW");
             applyPenaltyPolicy(booking, result, true);
-        } else if (hoursUntilCheckIn >= freeCancelHours) {
+        } else if (hoursUntilCheckIn >= BookingConstants.NORMAL_FREE_CANCEL_HOURS) {
             result.setCancelType("FREE_CANCEL");
             result.setCancellationFee(0.0);
             result.setRefundAmount(result.getPaidAmount());
             result.setRefundStatus(result.getRefundAmount() > 0 ? "REFUND_REQUIRED" : "NO_REFUND");
-            result.setReason("Free cancellation before " + freeCancelHours + " hours");
+            result.setReason("Free cancellation before 24 hours");
+        } else if (hoursUntilCheckIn >= PARTIAL_REFUND_CUTOFF_HOURS) {
+            result.setCancelType("PARTIAL_REFUND");
+            applyPartialRefundPolicy(booking, result);
         } else {
             result.setCancelType("LATE_CANCEL");
             applyPenaltyPolicy(booking, result, false);
         }
 
         return result;
+    }
+
+    private void applyPartialRefundPolicy(Booking booking, CancellationPolicyResult result) {
+        if (BookingConstants.PAYMENT_TYPE_HOTEL.equals(resolvePaymentType(booking))) {
+            result.setCancellationFee(oneNightAmount(booking));
+            result.setRefundAmount(0.0);
+            result.setRefundStatus(result.getCancellationFee() > 0 ? "HOTEL_CHARGE" : "NO_REFUND");
+            result.setReason("Cancel within 24 hours but before 2 hours: hotel charge applies");
+            return;
+        }
+        double refund = result.getPaidAmount() * LATE_CANCEL_REFUND_RATE;
+        double fee = Math.max(0.0, result.getPaidAmount() - refund);
+        result.setCancellationFee(fee);
+        result.setRefundAmount(refund);
+        result.setRefundStatus(refund > 0 ? "REFUND_REQUIRED" : "NO_REFUND");
+        result.setReason("Cancel within 24 hours but before 2 hours: refund 80%");
     }
 
     private void applyPenaltyPolicy(Booking booking, CancellationPolicyResult result, boolean noShow) {

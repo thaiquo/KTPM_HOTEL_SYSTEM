@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
+import type { Room } from '../types';
 
 export interface CartItem {
   id: string;
-  roomType: any;
-  bedType: string;
+  room: Room;
   count: number;
-  maxCount: number; // số phòng tối đa còn lại (từ DB)
 }
 
 interface CartContextType {
@@ -14,9 +13,8 @@ interface CartContextType {
   checkIn: string | null;
   checkOut: string | null;
   setDates: (checkIn: string, checkOut: string) => void;
-  addToCart: (roomType: any, bedType: string, count: number, maxCount: number) => void;
+  addToCart: (room: Room) => void;
   removeFromCart: (id: string) => void;
-  updateQuantity: (id: string, count: number) => void;
   clearCart: () => void;
   totalRooms: number;
 }
@@ -25,7 +23,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const cartKey = `hotel_cart_${user?.email || 'guest'}`;
+  const cartKey = `hotel_cart_v2_${user?.email || 'guest'}`;
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem(cartKey);
@@ -39,14 +37,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem(`${cartKey}_checkOut`);
   });
 
-  // Reload cart when user (and cartKey) changes
-  useEffect(() => {
-    const saved = localStorage.getItem(cartKey);
-    setCartItems(saved ? JSON.parse(saved) : []);
-    setCheckInState(localStorage.getItem(`${cartKey}_checkIn`));
-    setCheckOutState(localStorage.getItem(`${cartKey}_checkOut`));
-  }, [cartKey]);
-
   useEffect(() => {
     localStorage.setItem(cartKey, JSON.stringify(cartItems));
   }, [cartItems, cartKey]);
@@ -58,38 +48,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(`${cartKey}_checkOut`, outDate);
   }, [cartKey]);
 
-  const addToCart = useCallback((roomType: any, bedType: string, count: number, maxCount: number) => {
+  const addToCart = useCallback((room: Room) => {
     setCartItems(prev => {
-      // Check if same roomType + bedType already exists in cart
-      const existingIdx = prev.findIndex(item => item.roomType.id === roomType.id && item.bedType === bedType);
-      
-      if (existingIdx >= 0) {
-        const newCart = [...prev];
-        const merged = newCart[existingIdx].count + count;
-        newCart[existingIdx] = {
-          ...newCart[existingIdx],
-          count: Math.min(merged, maxCount),
-          maxCount,
-        };
-        return newCart;
-      }
+      // Instance-based cart: if room.id already exists, don't duplicate
+      if (prev.some(item => item.room.id === room.id)) return prev;
       
       return [...prev, {
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-        roomType,
-        bedType,
-        count,
-        maxCount,
+        id: room.id,
+        room,
+        count: 1
       }];
     });
   }, []);
 
   const removeFromCart = useCallback((id: string) => {
     setCartItems(prev => prev.filter(item => item.id !== id));
-  }, []);
-
-  const updateQuantity = useCallback((id: string, count: number) => {
-    setCartItems(prev => prev.map(item => item.id === id ? { ...item, count } : item));
   }, []);
 
   const clearCart = useCallback(() => {
@@ -100,7 +73,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(`${cartKey}_checkOut`);
   }, [cartKey]);
 
-  const totalRooms = useMemo(() => cartItems.reduce((sum, item) => sum + item.count, 0), [cartItems]);
+  const totalRooms = useMemo(() => cartItems.length, [cartItems]);
 
   const value = useMemo(() => ({
     cartItems,
@@ -109,10 +82,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setDates,
     addToCart,
     removeFromCart,
-    updateQuantity,
     clearCart,
     totalRooms
-  }), [cartItems, checkIn, checkOut, setDates, addToCart, removeFromCart, updateQuantity, clearCart, totalRooms]);
+  }), [cartItems, checkIn, checkOut, setDates, addToCart, removeFromCart, clearCart, totalRooms]);
 
   return (
     <CartContext.Provider value={value}>

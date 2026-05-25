@@ -1,10 +1,12 @@
 package iuh.fit.hotelsystem_room.entity;
 
+import iuh.fit.hotelsystem_room.entity.enums.MaintenanceStatus;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
+import iuh.fit.hotelsystem_room.entity.enums.SmokingPolicy;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.io.Serializable;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -14,39 +16,73 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-public class Room implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+public class Room {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, unique = true)
-    private String roomNumber; // 101, 202...
+    private String roomNumber;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_type_id", nullable = false)
-    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "images"})
     private RoomType roomType;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RoomStatus status;
 
-    @Column(nullable = false)
-    private Integer floor;
+    @Column(name = "area_m2")
+    private Double areaM2;
 
-    @Column(columnDefinition = "TEXT")
-    private String note;
+    @Column(name = "view_type")
+    private String viewType;
 
-    // 👉 cấu hình giường (QUAN TRỌNG)
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("room")
-    private List<Bed> beds;
+    @Column(name = "has_balcony")
+    private Boolean hasBalcony;
 
-    // 👉 capacity thực tế của phòng này (có thể khác type)
-    @Column(nullable = false)
-    private Integer actualCapacity;
+    @Column(name = "has_bathtub")
+    private Boolean hasBathtub;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "smoking_policy")
+    private SmokingPolicy smokingPolicy;
+
+    @Column(name = "is_accessible")
+    private Boolean isAccessible;
+
+    @Column(name = "is_connecting")
+    private Boolean isConnecting;
+
+    @Column(name = "connected_room_id")
+    private Long connectedRoomId;
+
+    @Column(name = "floor_number", nullable = false)
+    private Integer floorNumber;
+
+    @Column(name = "floor_level")
+    private String floorLevel;
+
+    @Column(name = "last_cleaned_at")
+    private LocalDateTime lastCleanedAt;
+
+    @Column(name = "last_maintenance_at")
+    private LocalDateTime lastMaintenanceAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "maintenance_status")
+    private MaintenanceStatus maintenanceStatus;
+
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 10)
+    private java.util.Set<RoomAmenity> amenities;
+
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 10)
+    private java.util.Set<RoomBedOverride> bedOverrides;
+
+    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @org.hibernate.annotations.BatchSize(size = 10)
+    private java.util.Set<RoomStatusHistory> statusHistories;
 }

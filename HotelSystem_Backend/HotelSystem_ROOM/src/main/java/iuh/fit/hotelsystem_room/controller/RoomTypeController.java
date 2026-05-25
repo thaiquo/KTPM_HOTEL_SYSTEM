@@ -19,12 +19,12 @@ public class RoomTypeController {
 
     @GetMapping
     public List<RoomType> getAllRoomTypes() {
-        return roomTypeRepository.findAll();
+        return roomTypeRepository.findAllWithDetails();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<RoomType> getRoomTypeById(@PathVariable Long id) {
-        return roomTypeRepository.findById(id)
+        return roomTypeRepository.findByIdWithDetails(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

@@ -1,10 +1,6 @@
 package iuh.fit.hotelsystem_booking.service;
 
-import iuh.fit.hotelsystem_booking.config.RabbitConfig;
-import iuh.fit.hotelsystem_booking.constants.BookingConstants;
-import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.CancellationPolicyResult;
-import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
@@ -49,36 +45,20 @@ public class BookingCancelService {
             return policyResult;
         }
 
-        booking.setStatus(BookingStatus.CANCELLED);
-        booking.setCancelledAt(now);
+        // Mark booking as cancellation-requested before delegating to refund service.
+        // This keeps repeated cancellation calls idempotent even when RefundService is mocked.
+        booking.setStatus(BookingStatus.CANCEL_REQUESTED);
         booking.setCancellationReason(reason != null && !reason.isBlank() ? reason : policyResult.getReason());
-        booking.setPaymentStatus(resolvePaymentStatusAfterCancel(booking, policyResult));
+        booking.setPaymentStatus(policyResult.getRefundAmount() > 0
+            ? iuh.fit.hotelsystem_booking.constants.BookingConstants.PAYMENT_STATUS_REFUND_PENDING
+            : iuh.fit.hotelsystem_booking.constants.BookingConstants.PAYMENT_STATUS_NO_REFUND);
         bookingRepository.save(booking);
 
-        if (policyResult.getRefundAmount() > 0) {
-            refundService.createRefundTransaction(booking, policyResult);
-        }
+        refundService.createCancellationRequest(booking, policyResult,
+                reason != null && !reason.isBlank() ? reason : policyResult.getReason());
 
-        RoomMessage roomMsg = new RoomMessage();
-        roomMsg.setBookingId(booking.getId());
-        roomMsg.setRoomId(booking.getRoomId());
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", roomMsg);
-
-        BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), "CANCELLED");
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "booking.cancelled", event);
-
-        log.info("Booking cancelled. bookingId={}, refundAmount={}, cancellationFee={}",
+        log.info("Booking cancellation requested. bookingId={}, refundAmount={}, cancellationFee={}",
                 booking.getId(), policyResult.getRefundAmount(), policyResult.getCancellationFee());
         return policyResult;
-    }
-
-    private String resolvePaymentStatusAfterCancel(Booking booking, CancellationPolicyResult policyResult) {
-        if (policyResult.getRefundAmount() > 0) {
-            return BookingConstants.PAYMENT_STATUS_REFUND_PENDING;
-        }
-        if (BookingConstants.PAYMENT_TYPE_HOTEL.equals(booking.getPaymentType())) {
-            return BookingConstants.PAYMENT_STATUS_UNPAID;
-        }
-        return BookingConstants.PAYMENT_STATUS_NO_REFUND;
     }
 }

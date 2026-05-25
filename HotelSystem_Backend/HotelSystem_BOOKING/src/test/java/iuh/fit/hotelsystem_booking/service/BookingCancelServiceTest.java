@@ -43,6 +43,6 @@ class BookingCancelServiceTest {
         cancelService.cancelBooking(10L, "user requested");
         cancelService.cancelBooking(10L, "user requested again");
 
-        verify(refundService, times(1)).createRefundTransaction(any(Booking.class), any());
+        verify(refundService, times(1)).createCancellationRequest(any(Booking.class), any(), anyString());
     }
 }

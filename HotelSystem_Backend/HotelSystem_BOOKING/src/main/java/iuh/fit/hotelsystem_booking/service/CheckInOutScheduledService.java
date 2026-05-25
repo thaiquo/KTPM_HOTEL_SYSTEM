@@ -1,13 +1,15 @@
 package iuh.fit.hotelsystem_booking.service;
 
+import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.RoomStatusUpdateDto;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
-import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,12 +27,12 @@ public class CheckInOutScheduledService {
     private static final Logger log = LoggerFactory.getLogger(CheckInOutScheduledService.class);
 
     private final BookingRepository bookingRepository;
-    private final RoomServiceClient roomServiceClient;
+    private final RabbitTemplate rabbitTemplate;
 
     public CheckInOutScheduledService(BookingRepository bookingRepository,
-                                     RoomServiceClient roomServiceClient) {
+                                     RabbitTemplate rabbitTemplate) {
         this.bookingRepository = bookingRepository;
-        this.roomServiceClient = roomServiceClient;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     /**
@@ -65,13 +67,16 @@ public class CheckInOutScheduledService {
                     booking.setCancelledAt(now);
                     booking.setCancellationReason("Auto-cancelled: Quá giờ checkout mà chưa check-in");
                     bookingRepository.save(booking);
-                    RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
-                    dto.setRoomId(booking.getRoomId());
-                    dto.setStatus("AVAILABLE");
-                    roomServiceClient.updateRoomStatus(booking.getRoomId(), dto);
+                    
+                    for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                        RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
+                        dto.setRoomId(item.getRoomId());
+                        dto.setStatus("AVAILABLE");
+                        publishRoomStatus(dto);
 
-                    log.info("Auto-expired check-in: Booking #{} room #{} - quá giờ checkout {}",
-                        booking.getId(), booking.getRoomId(), checkoutDeadline);
+                        log.info("Auto-expired check-in: Booking #{} room #{} - quá giờ checkout {}",
+                            booking.getId(), item.getRoomId(), checkoutDeadline);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -85,6 +90,7 @@ public class CheckInOutScheduledService {
      * Chạy mỗi 5 phút: Auto-set Room.status = AVAILABLE khi cleaning xong (20 phút)
      */
     @Scheduled(fixedDelay = 300000) // Chạy mỗi 5 phút
+    @Transactional
     public void autoCompleteCleaningAndSetAvailable() {
         try {
             LocalDateTime now = LocalDateTime.now();
@@ -94,23 +100,27 @@ public class CheckInOutScheduledService {
             List<Booking> completedCleanings = bookingRepository.findByCleaningEndAtIsNotNullAndCleaningEndAtLessThanEqual(now);
 
             for (Booking booking : completedCleanings) {
-                // Kiểm tra xem phòng này có khách đặt trước đó chưa check-in trong ngày hôm nay hay không
-                boolean hasUpcoming = bookingRepository.hasActiveUpcomingBookingToday(booking.getRoomId(), today);
-                String newStatus = hasUpcoming ? "BOOKED" : "AVAILABLE";
+                for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                    Long roomId = item.getRoomId();
+                    
+                    // Kiểm tra xem phòng này có khách đặt trước đó chưa check-in trong ngày hôm nay hay không
+                    boolean hasUpcoming = bookingRepository.hasActiveUpcomingBookingToday(roomId, today);
+                    String newStatus = hasUpcoming ? "RESERVED" : "AVAILABLE";
 
-                RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
-                dto.setRoomId(booking.getRoomId());
-                dto.setStatus(newStatus);
+                    RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
+                    dto.setRoomId(roomId);
+                    dto.setStatus(newStatus);
 
-                roomServiceClient.updateRoomStatus(booking.getRoomId(), dto);
+                    publishRoomStatus(dto);
+
+                    log.info("Auto-completed cleaning: Booking #{} room #{} → {}",
+                        booking.getId(), roomId, newStatus);
+                }
 
                 // Xóa cleaningEndAt để tránh chạy lại
                 booking.setCleaningEndAt(null);
                 booking.setCleaningStartAt(null);
                 bookingRepository.save(booking);
-
-                log.info("Auto-completed cleaning: Booking #{} room #{} → {}",
-                    booking.getId(), booking.getRoomId(), newStatus);
             }
         } catch (Exception e) {
             log.error("Error in autoCompleteCleaningAndSetAvailable", e);
@@ -124,5 +134,9 @@ public class CheckInOutScheduledService {
         LocalDateTime now = LocalDateTime.now();
         booking.setCleaningStartAt(now);
         booking.setCleaningEndAt(now.plusMinutes(20));
+    }
+
+    private void publishRoomStatus(RoomStatusUpdateDto dto) {
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.status", dto);
     }
 }

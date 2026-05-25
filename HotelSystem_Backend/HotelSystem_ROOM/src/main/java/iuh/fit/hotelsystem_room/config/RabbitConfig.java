@@ -17,6 +17,7 @@ public class RabbitConfig {
     public static final String ROOM_HOLD_QUEUE = "room.hold.queue";
     public static final String ROOM_CONFIRM_QUEUE = "room.confirm.queue";
     public static final String ROOM_RELEASE_QUEUE = "room.release.queue";
+    public static final String ROOM_STATUS_QUEUE = "room.status.queue";
 
     @Bean
     public TopicExchange exchange() {
@@ -38,6 +39,10 @@ public class RabbitConfig {
         return new Queue(ROOM_RELEASE_QUEUE);
     }
 
+    @Bean
+    public Queue statusQueue() {
+        return new Queue(ROOM_STATUS_QUEUE);
+    }
 
     @Bean
     public Binding holdBinding() {
@@ -61,9 +66,14 @@ public class RabbitConfig {
     }
 
     @Bean
+    public Binding statusBinding() {
+        return BindingBuilder.bind(statusQueue())
+                .to(exchange())
+                .with("room.status");
+    }
+    @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
         Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
-        converter.setAlwaysConvertToInferredType(true);
         return converter;
     }
 

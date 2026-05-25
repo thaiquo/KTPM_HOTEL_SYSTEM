@@ -49,6 +49,24 @@ class RefundCalculationServiceTest {
     }
 
     @Test
+    void twoNightsOneUsed_flexible_refundUnusedNightAtEightyPercent() {
+        Booking b = baseBooking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 3), 2, 1_000_000.0);
+        b.setRatePlan(RatePlan.FLEXIBLE);
+        b.setPaidAmount(2_000_000.0);
+        BookingStay stay = new BookingStay();
+        stay.setActualCheckInAt(LocalDateTime.of(2026, 5, 1, 14, 0));
+
+        EarlyCheckoutRefundResult r = service.calculateEarlyCheckoutRefund(b, stay, LocalDateTime.of(2026, 5, 2, 10, 0));
+
+        assertTrue(r.isEarlyCheckout());
+        assertEquals(2, r.getTotalNights());
+        assertEquals(1, r.getUsedNights());
+        assertEquals(1, r.getChargeNights());
+        assertEquals(1, r.getUnusedNights());
+        assertEquals(0, r.getRefundAmount().compareTo(new BigDecimal("800000.00")));
+    }
+
+    @Test
     void nonRefundable_alwaysZeroRefund() {
         Booking b = baseBooking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 15), 14, 1_000_000.0);
         b.setRatePlan(RatePlan.NON_REFUNDABLE);

@@ -57,6 +57,7 @@ public class PaymentServiceFallbackFactory implements FallbackFactory<PaymentSer
             @Override
             public void requestLateCheckoutFeePayment(Long bookingId, LateCheckoutPaymentRequest request) {
                 log.error("payment-service unavailable for requestLateCheckoutFeePayment. bookingId={}, error={}", bookingId, cause.getMessage());
+                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.");
             }
 
             @Override

@@ -1,13 +1,24 @@
 import type { Booking } from '../../../types';
 
-const PAID_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed', 'checked_in', 'completed'];
+const PAID_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed', 'checked_in', 'completed', 'cancel_requested'];
 const CANCELABLE_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed'];
-const PAID_PAYMENT_STATUSES = ['PAID', 'DEPOSITED', 'REFUND_PENDING', 'REFUNDED', 'PARTIALLY_REFUNDED', 'NO_REFUND'];
+const PAID_PAYMENT_STATUSES = [
+  'PAID',
+  'DEPOSITED',
+  'SUCCESS',
+  'COMPLETED',
+  'REFUND_PENDING',
+  'REFUNDED',
+  'PARTIALLY_REFUNDED',
+  'NO_REFUND',
+];
 
 export const isPaidBookingRecord = (booking: Booking) => {
   if (PAID_STATUSES.includes(booking.status)) return true;
 
   const paymentStatus = booking.paymentStatus?.toUpperCase();
+  if (paymentStatus && PAID_PAYMENT_STATUSES.includes(paymentStatus)) return true;
+
   if (booking.status === 'cancelled' && paymentStatus && PAID_PAYMENT_STATUSES.includes(paymentStatus)) {
     return true;
   }
@@ -56,6 +67,8 @@ export const getBookingStatusText = (status: Booking['status']) => {
       return 'Hoàn thành';
     case 'cancelled':
       return 'Đã hủy';
+    case 'cancel_requested':
+      return 'Chờ nhân viên xác nhận hủy';
     default:
       return 'Chờ thanh toán';
   }

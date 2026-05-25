@@ -14,6 +14,7 @@ public class BookingGuest {
     private Long id;
 
     private Long bookingId;
+    private Long roomId;
     private String fullName;
     private LocalDate dateOfBirth;
     private String phone;
@@ -32,6 +33,9 @@ public class BookingGuest {
 
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
+
+    public Long getRoomId() { return roomId; }
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }

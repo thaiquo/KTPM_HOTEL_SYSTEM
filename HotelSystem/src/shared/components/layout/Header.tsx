@@ -52,6 +52,21 @@ const getNotificationTarget = (item: UserNotification) => {
   return `/my-bookings?bookingId=${encodeURIComponent(item.bookingId)}`;
 };
 
+const dedupeNotifications = (items: UserNotification[]) => {
+  const seen = new Map<string, UserNotification>();
+
+  for (const item of items) {
+    const key = `${item.bookingId}:${item.type.toUpperCase()}`;
+    const current = seen.get(key);
+
+    if (!current || new Date(item.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+      seen.set(key, item);
+    }
+  }
+
+  return Array.from(seen.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth();
   const { totalRooms } = useCart();
@@ -91,7 +106,7 @@ export default function Header() {
     const loadNotifications = async () => {
       try {
         const list = await notificationApi.getByUser(user.id);
-        if (!cancelled) setNotifications(list);
+        if (!cancelled) setNotifications(dedupeNotifications(list));
       } catch (error) {
         console.error(error);
         if (!cancelled) setNotifications([]);

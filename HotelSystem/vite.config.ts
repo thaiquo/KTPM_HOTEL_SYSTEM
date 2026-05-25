@@ -42,6 +42,7 @@ const roomTarget = isDocker ? 'http://room-service:8083' : 'http://localhost:808
 const bookingTarget = isDocker ? 'http://booking-service:8084' : 'http://localhost:8084'
 const paymentTarget = isDocker ? 'http://payment-service:8085' : 'http://localhost:8085'
 const notificationTarget = isDocker ? 'http://notification-service:8086' : 'http://localhost:8086'
+const proxyTimeoutMs = Number(process.env.VITE_PROXY_TIMEOUT_MS) || 60000
 
 export default defineConfig(({ mode }) => {
   const fromDotEnv = loadEnv(mode, __dirname, '')
@@ -49,6 +50,23 @@ export default defineConfig(({ mode }) => {
     (networkLocalEnv.VITE_PUBLIC_APP_ORIGIN || '').trim() ||
     (fromDotEnv.VITE_PUBLIC_APP_ORIGIN || '').trim() ||
     ''
+
+  const publicOriginHost = publicAppOrigin
+    ? (() => {
+        try {
+          return new URL(publicAppOrigin).hostname
+        } catch {
+          return ''
+        }
+      })()
+    : ''
+
+  const hmrHost =
+    (process.env.VITE_HMR_HOST || '').trim() ||
+    publicOriginHost ||
+    'localhost'
+
+  const hmrClientPort = Number(process.env.VITE_HMR_CLIENT_PORT) || Number(process.env.VITE_PORT) || 3000
 
   return {
     plugins: [react()],
@@ -63,16 +81,55 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: Number(process.env.VITE_PORT) || 3000,
+      origin: publicAppOrigin || undefined,
+      allowedHosts: true,
       hmr: {
-        host: 'localhost',
-        clientPort: Number(process.env.VITE_PORT) || 3000,
+        host: hmrHost,
+        clientPort: hmrClientPort,
       },
       proxy: {
-        // Tất cả request bắt đầu bằng -api sẽ đi qua Gateway port 8080
-        '^/.*-api': {
-          target: isDocker ? 'http://api-gateway:8080' : 'http://localhost:8080',
+        '/auth-api': {
+          target: authTarget,
+          changeOrigin: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/auth-api/, ''),
+        },
+        '/user-api': {
+          target: userTarget,
+          changeOrigin: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/user-api/, ''),
+        },
+        '/room-api': {
+          target: roomTarget,
+          changeOrigin: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/room-api/, ''),
+        },
+        '/booking-api': {
+          target: bookingTarget,
+          changeOrigin: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/booking-api/, ''),
+        },
+        '/payment-api': {
+          target: paymentTarget,
           changeOrigin: true,
           ws: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/payment-api/, ''),
+        },
+        '/notification-api': {
+          target: notificationTarget,
+          changeOrigin: true,
+          timeout: proxyTimeoutMs,
+          proxyTimeout: proxyTimeoutMs,
+          rewrite: (path) => path.replace(/^\/notification-api/, ''),
         },
       },
     },

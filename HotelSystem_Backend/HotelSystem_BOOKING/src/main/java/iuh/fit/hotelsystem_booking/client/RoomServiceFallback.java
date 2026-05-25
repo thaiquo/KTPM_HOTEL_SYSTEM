@@ -19,7 +19,7 @@ public class RoomServiceFallback implements RoomServiceClient {
     }
 
     @Override
-    public Object getRoomById(Long id) {
+    public iuh.fit.hotelsystem_booking.dto.Room getRoomById(Long id) {
         log.warn("RoomServiceClient.getRoomById fallback - Room Service unavailable. RoomId: {}", id);
         return null;
     }

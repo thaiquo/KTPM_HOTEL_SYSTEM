@@ -1,8 +1,12 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
+import iuh.fit.hotelsystem_booking.config.RabbitConfig;
+import iuh.fit.hotelsystem_booking.dto.BookingEvent;
+import iuh.fit.hotelsystem_booking.entity.BookingLockStatus;
 import iuh.fit.hotelsystem_booking.dto.CancellationPolicyResult;
 import iuh.fit.hotelsystem_booking.dto.RefundRequest;
+import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundPaymentTransaction;
@@ -13,6 +17,7 @@ import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -40,6 +45,7 @@ public class RefundService {
     private final RefundAuditService refundAuditService;
     private final RefundNotificationService refundNotificationService;
     private final PaymentServiceClient paymentServiceClient;
+    private RabbitTemplate rabbitTemplate;
 
     public RefundService(RefundTransactionRepository refundRepository,
                          BookingRepository bookingRepository,
@@ -59,6 +65,11 @@ public class RefundService {
         this.refundAuditService = refundAuditService;
         this.refundNotificationService = refundNotificationService;
         this.paymentServiceClient = paymentServiceClient;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRabbitTemplate(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Transactional
@@ -88,6 +99,95 @@ public class RefundService {
                     refundQueueProducer.publishRequested(saved);
                     return saved;
                 });
+    }
+
+    @Transactional
+    public RefundTransaction createCancellationRequest(Booking booking, CancellationPolicyResult policyResult, String reason) {
+        if (booking == null) {
+            throw new IllegalArgumentException("booking must not be null");
+        }
+        if (policyResult == null) {
+            throw new IllegalArgumentException("policyResult must not be null");
+        }
+        String idempotencyKey = buildIdempotencyKey(booking);
+        LocalDateTime now = nowVi();
+        RefundTransaction refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(RefundTransaction::new);
+        refund.setBookingId(booking.getId());
+        refund.setUserId(booking.getUserId());
+        refund.setPaymentTransactionId(resolvePaymentTransactionId(booking));
+        refund.setPaidAmount(policyResult.getPaidAmount());
+        refund.setCancellationFee(policyResult.getCancellationFee());
+        refund.setRefundAmount(policyResult.getRefundAmount());
+        refund.setRefundPercent(policyResult.getPaidAmount() > 0
+                ? (int) Math.round(policyResult.getRefundAmount() * 100.0 / policyResult.getPaidAmount())
+                : 0);
+        refund.setRefundMethod(BookingConstants.REFUND_METHOD_VNPAY);
+        refund.setAmount(policyResult.getRefundAmount());
+        refund.setReason(reason != null && !reason.isBlank() ? reason : policyResult.getReason());
+        refund.setStatus(RefundStatus.PENDING);
+        refund.setAssignedTo(null);
+        refund.setAssignedAt(null);
+        refund.setProcessedBy(null);
+        refund.setProcessedByStaffId(null);
+        refund.setProcessedAt(null);
+        refund.setCompletedAt(null);
+        refund.setRejectReason(null);
+        refund.setIdempotencyKey(idempotencyKey);
+        if (refund.getCreatedAt() == null) {
+            refund.setCreatedAt(now);
+        }
+        refund.setDueAt(now.plusHours(BookingConstants.REFUND_SLA_HOURS));
+        refund.setPriority(BookingConstants.REFUND_PRIORITY_NORMAL);
+        refund.setUpdatedAt(now);
+
+        booking.setStatus(BookingStatus.CANCEL_REQUESTED);
+        booking.setCancellationReason(refund.getReason());
+        booking.setPaymentStatus(policyResult.getRefundAmount() > 0
+                ? BookingConstants.PAYMENT_STATUS_REFUND_PENDING
+                : BookingConstants.PAYMENT_STATUS_NO_REFUND);
+        bookingRepository.save(booking);
+
+        RefundTransaction saved = refundRepository.save(refund);
+        refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
+                String.valueOf(booking.getUserId()), "CUSTOMER", "Cancellation request created");
+        refundNotificationService.notifyCreated(saved, booking);
+        refundQueueProducer.publishRequested(saved);
+        return saved;
+    }
+
+    @Transactional
+    public RefundTransaction createRoomChangeRefundTransaction(Booking booking, BigDecimal refundAmount, String reason) {
+        if (booking == null) {
+            throw new IllegalArgumentException("booking must not be null");
+        }
+        BigDecimal amount = refundAmount != null ? refundAmount.abs() : BigDecimal.ZERO;
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        String idempotencyKey = BookingConstants.ROOM_CHANGE_REFUND_IDEMPOTENCY_PREFIX
+                + booking.getId() + "_" + amount.toPlainString();
+        LocalDateTime now = nowVi();
+        return refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(() -> {
+            RefundTransaction refund = RefundTransaction.create(
+                    booking.getId(),
+                    resolvePaymentTransactionId(booking),
+                    valueOrZero(booking.getPaidAmount()),
+                    0.0,
+                    amount.doubleValue(),
+                    BookingConstants.REFUND_METHOD_VNPAY,
+                    "ROOM_CHANGE_REFUND",
+                    idempotencyKey,
+                    now
+            );
+            refund.setUserId(booking.getUserId());
+            refund.setReason(reason != null && !reason.isBlank() ? reason : "ROOM_CHANGE_REFUND");
+            RefundTransaction saved = refundRepository.save(refund);
+            refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
+                    String.valueOf(booking.getUserId()), "SYSTEM", "Room change refund request created");
+            refundNotificationService.notifyCreated(saved, booking);
+            refundQueueProducer.publishRequested(saved);
+            return saved;
+        });
     }
 
     @Transactional
@@ -126,6 +226,58 @@ public class RefundService {
                     refundQueueProducer.publishRequested(saved);
                     return saved;
                 });
+    }
+
+    @Transactional
+    public synchronized RefundTransaction createAssignedEarlyCheckoutRefundTransaction(Booking booking, BigDecimal settlementAmount, Long staffId) {
+        if (booking == null) {
+            throw new IllegalArgumentException("booking must not be null");
+        }
+        BigDecimal amount = settlementAmount != null ? settlementAmount.abs() : BigDecimal.ZERO;
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        String idempotencyKey = buildEarlyCheckoutIdempotencyKey(booking);
+        LocalDateTime now = nowVi();
+        RefundTransaction refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(RefundTransaction::new);
+        refund.setBookingId(booking.getId());
+        refund.setUserId(booking.getUserId());
+        refund.setPaymentTransactionId(resolvePaymentTransactionId(booking));
+        refund.setPaidAmount(valueOrZero(booking.getPaidAmount()));
+        refund.setCancellationFee(0.0);
+        refund.setRefundAmount(amount.doubleValue());
+        refund.setRefundPercent(valueOrZero(booking.getPaidAmount()) > 0
+                ? (int) Math.round(amount.doubleValue() * 100.0 / valueOrZero(booking.getPaidAmount()))
+                : 0);
+        refund.setRefundMethod(BookingConstants.REFUND_METHOD_VNPAY);
+        refund.setAmount(amount.doubleValue());
+        refund.setReason("EARLY_CHECKOUT_REFUND");
+        refund.setStatus(RefundStatus.ASSIGNED);
+        refund.setAssignedTo(staffId);
+        refund.setAssignedAt(now);
+        refund.setProcessedBy(null);
+        refund.setProcessedByStaffId(null);
+        refund.setProcessedAt(null);
+        refund.setCompletedAt(null);
+        refund.setRejectReason(null);
+        refund.setIdempotencyKey(idempotencyKey);
+        if (refund.getCreatedAt() == null) {
+            refund.setCreatedAt(now);
+        }
+        refund.setDueAt(now.plusHours(BookingConstants.REFUND_SLA_HOURS));
+        refund.setPriority(BookingConstants.REFUND_PRIORITY_NORMAL);
+        refund.setUpdatedAt(now);
+
+        booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_REFUND_PENDING);
+        bookingRepository.save(booking);
+
+        RefundTransaction saved = refundRepository.save(refund);
+        refundAuditService.log(saved.getId(), "CREATED_AND_ASSIGNED", null, RefundStatus.ASSIGNED,
+                String.valueOf(staffId), "STAFF", "Early checkout refund created automatically at checkout");
+        refundNotificationService.notifyCreated(saved, booking);
+        refundQueueProducer.publishAssigned(saved);
+        return saved;
     }
 
     @Transactional
@@ -219,6 +371,9 @@ public class RefundService {
         refundNotificationService.notifyApproved(refund);
 
         try {
+            if (valueOrZero(refund.getRefundAmount()) <= 0.0) {
+                return completeApprovedRefundWithoutPayment(refund, processedBy);
+            }
             Map<String, Object> paymentRequest = new HashMap<>();
             paymentRequest.put("refundRequestId", refundId);
             paymentRequest.put("bookingId", refund.getBookingId());
@@ -232,7 +387,7 @@ public class RefundService {
             refund.setCompletedAt(completedAt);
             refund.setUpdatedAt(completedAt);
             bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
-                boolean isEarlyCheckoutRefund = "EARLY_CHECKOUT_REFUND".equals(refund.getReason());
+                boolean isEarlyCheckoutRefund = isNonCancellationRefund(refund);
                 if (isEarlyCheckoutRefund) {
                     // Early checkout: booking đã COMPLETED, CHỈ cập nhật payment status
                     // KHÔNG chuyển thành CANCELLED — đây không phải hủy đơn
@@ -240,9 +395,7 @@ public class RefundService {
                 } else {
                     // Cancellation refund: set booking CANCELLED như bình thường
                     if (booking.getStatus() != BookingStatus.CANCELLED) {
-                        booking.setStatus(BookingStatus.CANCELLED);
-                        booking.setCancelledAt(completedAt);
-                        booking.setCancellationReason(refund.getReason());
+                        markBookingCancelledAfterStaffApproval(booking, completedAt, refund.getReason());
                     }
                 }
                 double refundAmt = valueOrZero(refund.getRefundAmount());
@@ -293,6 +446,24 @@ public class RefundService {
         });
         refundAuditService.log(refund.getId(), "REJECTED", oldStatus, RefundStatus.REJECTED,
                 String.valueOf(staffId), "REFUND_STAFF", reason);
+        return refundRepository.save(refund);
+    }
+
+    private RefundTransaction completeApprovedRefundWithoutPayment(RefundTransaction refund, String processedBy) {
+        LocalDateTime completedAt = nowVi();
+        refund.setStatus(RefundStatus.REFUNDED);
+        refund.setCompletedAt(completedAt);
+        refund.setUpdatedAt(completedAt);
+        bookingRepository.findById(refund.getBookingId()).ifPresent(booking -> {
+            if (!isNonCancellationRefund(refund)) {
+                markBookingCancelledAfterStaffApproval(booking, completedAt, refund.getReason());
+            }
+            booking.setPaymentStatus(BookingConstants.PAYMENT_STATUS_NO_REFUND);
+            bookingRepository.save(booking);
+        });
+        refundAuditService.log(refund.getId(), "APPROVED_NO_REFUND", RefundStatus.PROCESSING, RefundStatus.REFUNDED,
+                processedBy, "SYSTEM", "Request approved without refund payment");
+        refundNotificationService.notifyRefunded(refund, "NO_REFUND");
         return refundRepository.save(refund);
     }
 
@@ -409,6 +580,34 @@ public class RefundService {
 
     private String buildEarlyCheckoutIdempotencyKey(Booking booking) {
         return BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX + booking.getId();
+    }
+
+    private boolean isNonCancellationRefund(RefundTransaction refund) {
+        String reason = refund.getReason() != null ? refund.getReason() : "";
+        String key = refund.getIdempotencyKey() != null ? refund.getIdempotencyKey() : "";
+        return "EARLY_CHECKOUT_REFUND".equals(reason)
+                || "ROOM_CHANGE_REFUND".equals(reason)
+                || key.startsWith(BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX)
+                || key.startsWith(BookingConstants.ROOM_CHANGE_REFUND_IDEMPOTENCY_PREFIX);
+    }
+
+    private void markBookingCancelledAfterStaffApproval(Booking booking, LocalDateTime cancelledAt, String reason) {
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setLockStatus(BookingLockStatus.EXPIRED);
+        booking.setCancelledAt(cancelledAt);
+        booking.setCancellationReason(reason);
+        if (rabbitTemplate != null && booking.getItems() != null) {
+            for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                RoomMessage roomMsg = new RoomMessage();
+                roomMsg.setBookingId(booking.getId());
+                roomMsg.setRoomId(item.getRoomId());
+                rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", roomMsg);
+            }
+            rabbitTemplate.convertAndSend(
+                    RabbitConfig.EXCHANGE,
+                    "booking.cancelled",
+                    new BookingEvent(booking.getId(), booking.getUserId(), "CANCELLED"));
+        }
     }
 
     private String resolvePaymentTransactionId(Booking booking) {

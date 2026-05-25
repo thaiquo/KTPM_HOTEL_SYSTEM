@@ -5,6 +5,7 @@ import {
   HiOutlineLogout,
   HiOutlineOfficeBuilding,
   HiOutlineRefresh,
+  HiOutlineSwitchHorizontal,
 } from 'react-icons/hi';
 import DashboardLayout from './DashboardLayout';
 
@@ -24,6 +25,11 @@ const StaffLayout: React.FC = () => {
       title: 'Xử lý Checkout',
       path: '/staff/checkout',
       icon: <HiOutlineLogout className="w-6 h-6" />,
+    },
+    {
+      title: 'Đổi phòng',
+      path: '/staff/room-change',
+      icon: <HiOutlineSwitchHorizontal className="w-6 h-6" />,
     },
     {
       title: 'Xử lý Hoàn tiền',
