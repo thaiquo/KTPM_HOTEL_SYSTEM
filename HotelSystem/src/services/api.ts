@@ -1162,4 +1162,32 @@ export const customerApi = {
     }),
 };
 
+export const shiftApi = {
+  getAll: () => userHttp.get<any[]>('/api/shifts'),
+
+  getScheduleByWeek: (weekStart: string) =>
+    userHttp.get<any[]>('/api/shifts/schedule', { params: { weekStart } }),
+
+  saveSchedule: (data: any) =>
+    userHttp.post<any>('/api/shifts/schedule/save', data),
+
+  copyWeek: (data: any) =>
+    userHttp.post<any>('/api/shifts/schedule/copy-week', data),
+
+  replaceShift: (scheduleId: number, data: any) =>
+    userHttp.patch<any>(`/api/shifts/schedule/${scheduleId}/replace`, data),
+
+  checkin: (data: any) =>
+    userHttp.post<any>('/api/shifts/checkin', data),
+
+  checkout: (data: any) =>
+    userHttp.post<any>('/api/shifts/checkout', data),
+
+  getDashboard: (date: string) =>
+    userHttp.get<any>('/api/shifts/dashboard', { params: { date } }),
+
+  getCheckinHistory: () =>
+    userHttp.get<any[]>('/api/shifts/checkin-history'),
+};
+
 export default api;

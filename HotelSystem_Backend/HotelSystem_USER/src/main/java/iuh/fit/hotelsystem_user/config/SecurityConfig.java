@@ -27,8 +27,23 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/users/internal/**").permitAll() // Internal APIs
-                        .requestMatchers("/api/users/employees/**").hasRole("ADMIN") // Only Admin can manage employees
-                        .requestMatchers("/api/users/customers/**").hasRole("ADMIN") // Only Admin can manage customers
+                        .requestMatchers("GET", "/api/users/employees").permitAll() // GET employees list - must be
+                                                                                    // before /employees/**
+                        .requestMatchers("GET", "/api/users/customers").permitAll() // GET customers list - must be
+                                                                                    // before /customers/**
+                        .requestMatchers("POST", "/api/users/employees").permitAll() // POST employees allowed
+                                                                                     // (internal)
+                        .requestMatchers("POST", "/api/users/customers").permitAll() // POST customers allowed
+                                                                                     // (internal)
+                        .requestMatchers("PUT", "/api/users/employees/**").hasRole("ADMIN") // PUT employees needs ADMIN
+                        .requestMatchers("PUT", "/api/users/customers/**").hasRole("ADMIN") // PUT customers needs ADMIN
+                        .requestMatchers("PATCH", "/api/users/employees/**").hasRole("ADMIN") // PATCH employees needs
+                                                                                              // ADMIN
+                        .requestMatchers("PATCH", "/api/users/customers/**").hasRole("ADMIN") // PATCH customers needs
+                                                                                              // ADMIN
+                        .requestMatchers("DELETE", "/api/users/employees/**").hasRole("ADMIN") // DELETE employees needs
+                                                                                               // ADMIN
+                        .requestMatchers("/api/shifts/**").permitAll() // Shift APIs public
                         .requestMatchers("/api/users/profile/**", "/api/users/me").authenticated()
                         .anyRequest().permitAll())
                 .addFilterBefore(jwtFilter,

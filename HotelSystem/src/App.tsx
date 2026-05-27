@@ -27,6 +27,7 @@ import RoomTypeManagementPage from './features/dashboard/pages/RoomTypeManagemen
 import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
+import ShiftSchedulePage from './features/shift/pages/ShiftSchedulePage';
 
 import { CartProvider } from './contexts/CartContext';
 
@@ -69,6 +70,7 @@ function App() {
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
               <Route element={<AdminLayout />}>
                 <Route path="/admin/nhan-vien" element={<EmployeeManagementPage />} />
+                <Route path="/admin/ca-truc" element={<ShiftSchedulePage />} />
                 <Route path="/admin/khach-hang" element={<CustomerManagementPage />} />
                 <Route path="/admin/room-types" element={<RoomTypeManagementPage />} />
                 <Route path="/admin/rooms" element={<RoomManagementPage />} />
