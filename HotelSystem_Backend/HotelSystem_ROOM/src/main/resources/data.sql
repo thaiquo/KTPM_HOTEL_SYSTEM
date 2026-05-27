@@ -22,30 +22,30 @@ INSERT INTO room_types (id, type, base_price, max_capacity, default_capacity, de
 -- ============================================================
 INSERT INTO room_type_images (room_type_id, image_url, is_thumbnail) VALUES
 -- STANDARD
-(1, 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=800&q=80', true),
-(1, 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80',    false),
-(1, 'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=800&q=80',    false),
-(1, 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80', false),
+(1, 'https://images.unsplash.com/photo-1779869423159-0131de35997f?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', true),
+(1, 'https://images.unsplash.com/photo-1779869423124-eba165749b92?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(1, 'https://images.unsplash.com/photo-1779869423166-5fc77045ea0f?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(1, 'https://images.unsplash.com/photo-1779869423162-518ae816de3c?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
 -- DELUXE
-(2, 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800&q=80', true),
-(2, 'https://images.unsplash.com/photo-1582719478250-c89cae4df85b?w=800&q=80', false),
-(2, 'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800&q=80', false),
-(2, 'https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800&q=80', false),
+(2, 'https://images.unsplash.com/photo-1779869807491-820ac8a46a9b?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', true),
+(2, 'https://images.unsplash.com/photo-1779869807478-6a209da76890?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(2, 'https://images.unsplash.com/photo-1779869807503-5a009cfe6e3e?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(2, 'https://images.unsplash.com/photo-1779869807467-a4486680883d?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8Mnx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
 -- EXECUTIVE
-(3, 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=800&q=80', true),
-(3, 'https://images.unsplash.com/photo-1551776235-dde6d4829808?w=800&q=80',    false),
-(3, 'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800&q=80', false),
-(3, 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80', false),
+(3, 'https://images.unsplash.com/photo-1779870055520-cfefccf48362?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8MXx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', true),
+(3, 'https://images.unsplash.com/photo-1779870055648-e875fa4ae000?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8Mnx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(3, 'https://images.unsplash.com/photo-1779870335923-e23babfd6903?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8MXx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(3, 'https://images.unsplash.com/photo-1779870336019-983fc176a602?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8Mnx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
 -- FAMILY
-(4, 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80', true),
-(4, 'https://images.unsplash.com/photo-1598928506311-c55ded91a20c?w=800&q=80', false),
-(4, 'https://images.unsplash.com/photo-1586105251261-72a756497a11?w=800&q=80', false),
-(4, 'https://images.unsplash.com/photo-1560448075-bb4caa6c9a4d?w=800&q=80',    false),
+(4, 'https://images.unsplash.com/photo-1779870458293-463632e8c90d?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8MXx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', true),
+(4, 'https://images.unsplash.com/photo-1779870458284-46ee193ceb23?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8Mnx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(4, 'https://images.unsplash.com/photo-1779870458288-95fd59cd2c5b?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8M3x8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(4, 'https://images.unsplash.com/photo-1779870458318-596057e61923?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8NHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80',    false),
 -- SUITE
-(5, 'https://images.unsplash.com/photo-1560448075-bb4caa6c9a4d?w=800&q=80',    true),
-(5, 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?w=800&q=80', false),
-(5, 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800&q=80', false),
-(5, 'https://images.unsplash.com/photo-1582719478250-c89cae4df85b?w=800&q=80', false);
+(5, 'https://images.unsplash.com/photo-1779870922521-5f351c33abaa?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8MXx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', true),
+(5, 'https://images.unsplash.com/photo-1779870922579-2f061880fa14?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(5, 'https://images.unsplash.com/photo-1779870922525-3d68afea4233?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwcm9maWxlLXBhZ2V8M3x8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false),
+(5, 'https://images.unsplash.com/photo-1779870922514-cee14d07d9f4?auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&w=800&q=80', false);
 
 -- ============================================================
 -- 2. BED_TYPES

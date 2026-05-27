@@ -3,17 +3,17 @@ package iuh.fit.hotelsystem_booking.repository;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-import java.util.List;
-
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Repository
-public interface BookingRepository extends JpaRepository<Booking, Long> {
+public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpecificationExecutor<Booking> {
 
     @Query("""
             SELECT DISTINCT b FROM Booking b
@@ -54,7 +54,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                     b.status IN (
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.BOOKED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_IN,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_OUT,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
                     )
                     OR (
@@ -72,7 +75,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             """)
     List<Long> findBookedRoomIds(@Param("checkIn") LocalDate checkIn, @Param("checkOut") LocalDate checkOut);
 
-    // existsActiveOverlapForRoom moved to BookingItemRepository or updated here:
     @Query("""
             select count(b) > 0 from Booking b
             join b.items bi
@@ -81,7 +83,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                     b.status in (
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.BOOKED,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_IN,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                        iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_OUT,
                         iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
                     )
                     or (
@@ -108,6 +113,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
               and bi.roomId = :roomId
               and b.status in (
                   iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKED_IN,
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_IN,
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.PARTIALLY_CHECKED_OUT,
                   iuh.fit.hotelsystem_booking.entity.BookingStatus.CHECKOUT_PENDING_PAYMENT
               )
               and bi.checkIn < :checkOut
@@ -126,7 +133,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             WHERE bi.roomId = :roomId
               AND b.status IN (
                   iuh.fit.hotelsystem_booking.entity.BookingStatus.CONFIRMED,
-                  iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.DEPOSIT_PAID,
+                  iuh.fit.hotelsystem_booking.entity.BookingStatus.BOOKED
               )
               AND b.actualCheckInAt IS NULL
               AND bi.checkIn <= :today
@@ -325,4 +333,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             ORDER BY b.checkOut DESC, b.id DESC
             """)
     List<Booking> findLegacyEarlyCheckoutAll();
+
+    @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.items ORDER BY b.createdAt DESC, b.id DESC")
+    List<Booking> findAllByOrderByCreatedAtDesc();
 }

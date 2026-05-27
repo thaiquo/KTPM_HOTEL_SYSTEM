@@ -27,6 +27,7 @@
         <url/>
     </scm>
     <properties>
+        <start-class>iuh.fit.hotelsystem_booking.HotelSystemBookingApplication</start-class>
         <java.version>17</java.version>
         <spring-cloud.version>2025.0.2</spring-cloud.version>
     </properties>

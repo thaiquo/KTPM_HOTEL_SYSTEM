@@ -60,6 +60,7 @@ public class BookingCreateRequest {
         private Long roomId;
         private Long roomTypeId;
         private Double priceSnapshot;
+        private List<GuestRequest> guests = new ArrayList<>();
 
         public Long getRoomId() { return roomId; }
         public void setRoomId(Long roomId) { this.roomId = roomId; }
@@ -69,5 +70,8 @@ public class BookingCreateRequest {
 
         public Double getPriceSnapshot() { return priceSnapshot; }
         public void setPriceSnapshot(Double priceSnapshot) { this.priceSnapshot = priceSnapshot; }
+
+        public List<GuestRequest> getGuests() { return guests; }
+        public void setGuests(List<GuestRequest> guests) { this.guests = guests; }
     }
 }

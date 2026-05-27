@@ -36,7 +36,7 @@ public class PaymentService {
     private final PaymentSocketService paymentSocketService;
     private final VNPayService vnPayService;
 
-    @Value("${PAYMENT_CHECKIN_CONFIRM_URL:http://localhost:3000/payment/confirm}")
+    @Value("${PAYMENT_CHECKIN_CONFIRM_URL:http://192.168.1.8:3000/payment/confirm}")
     private String checkinConfirmUrl;
 
     public PaymentService(PaymentRepository paymentRepository,
@@ -123,6 +123,7 @@ public class PaymentService {
     // --- CÁC PHƯƠNG THỨC CHECK-IN QR (MỚI KHÔI PHỤC) ---
     @Transactional
     public CheckinQrResponse createCheckinQr(CheckinQrRequest request) {
+        long startedAt = System.currentTimeMillis();
         String paymentCode = generatePaymentCode();
         Payment payment = new Payment();
         LocalDateTime now = nowVi();
@@ -137,16 +138,20 @@ public class PaymentService {
         payment.setStatus(PaymentStatus.PENDING);
         payment.setPaymentCode(paymentCode);
         payment.setCreatedAt(now);
-        payment.setExpiredAt(now.plusMinutes(15));
+        payment.setExpiredAt(now.plusSeconds(60));
         paymentRepository.save(payment);
 
         String confirmUrl = checkinConfirmUrl + "?code=" + paymentCode;
+        log.info("QR created transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                paymentCode, request.getBookingId(), request.getAmount(), payment.getStatus(), System.currentTimeMillis() - startedAt);
         return new CheckinQrResponse(paymentCode, request.getAmount(), confirmUrl, payment.getExpiredAt());
     }
 
+    @Transactional
     public CheckinPaymentConfirmResponse getCheckinPayment(String code) {
         Payment payment = paymentRepository.findByPaymentCode(code)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found for code: " + code));
+        expireIfNeeded(payment);
         
         CheckinPaymentConfirmResponse resp = new CheckinPaymentConfirmResponse();
         resp.setPaymentCode(payment.getPaymentCode());
@@ -160,14 +165,23 @@ public class PaymentService {
 
     @Transactional
     public CheckinPaymentConfirmResponse confirmCheckinPayment(String paymentCode) {
+        long startedAt = System.currentTimeMillis();
         Payment payment = paymentRepository.findByPaymentCode(paymentCode)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentCode));
+        expireIfNeeded(payment);
 
         if (payment.getPaymentType() == PaymentType.LATE_CHECKOUT_FEE) {
             throw new IllegalStateException("Use late-checkout confirmation endpoint for this payment type");
         }
         
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            log.info("QR confirm idempotent transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                    paymentCode, payment.getBookingId(), payment.getAmount(), payment.getStatus(), System.currentTimeMillis() - startedAt);
+            return toConfirmResponse(payment);
+        }
+        if (payment.getStatus() == PaymentStatus.EXPIRED) {
+            log.warn("QR confirm expired transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                    paymentCode, payment.getBookingId(), payment.getAmount(), payment.getStatus(), System.currentTimeMillis() - startedAt);
             return toConfirmResponse(payment);
         }
 
@@ -200,20 +214,31 @@ public class PaymentService {
         
         // Gửi tín hiệu real-time qua WebSocket dùng Service có sẵn của bạn
         paymentSocketService.emit("payment:success", event);
+        log.info("QR payment confirmed transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                paymentCode, saved.getBookingId(), saved.getAmount(), saved.getStatus(), System.currentTimeMillis() - startedAt);
         
         return toConfirmResponse(saved);
     }
 
     @Transactional
     public CheckinPaymentConfirmResponse confirmLateCheckoutPayment(String paymentCode) {
+        long startedAt = System.currentTimeMillis();
         Payment payment = paymentRepository.findByPaymentCode(paymentCode)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentCode));
+        expireIfNeeded(payment);
 
         if (payment.getPaymentType() != PaymentType.LATE_CHECKOUT_FEE) {
             throw new IllegalStateException("Use check-in confirmation endpoint for this payment type");
         }
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            log.info("QR late checkout confirm idempotent transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                    paymentCode, payment.getBookingId(), payment.getAmount(), payment.getStatus(), System.currentTimeMillis() - startedAt);
+            return toConfirmResponse(payment);
+        }
+        if (payment.getStatus() == PaymentStatus.EXPIRED) {
+            log.warn("QR late checkout expired transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                    paymentCode, payment.getBookingId(), payment.getAmount(), payment.getStatus(), System.currentTimeMillis() - startedAt);
             return toConfirmResponse(payment);
         }
 
@@ -235,8 +260,22 @@ public class PaymentService {
             null
         );
         paymentSocketService.emit("payment:success", event);
+        log.info("QR late checkout confirmed transactionId={} bookingId={} amount={} status={} responseTime={}ms",
+                paymentCode, saved.getBookingId(), saved.getAmount(), saved.getStatus(), System.currentTimeMillis() - startedAt);
 
         return toConfirmResponse(saved);
+    }
+
+    private void expireIfNeeded(Payment payment) {
+        if (payment == null || payment.getStatus() != PaymentStatus.PENDING || payment.getExpiredAt() == null) {
+            return;
+        }
+        if (nowVi().isAfter(payment.getExpiredAt())) {
+            payment.setStatus(PaymentStatus.EXPIRED);
+            paymentRepository.save(payment);
+            log.warn("QR payment expired transactionId={} bookingId={} amount={} status={}",
+                    payment.getPaymentCode(), payment.getBookingId(), payment.getAmount(), payment.getStatus());
+        }
     }
 
     @Transactional

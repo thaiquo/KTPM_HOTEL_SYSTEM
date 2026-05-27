@@ -1,11 +1,11 @@
-export type UserRole = 'ADMIN' | 'STAFF' | 'CUSTOMER';
+export type UserRole = 'ADMIN' | 'MANAGER' | 'STAFF' | 'EMPLOYEE' | 'RECEPTIONIST' | 'CUSTOMER' | 'USER';
 
-export const normalizeRole = (role?: string | null): UserRole => {
+export const normalizeRole = (role?: string | null): string => {
   if (!role) return 'CUSTOMER';
 
   const upperRole = role.toUpperCase();
-  if (upperRole === 'ADMIN') return 'ADMIN';
-  if (upperRole === 'STAFF') return 'STAFF';
+  if (['ADMIN', 'MANAGER'].includes(upperRole)) return 'ADMIN';
+  if (['STAFF', 'EMPLOYEE', 'RECEPTIONIST'].includes(upperRole)) return 'STAFF';
 
   return 'CUSTOMER';
 };

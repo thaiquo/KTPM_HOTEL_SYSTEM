@@ -30,7 +30,7 @@ export default function BookingCard({ booking, onOpenDetails, onCancel }: Bookin
   const roomPreview = getBookingRoomPreview(booking);
 
   return (
-    <Card className="group overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
+    <Card className="group overflow-hidden rounded-4xl border border-black/5 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
       <div className="grid gap-0 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="relative h-64 overflow-hidden bg-zinc-100">
           <img
@@ -38,7 +38,7 @@ export default function BookingCard({ booking, onOpenDetails, onCancel }: Bookin
             alt={`Booking ${booking.id}`}
             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-t from-black/55 via-black/10 to-transparent" />
           <div className="absolute left-5 top-5 flex flex-wrap items-center gap-3">
             <span className={cn('rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em]', tone.badge)}>
               {getBookingStatusLabel(booking)}
@@ -76,7 +76,7 @@ export default function BookingCard({ booking, onOpenDetails, onCancel }: Bookin
 
             <div className="grid gap-3 sm:grid-cols-2 lg:w-[320px]">
               <div className="rounded-3xl bg-[#f6f3ed] px-4 py-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Người đại diện</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Người đặt booking</div>
                 <div className="mt-2 text-sm font-black text-slate-900">{representative.name}</div>
                 <div className="mt-1 text-xs font-medium text-slate-500">{representative.phone}</div>
               </div>

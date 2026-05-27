@@ -108,15 +108,21 @@ export default function Header() {
         const list = await notificationApi.getByUser(user.id);
         if (!cancelled) setNotifications(dedupeNotifications(list));
       } catch (error) {
-        console.error(error);
+        console.error('Notification API Error:', error);
         if (!cancelled) setNotifications([]);
       }
     };
 
-    loadNotifications();
+    // Đợi 5 giây trước khi thực hiện pull notification lần đầu, 
+    // tránh tình trạng call dồn dập vào lúc mới mở app làm block tài nguyên kết nối của browser (lỗi Vite chunk load timeout)
+    const initialDelay = window.setTimeout(() => {
+      if (!cancelled) loadNotifications();
+    }, 5000);
+
     const timer = window.setInterval(loadNotifications, 30000);
     return () => {
       cancelled = true;
+      window.clearTimeout(initialDelay);
       window.clearInterval(timer);
     };
   }, [user]);

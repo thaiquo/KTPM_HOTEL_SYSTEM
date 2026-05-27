@@ -9,6 +9,10 @@ public class GuestRequest {
     private String phone;
     private String email;
     private String cccd;
+    private String citizenId;
+    private String passport;
+    private String gender;
+    private String role;
     private String note;
     private Boolean primary;
     private Boolean checkInPerson;
@@ -30,6 +34,18 @@ public class GuestRequest {
 
     public String getCccd() { return cccd; }
     public void setCccd(String cccd) { this.cccd = cccd; }
+
+    public String getCitizenId() { return citizenId; }
+    public void setCitizenId(String citizenId) { this.citizenId = citizenId; }
+
+    public String getPassport() { return passport; }
+    public void setPassport(String passport) { this.passport = passport; }
+
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
 
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }

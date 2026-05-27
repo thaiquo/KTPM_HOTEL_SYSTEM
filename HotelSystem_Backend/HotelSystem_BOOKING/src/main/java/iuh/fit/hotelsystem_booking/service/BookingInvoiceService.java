@@ -15,12 +15,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 @Service
 public class BookingInvoiceService {
@@ -33,11 +40,11 @@ public class BookingInvoiceService {
     private final ObjectMapper objectMapper;
 
     public BookingInvoiceService(BookingInvoiceRepository invoiceRepository,
-                                 BookingRepository bookingRepository,
-                                 BookingStayRepository bookingStayRepository,
-                                 BookingGuestService bookingGuestService,
-                                 RefundTransactionRepository refundTransactionRepository,
-                                 ObjectMapper objectMapper) {
+            BookingRepository bookingRepository,
+            BookingStayRepository bookingStayRepository,
+            BookingGuestService bookingGuestService,
+            RefundTransactionRepository refundTransactionRepository,
+            ObjectMapper objectMapper) {
         this.invoiceRepository = invoiceRepository;
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
@@ -47,7 +54,8 @@ public class BookingInvoiceService {
     }
 
     @Transactional
-    public BookingInvoice saveCheckoutInvoice(Long bookingId, BigDecimal amount, String currency, Map<String, Object> lines) {
+    public BookingInvoice saveCheckoutInvoice(Long bookingId, BigDecimal amount, String currency,
+            Map<String, Object> lines) {
         try {
             BookingInvoice invoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId)
                     .orElseGet(BookingInvoice::new);
@@ -78,6 +86,123 @@ public class BookingInvoiceService {
             resultByBooking.putIfAbsent(invoice.getBookingId(), toDto(invoice));
         }
         return new ArrayList<>(resultByBooking.values());
+    }
+
+    /**
+     * Server-side search. All params are optional.
+     * - invoiceCode: exact INV number (numeric part)
+     * - bookingCode: partial or exact booking code to search in booking table
+     * - customerName: partial name matched against guest names in booking
+     * - date: shorthand for fromDate=toDate (single day)
+     * - fromDate / toDate: invoice createdAt range (inclusive)
+     * - statuses: list of booking statuses to include
+     * - page / size: pagination
+     */
+    @Transactional(readOnly = true)
+    public Page<BookingInvoiceDto> searchInvoices(
+            String invoiceCode,
+            String bookingCode,
+            String customerName,
+            LocalDate date,
+            LocalDate fromDate,
+            LocalDate toDate,
+            List<String> statuses,
+            int page,
+            int size) {
+
+        // Resolve date range
+        LocalDate effectiveFrom = date != null ? date : fromDate;
+        LocalDate effectiveTo = date != null ? date : toDate;
+        LocalDateTime fromDt = effectiveFrom != null ? effectiveFrom.atStartOfDay() : null;
+        LocalDateTime toDt = effectiveTo != null ? effectiveTo.atTime(23, 59, 59) : null;
+
+        // Resolve booking IDs from bookingCode or customerName filter (joined through
+        // Booking/Guest tables)
+        List<Long> filteredBookingIds = null;
+        if ((bookingCode != null && !bookingCode.isBlank()) || (customerName != null && !customerName.isBlank())) {
+            List<iuh.fit.hotelsystem_booking.entity.Booking> matchingBookings = bookingRepository
+                    .findAllByOrderByCreatedAtDesc();
+            filteredBookingIds = matchingBookings.stream()
+                    .filter(b -> {
+                        boolean matchCode = bookingCode == null || bookingCode.isBlank()
+                                || (b.getBookingCode() != null && b.getBookingCode().toLowerCase()
+                                        .contains(bookingCode.trim().toLowerCase()));
+                        boolean matchName = customerName == null || customerName.isBlank();
+                        if (!matchName) {
+                            // Check guest names for this booking
+                            try {
+                                List<iuh.fit.hotelsystem_booking.entity.BookingGuest> guests = bookingGuestService
+                                        .getGuests(b.getId());
+                                matchName = guests.stream().anyMatch(g -> g.getFullName() != null &&
+                                        g.getFullName().toLowerCase().contains(customerName.trim().toLowerCase()));
+                            } catch (Exception ignored) {
+                                matchName = false;
+                            }
+                        }
+                        return matchCode && matchName;
+                    })
+                    .map(iuh.fit.hotelsystem_booking.entity.Booking::getId)
+                    .collect(Collectors.toList());
+            if (filteredBookingIds.isEmpty()) {
+                return Page.empty(PageRequest.of(page, size));
+            }
+        }
+
+        // Resolve normalised invoiceCode (strip "INV-" prefix if present)
+        String normalizedInvoiceCode = null;
+        if (invoiceCode != null && !invoiceCode.isBlank()) {
+            normalizedInvoiceCode = invoiceCode.trim().replaceAll("(?i)^inv-", "");
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        final String finalNormalizedInvoiceCode = normalizedInvoiceCode;
+        final List<Long> finalFilteredBookingIds = filteredBookingIds;
+        final LocalDateTime finalFromDt = fromDt;
+        final LocalDateTime finalToDt = toDt;
+
+        org.springframework.data.jpa.domain.Specification<BookingInvoice> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+
+            if (finalNormalizedInvoiceCode != null) {
+                try {
+                    Long id = Long.parseLong(finalNormalizedInvoiceCode);
+                    predicates.add(cb.equal(root.get("id"), id));
+                } catch (NumberFormatException e) {
+                    // ignore invalid invoice id
+                }
+            }
+
+            if (finalFromDt != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), finalFromDt));
+            }
+
+            if (finalToDt != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), finalToDt));
+            }
+
+            if (finalFilteredBookingIds != null && !finalFilteredBookingIds.isEmpty()) {
+                predicates.add(root.get("bookingId").in(finalFilteredBookingIds));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        Page<BookingInvoice> invoicePage = invoiceRepository.findAll(spec, pageable);
+
+        // Convert to DTO, then apply status filter (post-enrich since status comes from
+        // Booking)
+        List<BookingInvoiceDto> dtos = invoicePage.getContent().stream()
+                .map(this::toDto)
+                .filter(dto -> {
+                    if (statuses == null || statuses.isEmpty() || statuses.contains("ALL"))
+                        return true;
+                    String s = dto.getBookingStatus();
+                    return s != null && statuses.contains(s);
+                })
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(dtos, pageable, invoicePage.getTotalElements());
     }
 
     private BookingInvoiceDto toDto(BookingInvoice invoice) {
@@ -111,7 +236,9 @@ public class BookingInvoiceService {
         dto.setCustomerUserId(booking.getUserId() != null ? String.valueOf(booking.getUserId()) : null);
         dto.setCheckInDate(booking.getCheckIn() != null ? booking.getCheckIn().toString() : null);
         dto.setCheckOutDate(booking.getCheckOut() != null ? booking.getCheckOut().toString() : null);
-        dto.setTotalRooms(booking.getTotalRooms() != null ? booking.getTotalRooms() : (booking.getItems() != null ? booking.getItems().size() : null));
+        dto.setTotalRooms(booking.getTotalRooms() != null ? booking.getTotalRooms()
+                : (booking.getItems() != null ? booking.getItems().size() : null));
+        applyBookingRoomStaff(dto, booking);
 
         List<BookingGuest> guests = bookingGuestService.getGuests(dto.getBookingId());
         BookingGuest representative = pickRepresentativeGuest(guests);
@@ -129,21 +256,85 @@ public class BookingInvoiceService {
         }
 
         bookingStayRepository.findByBookingId(dto.getBookingId()).ifPresent(stay -> applyStay(dto, stay));
+        applyInvoiceStaff(dto);
 
-        RefundTransaction refund = refundTransactionRepository.findFirstByBookingIdAndReasonOrderByCreatedAtDesc(dto.getBookingId(), "EARLY_CHECKOUT_REFUND")
+        RefundTransaction refund = refundTransactionRepository
+                .findFirstByBookingIdAndReasonOrderByCreatedAtDesc(dto.getBookingId(), "EARLY_CHECKOUT_REFUND")
                 .orElseGet(() -> refundTransactionRepository.findFirstByBookingId(dto.getBookingId()).orElse(null));
         if (refund != null) {
             dto.setRefundTransactionId(refund.getId());
             dto.setRefundStatus(refund.getStatus() != null ? refund.getStatus().name() : null);
-            dto.setRefundSettlementAmount(refund.getRefundAmount() != null ? BigDecimal.valueOf(refund.getRefundAmount()) : null);
+            dto.setRefundSettlementAmount(
+                    refund.getRefundAmount() != null ? BigDecimal.valueOf(refund.getRefundAmount()) : null);
+        }
+    }
+
+    private void applyBookingRoomStaff(BookingInvoiceDto dto, Booking booking) {
+        if (booking == null || booking.getItems() == null || booking.getItems().isEmpty()) {
+            return;
+        }
+        java.util.Set<Long> checkinStaffIds = new java.util.LinkedHashSet<>();
+        java.util.Set<Long> checkoutStaffIds = new java.util.LinkedHashSet<>();
+        LocalDateTime firstCheckinAt = null;
+        LocalDateTime lastCheckoutAt = null;
+        for (var item : booking.getItems()) {
+            if (item.getCheckedInByStaffId() != null) {
+                checkinStaffIds.add(item.getCheckedInByStaffId());
+            }
+            if (item.getCheckedOutByStaffId() != null) {
+                checkoutStaffIds.add(item.getCheckedOutByStaffId());
+            }
+            if (item.getActualCheckInAt() != null
+                    && (firstCheckinAt == null || item.getActualCheckInAt().isBefore(firstCheckinAt))) {
+                firstCheckinAt = item.getActualCheckInAt();
+            }
+            if (item.getActualCheckOutAt() != null
+                    && (lastCheckoutAt == null || item.getActualCheckOutAt().isAfter(lastCheckoutAt))) {
+                lastCheckoutAt = item.getActualCheckOutAt();
+            }
+        }
+        if (!checkinStaffIds.isEmpty()) {
+            dto.setCheckinStaffId(
+                    checkinStaffIds.size() == 1 ? String.valueOf(checkinStaffIds.iterator().next()) : "MULTIPLE");
+        }
+        if (!checkoutStaffIds.isEmpty()) {
+            dto.setCheckoutStaffId(
+                    checkoutStaffIds.size() == 1 ? String.valueOf(checkoutStaffIds.iterator().next()) : "MULTIPLE");
+        }
+        if (firstCheckinAt != null) {
+            dto.setCheckedInAt(firstCheckinAt);
+        }
+        if (lastCheckoutAt != null) {
+            dto.setCheckedOutAt(lastCheckoutAt);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyInvoiceStaff(BookingInvoiceDto dto) {
+        if (!(dto.getLines() instanceof Map<?, ?> lines)) {
+            return;
+        }
+        Object createdByStaffId = lines.get("createdByStaffId");
+        if ((dto.getCheckoutStaffId() == null || dto.getCheckoutStaffId().isBlank()) && createdByStaffId != null) {
+            dto.setCheckoutStaffId(String.valueOf(createdByStaffId));
         }
     }
 
     private void applyStay(BookingInvoiceDto dto, BookingStay stay) {
-        dto.setCheckinStaffId(stay.getCheckedInByStaffId() != null ? String.valueOf(stay.getCheckedInByStaffId()) : null);
-        dto.setCheckoutStaffId(stay.getCheckedOutByStaffId() != null ? String.valueOf(stay.getCheckedOutByStaffId()) : null);
-        dto.setCheckedInAt(stay.getActualCheckInAt());
-        dto.setCheckedOutAt(stay.getActualCheckOutAt());
+        if ((dto.getCheckinStaffId() == null || dto.getCheckinStaffId().isBlank())
+                && stay.getCheckedInByStaffId() != null) {
+            dto.setCheckinStaffId(String.valueOf(stay.getCheckedInByStaffId()));
+        }
+        if ((dto.getCheckoutStaffId() == null || dto.getCheckoutStaffId().isBlank())
+                && stay.getCheckedOutByStaffId() != null) {
+            dto.setCheckoutStaffId(String.valueOf(stay.getCheckedOutByStaffId()));
+        }
+        if (dto.getCheckedInAt() == null) {
+            dto.setCheckedInAt(stay.getActualCheckInAt());
+        }
+        if (dto.getCheckedOutAt() == null) {
+            dto.setCheckedOutAt(stay.getActualCheckOutAt());
+        }
         if (dto.getRepresentativeName() == null || dto.getRepresentativeName().isBlank()) {
             dto.setRepresentativeName(stay.getRepresentativeFullName());
             dto.setRepresentativePhone(stay.getRepresentativePhone());
@@ -156,8 +347,10 @@ public class BookingInvoiceService {
         BookingGuest primary = null;
         BookingGuest first = null;
         for (BookingGuest guest : guests) {
-            if (guest == null) continue;
-            if (first == null) first = guest;
+            if (guest == null)
+                continue;
+            if (first == null)
+                first = guest;
             if (Boolean.TRUE.equals(guest.getCheckInPerson())) {
                 return guest;
             }

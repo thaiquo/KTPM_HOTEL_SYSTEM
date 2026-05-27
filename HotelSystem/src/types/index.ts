@@ -77,10 +77,26 @@ export interface BookingItem {
   priceSnapshot: number;
   finalPrice?: number;
   discount?: number;
-  status?: 'ACTIVE' | 'CANCELLED';
+  status?: 'PENDING_PAYMENT' | 'BOOKED' | 'CHECKED_IN' | 'CHECKED_OUT' | 'CANCELLED' | 'NO_SHOW' | 'ACTIVE';
   checkIn: string;
   checkOut: string;
   nights: number;
+  actualCheckInAt?: string;
+  actualCheckOutAt?: string;
+  representativeGuestId?: string;
+  checkedInByStaffId?: string;
+  checkedOutByStaffId?: string;
+  roomCharge?: number;
+  serviceCharge?: number;
+  surcharge?: number;
+  damageFee?: number;
+  finalAmount?: number;
+  guests?: BookingGuest[];
+  booking?: Booking;
+  bookingId?: string;
+  bookingCode?: string;
+  bookingPaymentStatus?: string;
+  bookingStatus?: string;
 }
 
 export interface Booking {
@@ -96,9 +112,10 @@ export interface Booking {
   totalPrice: number;
   totalRooms?: number;
   totalGuests?: number;
-  status: 'pending_payment' | 'pending' | 'deposit_paid' | 'confirmed' | 'checked_in' | 'checkout_pending_payment' | 'checked_out' | 'completed' | 'cancel_requested' | 'cancelled' | 'no_show';
+  status: 'pending_payment' | 'pending' | 'deposit_paid' | 'confirmed' | 'booked' | 'partially_checked_in' | 'checked_in' | 'partially_checked_out' | 'checkout_pending_payment' | 'checked_out' | 'completed' | 'cancel_requested' | 'cancelled' | 'no_show';
   guests: number;
   items: BookingItem[];
+  bookingGuests?: BookingGuest[];
   createdAt: string;
   confirmedAt?: string;
   ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
@@ -107,6 +124,10 @@ export interface Booking {
   paidAmount?: number;
   depositAmount?: number;
   paymentTransactionId?: string;
+  customerName?: string;
+  representativeName?: string;
+  representativePhone?: string;
+  representativeCccd?: string;
   cancelledAt?: string;
   cancellationReason?: string;
   actualCheckInAt?: string;
@@ -121,12 +142,16 @@ export interface Booking {
 export interface BookingGuest {
   id: string;
   bookingId: string;
+  bookingRoomId?: string;
   roomId?: string;
   fullName: string;
   dateOfBirth?: string;
   phone?: string;
   email?: string;
   cccd?: string;
+  passport?: string;
+  gender?: string;
+  role?: 'REPRESENTATIVE' | 'MEMBER';
   note?: string;
   type?: 'ADULT' | 'CHILD';
   primaryGuest?: boolean;

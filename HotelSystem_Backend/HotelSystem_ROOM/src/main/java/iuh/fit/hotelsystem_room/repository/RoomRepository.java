@@ -9,8 +9,10 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+
 @Repository
-public interface RoomRepository extends JpaRepository<Room, Long> {
+public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificationExecutor<Room> {
 
     // 👉 Để tránh MultipleBagFetchException (lỗi 500 do tích Descartes), 
     // chúng ta chỉ FETCH các quan hệ 1-1 hoặc N-1. 

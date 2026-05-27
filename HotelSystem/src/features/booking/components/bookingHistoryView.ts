@@ -120,21 +120,63 @@ export const getBookingRoomPreview = (booking: BookingWithRoom) => {
 };
 
 export const getBookingPrimaryGuest = (booking: BookingWithRoom) => {
-  const guests = booking.bookingGuests || [];
-  return guests.find((guest) => guest.primaryGuest) || guests[0] || null;
+  const guests = getBookingGuestRoster(booking);
+  return guests.find((guest) => guest.primaryGuest) || guests.find((guest) => guest.checkInPerson) || guests[0] || null;
 };
 
 export const getBookingGuestNames = (booking: BookingWithRoom) => {
-  const guests = booking.bookingGuests || [];
-  if (guests.length === 0) return [];
-  return guests.map((guest) => guest.fullName).filter(Boolean);
+  return getBookingGuestRoster(booking).map((guest) => guest.fullName).filter(Boolean);
+};
+
+export const getBookingGuestRoster = (booking: BookingWithRoom, roomId?: string) => {
+  const directGuests = booking.bookingGuests || [];
+  const normalizedRoomId = roomId ? String(roomId) : '';
+  const legacyRepresentative = booking.representativeName || booking.customerName;
+
+  if (!normalizedRoomId) {
+    if (directGuests.length > 0) return directGuests;
+    const itemGuests = (booking.items || []).flatMap((item) => item.guests || []);
+    if (itemGuests.length > 0) return itemGuests;
+    if (legacyRepresentative) {
+      return [{
+        id: `${booking.id}-legacy-representative`,
+        bookingId: booking.id,
+        fullName: booking.representativeName || booking.customerName || 'Khách hàng đại diện',
+        phone: booking.representativePhone,
+        cccd: booking.representativeCccd,
+        primaryGuest: true,
+        checkInPerson: true,
+      } as BookingGuest];
+    }
+    return [];
+  }
+
+  const directRoomGuests = directGuests.filter((guest) => {
+    const guestRoomId = guest.bookingRoomId || guest.roomId;
+    return guestRoomId ? String(guestRoomId) === normalizedRoomId : false;
+  });
+
+  if (directRoomGuests.length > 0) return directRoomGuests;
+
+  const bookingItem = (booking.items || []).find((item) => String(item.id || '') === normalizedRoomId || String(item.roomId || '') === normalizedRoomId);
+  if (bookingItem?.guests?.length) return bookingItem.guests;
+  return [];
+};
+
+export const getRoomRepresentative = (booking: BookingWithRoom, roomId?: string) => {
+  const guests = getBookingGuestRoster(booking, roomId);
+  return guests.find((guest) => guest.primaryGuest)
+    || guests.find((guest) => guest.checkInPerson)
+    || guests.find((guest) => guest.role === 'REPRESENTATIVE')
+    || guests[0]
+    || null;
 };
 
 export const getBookingRepresentative = (booking: BookingWithRoom) => {
   const primaryGuest = getBookingPrimaryGuest(booking);
   return {
-    name: primaryGuest?.fullName || booking.bookingGuests?.[0]?.fullName || 'Khách hàng đại diện',
-    phone: primaryGuest?.phone || booking.bookingGuests?.[0]?.phone || 'Chưa có dữ liệu',
+    name: primaryGuest?.fullName || booking.representativeName || booking.customerName || booking.bookingGuests?.[0]?.fullName || 'Khách hàng đại diện',
+    phone: primaryGuest?.phone || booking.representativePhone || booking.bookingGuests?.[0]?.phone || 'Chưa có dữ liệu',
     email: primaryGuest?.email || booking.bookingGuests?.[0]?.email || 'Chưa có dữ liệu',
     dateOfBirth: formatDateDisplay(primaryGuest?.dateOfBirth || booking.bookingGuests?.[0]?.dateOfBirth),
   };
@@ -191,8 +233,8 @@ export const getStatusTone = (status: Booking['status']) => {
 };
 
 export const getGuestsForRoom = (booking: BookingWithRoom, roomId?: string) => {
-  if (!roomId) return booking.bookingGuests || [];
-  return (booking.bookingGuests || []).filter((guest) => !guest.roomId || guest.roomId === roomId);
+  if (!roomId) return getBookingGuestRoster(booking);
+  return getBookingGuestRoster(booking, roomId);
 };
 
 export const getRoomPricing = (booking: BookingWithRoom, room?: Room | null) => {

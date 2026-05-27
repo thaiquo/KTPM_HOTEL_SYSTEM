@@ -1,6 +1,9 @@
 package iuh.fit.hotelsystem_booking.controller;
 
 import iuh.fit.hotelsystem_booking.dto.CheckInCheckOutStatsDto;
+import iuh.fit.hotelsystem_booking.dto.BookingRoomActionResult;
+import iuh.fit.hotelsystem_booking.dto.BookingRoomBatchRequest;
+import iuh.fit.hotelsystem_booking.dto.BookingRoomExtraFeeRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckoutResponse;
@@ -11,11 +14,13 @@ import iuh.fit.hotelsystem_booking.dto.StaffCheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
+import iuh.fit.hotelsystem_booking.entity.BookingItem;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_booking.service.BookingService;
+import iuh.fit.hotelsystem_booking.service.BookingRoomWorkflowService;
 import iuh.fit.hotelsystem_booking.service.CheckoutService;
 import iuh.fit.hotelsystem_booking.service.RefundAuditService;
 import iuh.fit.hotelsystem_booking.service.RefundAssignmentService;
@@ -53,6 +58,8 @@ public class StaffBookingController {
     private final RefundQueueProducer refundQueueProducer;
     private final StaffAuthService staffAuthService;
     private final StaffCheckInOutStatsService statsService;
+    private final BookingRoomWorkflowService bookingRoomWorkflowService;
+    private final iuh.fit.hotelsystem_booking.service.BookingInvoiceService bookingInvoiceService;
 
     public StaffBookingController(BookingService bookingService,
                                   BookingRepository bookingRepository,
@@ -63,7 +70,9 @@ public class StaffBookingController {
                                   RefundQueueProducer refundQueueProducer,
                                   StaffAuthService staffAuthService,
                                   StaffCheckInOutStatsService statsService,
-                                  CheckoutService checkoutService) {
+                                  CheckoutService checkoutService,
+                                  BookingRoomWorkflowService bookingRoomWorkflowService,
+                                  iuh.fit.hotelsystem_booking.service.BookingInvoiceService bookingInvoiceService) {
         this.bookingService = bookingService;
         this.bookingRepository = bookingRepository;
         this.refundRepository = refundRepository;
@@ -74,6 +83,8 @@ public class StaffBookingController {
         this.staffAuthService = staffAuthService;
         this.statsService = statsService;
         this.checkoutService = checkoutService;
+        this.bookingRoomWorkflowService = bookingRoomWorkflowService;
+        this.bookingInvoiceService = bookingInvoiceService;
     }
 
     private StaffTokenInfo staff(HttpServletRequest request) {
@@ -110,6 +121,74 @@ public class StaffBookingController {
     public List<BookingGuest> guests(HttpServletRequest request, @PathVariable Long bookingId) {
         ensureStaff(request);
         return bookingService.getGuests(bookingId);
+    }
+
+    @GetMapping("/booking-rooms/check-in-today")
+    public ResponseEntity<List<BookingItem>> getRoomCheckInToday(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(bookingRoomWorkflowService.getCheckInRooms(resolveDate(date)));
+    }
+
+    @GetMapping("/booking-rooms/in-house")
+    public ResponseEntity<List<BookingItem>> getInHouseRooms(HttpServletRequest request) {
+        ensureStaff(request);
+        return ResponseEntity.ok(bookingRoomWorkflowService.getInHouseRooms());
+    }
+
+    @GetMapping("/booking-rooms/check-out-today")
+    public ResponseEntity<List<BookingItem>> getRoomCheckOutToday(
+            HttpServletRequest request,
+            @RequestParam(value = "date", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        ensureStaff(request);
+        return ResponseEntity.ok(bookingRoomWorkflowService.getCheckOutRooms(resolveDate(date)));
+    }
+
+    @GetMapping("/bookings")
+    public List<Booking> bookings(HttpServletRequest request) {
+        ensureStaff(request);
+        return bookingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
+    }
+
+    @PostMapping("/booking-rooms/{bookingRoomId:\\d+}/check-in")
+    public ResponseEntity<BookingItem> checkInRoom(HttpServletRequest httpRequest,
+                                                   @PathVariable Long bookingRoomId,
+                                                   @RequestBody(required = false) StaffCheckInRequest request) {
+        StaffTokenInfo staff = staff(httpRequest);
+        CheckInRequest checkInRequest = new CheckInRequest();
+        if (request != null) {
+            checkInRequest.setRepresentativeCccd(request.getRepresentativeCccd());
+            checkInRequest.setRepresentativePhone(request.getRepresentativePhone());
+            checkInRequest.setRepresentativeGuestId(request.getRepresentativeGuestId());
+        }
+        return ResponseEntity.ok(bookingRoomWorkflowService.checkInRoom(bookingRoomId, staff.getStaffId(), checkInRequest));
+    }
+
+    @PostMapping("/bookings/{bookingId:\\d+}/check-in-multiple")
+    public ResponseEntity<BookingRoomActionResult> checkInMultipleRooms(HttpServletRequest httpRequest,
+                                                                        @PathVariable Long bookingId,
+                                                                        @RequestBody BookingRoomBatchRequest request) {
+        StaffTokenInfo staff = staff(httpRequest);
+        return ResponseEntity.ok(bookingRoomWorkflowService.checkInRooms(bookingId, request, staff.getStaffId()));
+    }
+
+    @PostMapping("/booking-rooms/{bookingRoomId:\\d+}/check-out")
+    public ResponseEntity<BookingItem> checkOutRoom(HttpServletRequest httpRequest,
+                                                    @PathVariable Long bookingRoomId,
+                                                    @RequestBody(required = false) BookingRoomExtraFeeRequest request) {
+        StaffTokenInfo staff = staff(httpRequest);
+        return ResponseEntity.ok(bookingRoomWorkflowService.checkOutRoom(bookingRoomId, staff.getStaffId(), request));
+    }
+
+    @PostMapping("/bookings/{bookingId:\\d+}/check-out-multiple")
+    public ResponseEntity<BookingRoomActionResult> checkOutMultipleRooms(HttpServletRequest httpRequest,
+                                                                         @PathVariable Long bookingId,
+                                                                         @RequestBody BookingRoomBatchRequest request) {
+        StaffTokenInfo staff = staff(httpRequest);
+        return ResponseEntity.ok(bookingRoomWorkflowService.checkOutRooms(bookingId, request, staff.getStaffId()));
     }
 
     @PostMapping("/bookings/{bookingId:\\d+}/check-in")
@@ -153,6 +232,25 @@ public class StaffBookingController {
     public java.util.List<iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto> listInvoices(HttpServletRequest request) {
         ensureStaff(request);
         return checkoutService.listInvoices();
+    }
+
+    @GetMapping("/invoices/search")
+    public org.springframework.data.domain.Page<iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto> searchInvoices(
+            HttpServletRequest request,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String invoiceCode,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String bookingCode,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String customerName,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String date,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String fromDate,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String toDate,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.util.List<String> status,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        ensureStaff(request);
+        java.time.LocalDate dateParsed = date != null && !date.isBlank() ? java.time.LocalDate.parse(date) : null;
+        java.time.LocalDate fromParsed = fromDate != null && !fromDate.isBlank() ? java.time.LocalDate.parse(fromDate) : null;
+        java.time.LocalDate toParsed   = toDate != null && !toDate.isBlank()   ? java.time.LocalDate.parse(toDate)   : null;
+        return bookingInvoiceService.searchInvoices(invoiceCode, bookingCode, customerName, dateParsed, fromParsed, toParsed, status, page, size);
     }
 
     @GetMapping("/bookings/{bookingId:\\d+}/services")

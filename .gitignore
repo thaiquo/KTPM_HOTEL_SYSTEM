@@ -1,0 +1,23 @@
+# ENV
+.env
+
+# Maven
+target/
+
+# Logs
+*.log
+*.txt
+
+# Crash
+*.stackdump
+
+# Node
+node_modules/
+
+# Build
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/

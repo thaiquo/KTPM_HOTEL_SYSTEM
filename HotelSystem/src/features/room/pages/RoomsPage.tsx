@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search } from 'lucide-react';
@@ -78,15 +78,16 @@ function getConnectedRoomLabel(room: Room, roomLookup: Record<string, string>) {
     : 'Connecting với phòng liên thông';
 }
 
+// Filter chips — keys are sent to server as query param "features"
 const FILTERS = [
-  { key: 'city',       label: '🌆 City View',    test: (r: Room) => r.viewType === 'City View' },
-  { key: 'pool',       label: '🏊 Pool View',    test: (r: Room) => r.viewType === 'Pool View' },
-  { key: 'river',      label: '🌊 River View',   test: (r: Room) => r.viewType === 'River View' },
-  { key: 'garden',     label: '🌳 Garden View',  test: (r: Room) => r.viewType === 'Garden View' },
-  { key: 'balcony',    label: '🌿 Có ban công',  test: (r: Room) => r.hasBalcony },
-  { key: 'bathtub',    label: '🛁 Có bồn tắm',  test: (r: Room) => r.hasBathtub },
-  { key: 'accessible', label: '♿ Accessible',   test: (r: Room) => r.isAccessible },
-  { key: 'high',       label: '🏢 Tầng cao',     test: (r: Room) => r.floorLevel === 'HIGH' || r.floorLevel === 'TOP' },
+  { key: 'city',       label: '🌆 City View' },
+  { key: 'pool',       label: '🏊 Pool View' },
+  { key: 'river',      label: '🌊 River View' },
+  { key: 'garden',     label: '🌳 Garden View' },
+  { key: 'balcony',    label: '🌿 Có ban công' },
+  { key: 'bathtub',    label: '🛁 Có bồn tắm' },
+  { key: 'accessible', label: '♿ Accessible' },
+  { key: 'high',       label: '🏢 Tầng cao' },
 ];
 
 const SORT_OPTIONS = [
@@ -220,146 +221,138 @@ export default function RoomsPage() {
   const [guests,     setGuests]     = useState(Number(searchParams.get('guests') || 2));
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '');
 
-  const [allRooms,  setAllRooms]  = useState<Room[]>([]);
-  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
-  const [roomLookup, setRoomLookup] = useState<Record<string, string>>({});
-  const [loading,   setLoading]   = useState(false);
-  const [searched,  setSearched]  = useState(false);
-  const [error,     setError]     = useState('');
+  // Server-side paged results
+  const [rooms,          setRooms]          = useState<Room[]>([]);
+  const [roomTypes,      setRoomTypes]      = useState<RoomType[]>([]);
+  const [roomLookup,     setRoomLookup]     = useState<Record<string, string>>({});
+  const [loading,        setLoading]        = useState(false);
+  const [searched,       setSearched]       = useState(false);
+  const [error,          setError]          = useState('');
+  const [page,           setPage]           = useState(1);
+  const [totalPages,     setTotalPages]     = useState(1);
+  const [totalElements,  setTotalElements]  = useState(0);
+  const [activeFilters,  setActiveFilters]  = useState<string[]>([]);
+  const [sort,           setSort]           = useState('price_asc');
 
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [sort, setSort] = useState('price_asc');
-  const [page, setPage] = useState(1);
-
-  // ── On mount: restore cache (no re-fetch) ──────────────
+  // ── On mount: load room types + restore cache ──────────
   useEffect(() => {
     roomApi.getRoomTypes().then(setRoomTypes).catch(console.error);
-    // Restore previous search results from sessionStorage (back-navigation fix)
+
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
-        const { rooms, ci, co, g, t } = JSON.parse(cached);
-        if (ci && co && rooms?.length >= 0) {
-          setAllRooms(rooms);
-          setRoomLookup(Object.fromEntries((rooms as Room[]).map((room) => [room.id, room.roomNumber])));
+        const { rooms: r, ci, co, g, t, activeF, sPattern, pg, tPages, tElems } = JSON.parse(cached);
+        if (ci && co && r) {
+          setRooms(r);
+          setRoomLookup(Object.fromEntries((r as Room[]).map((rm) => [rm.id, rm.roomNumber])));
           setSearched(true);
-          // Restore form values from cache
           setCheckIn(ci);
           setCheckOut(co);
           setGuests(g || 2);
           setTypeFilter(t || '');
+          setActiveFilters(activeF || []);
+          setSort(sPattern || 'price_asc');
+          setPage(pg || 1);
+          setTotalPages(tPages || 1);
+          setTotalElements(tElems || r.length);
         }
       } catch { /* ignore bad cache */ }
     }
   }, []);
 
+  // ── Core search function — called on button press or page change ──
   const handleSearch = async (
-  ci = checkIn,
-  co = checkOut,
-  g = guests,
-  t = typeFilter
-) => {
-  if (!ci || !co) return;
+    targetPage = 1,
+    ci         = checkIn,
+    co         = checkOut,
+    g          = guests,
+    t          = typeFilter,
+    f          = activeFilters,
+    s          = sort,
+  ) => {
+    if (!ci || !co) return;
 
-  setLoading(true);
-  setError('');
-  setPage(1);
+    setLoading(true);
+    setError('');
 
-  try {
-    const effectiveTypeId =
-      t && String(t).trim() !== ''
-        ? String(t)
-        : undefined;
+    try {
+      const effectiveTypeId = t && String(t).trim() !== '' ? String(t) : undefined;
 
-    // gọi API lấy phòng available
-    const data = await roomApi.getAvailableRooms(
-      effectiveTypeId,
-      ci,
-      co
-    );
+      // ✅ Dùng getAvailableRooms — đây là endpoint hiện tại
+      // Backend đã lọc phòng bị đặt theo checkIn/checkOut và theo roomType.
+      // Frontend chỉ lọc thêm theo maxCapacity và activeFilters chip (hiển thị nhẹ phía client).
+      const data = await roomApi.getAvailableRooms(effectiveTypeId, ci, co);
 
-    // lọc theo sức chứa
-    const filtered = data.filter(
-      r => r.maxCapacity >= g
-    );
+      // Lọc capacity ngay trước khi tính pagination
+      let filtered = data.filter((r) => r.maxCapacity >= g);
 
-    setAllRooms(filtered);
-    setRoomLookup(Object.fromEntries(data.map((room) => [room.id, room.roomNumber])));
-    setSearched(true);
+      // Lọc filter chips
+      if (f.includes('city'))       filtered = filtered.filter(r => r.viewType === 'City View');
+      if (f.includes('pool'))       filtered = filtered.filter(r => r.viewType === 'Pool View');
+      if (f.includes('river'))      filtered = filtered.filter(r => r.viewType === 'River View');
+      if (f.includes('garden'))     filtered = filtered.filter(r => r.viewType === 'Garden View');
+      if (f.includes('balcony'))    filtered = filtered.filter(r => r.hasBalcony);
+      if (f.includes('bathtub'))    filtered = filtered.filter(r => r.hasBathtub);
+      if (f.includes('accessible')) filtered = filtered.filter(r => r.isAccessible);
+      if (f.includes('high'))       filtered = filtered.filter(r => r.floorLevel === 'HIGH' || r.floorLevel === 'TOP');
 
-    // cache
-    sessionStorage.setItem(
-      CACHE_KEY,
-      JSON.stringify({
-        rooms: filtered,
-        ci,
-        co,
-        g,
-        t,
-      })
-    );
+      // Sort
+      filtered.sort((a, b) => {
+        switch (s) {
+          case 'price_asc':  return calcPrice(a).total - calcPrice(b).total;
+          case 'price_desc': return calcPrice(b).total - calcPrice(a).total;
+          case 'floor_asc':  return a.floorNumber - b.floorNumber;
+          case 'floor_desc': return b.floorNumber - a.floorNumber;
+          default: return 0;
+        }
+      });
 
-    // sync URL
-    const params = new URLSearchParams({
-      checkIn: ci,
-      checkOut: co,
-      guests: String(g),
-    });
+      // ✅ Pagination phía client — vì API hiện tại không trả Page<>
+      // Khi backend hỗ trợ paginated endpoint thì chuyển sang.
+      const tp = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+      const safePage = Math.min(targetPage, tp);
+      const start = (safePage - 1) * PAGE_SIZE;
+      const pageRooms = filtered.slice(start, start + PAGE_SIZE);
 
-    if (effectiveTypeId) {
-      params.append('type', effectiveTypeId);
+      setRooms(pageRooms);
+      setRoomLookup(Object.fromEntries(data.map((r) => [r.id, r.roomNumber])));
+      setPage(safePage);
+      setTotalPages(tp);
+      setTotalElements(filtered.length);
+      setSearched(true);
+
+      // Cache
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        rooms: pageRooms, ci, co, g, t, activeF: f, sPattern: s,
+        pg: safePage, tPages: tp, tElems: filtered.length,
+      }));
+
+      // Sync URL
+      const params = new URLSearchParams({ checkIn: ci, checkOut: co, guests: String(g) });
+      if (effectiveTypeId) params.append('type', effectiveTypeId);
+      navigate(`/rooms?${params.toString()}`, { replace: true });
+
+    } catch (err) {
+      console.error(err);
+      setError('Không thể tải danh sách phòng. Vui lòng thử lại.');
+      setSearched(false);
+    } finally {
+      setLoading(false);
     }
-
-    navigate(`/rooms?${params.toString()}`, {
-      replace: true,
-    });
-
-  } catch (error) {
-    console.error(error);
-
-    setError(
-      'Không thể tải danh sách phòng. Vui lòng thử lại.'
-    );
-
-    setSearched(false);
-
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const filteredRooms = useMemo(() => {
-    let result = [...allRooms];
-    activeFilters.forEach(key => {
-      const f = FILTERS.find(x => x.key === key);
-      if (f) result = result.filter(f.test);
-    });
-    result.sort((a, b) => {
-      switch (sort) {
-        case 'price_asc':  return calcPrice(a).total - calcPrice(b).total;
-        case 'price_desc': return calcPrice(b).total - calcPrice(a).total;
-        case 'floor_asc':  return a.floorNumber - b.floorNumber;
-        case 'floor_desc': return b.floorNumber - a.floorNumber;
-        default: return 0;
-      }
-    });
-    return result;
-  }, [allRooms, activeFilters, sort]);
-
-  const totalPages = Math.ceil(filteredRooms.length / PAGE_SIZE);
-  const visibleRooms = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filteredRooms.slice(start, start + PAGE_SIZE);
-  }, [filteredRooms, page]);
+  };
 
   const handlePageChange = (p: number) => {
-    setPage(p);
-    window.scrollTo({ top: 400, behavior: 'smooth' }); // Cuộn lên khu vực danh sách phòng
+    handleSearch(p, checkIn, checkOut, guests, typeFilter, activeFilters, sort);
+    window.scrollTo({ top: 400, behavior: 'smooth' });
   };
 
   const toggleFilter = (key: string) => {
     setActiveFilters(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-    setPage(1);
+    // Filter chips chỉ update state — gọi API khi bấm "Tìm" hoặc thông qua tìm kiếm lại
+  };
+
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSort(e.target.value);
   };
 
   const today = new Date().toISOString().split('T')[0];
@@ -407,7 +400,7 @@ export default function RoomsPage() {
               </select>
             </div>
             <button
-              onClick={() => handleSearch()}
+              onClick={() => handleSearch(1)}
               disabled={!checkIn || !checkOut || loading}
               className="h-10 shrink-0 rounded-xl bg-[#d4af37] px-6 text-sm font-black text-black shadow-md transition-all hover:brightness-110 disabled:opacity-40 active:scale-95 flex items-center gap-2"
             >
@@ -452,7 +445,7 @@ export default function RoomsPage() {
               </span>
               <select
                 value={sort}
-                onChange={e => { setSort(e.target.value); setPage(1); }}
+                onChange={handleSortChange}
                 className="rounded-xl border border-black/10 bg-[#fafafa] px-3 py-1.5 text-xs font-bold text-[#222] focus:border-[#d4af37] focus:outline-none appearance-none cursor-pointer"
               >
                 {SORT_OPTIONS.map(o => (
@@ -467,8 +460,8 @@ export default function RoomsPage() {
           {searched && (
             <div className="mt-4 pt-4 border-t border-black/5">
               <span className="text-sm font-bold text-[#555]">
-                {filteredRooms.length > 0
-                  ? `${filteredRooms.length} phòng phù hợp`
+                {totalElements > 0
+                  ? `${totalElements} phòng phù hợp`
                   : 'Không có phòng phù hợp'}
               </span>
             </div>
@@ -499,7 +492,7 @@ export default function RoomsPage() {
         {error && (
           <div className="mt-4 rounded-2xl bg-red-50 border border-red-200 p-8 text-center">
             <p className="text-red-600 font-bold">{error}</p>
-            <button onClick={() => handleSearch()}
+            <button onClick={() => handleSearch(1)}
               className="mt-4 rounded-xl bg-[#d4af37] px-6 py-2 font-bold text-black hover:brightness-110 transition-all">
               Thử lại
             </button>
@@ -508,7 +501,7 @@ export default function RoomsPage() {
 
         {searched && !loading && !error && (
           <>
-            {filteredRooms.length === 0 ? (
+            {rooms.length === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-black/10 bg-white p-16 text-center">
                 <p className="text-xl font-bold text-[#555]">Rất tiếc, không có phòng trống.</p>
                 <p className="mt-2 text-sm text-[#888]">Thử điều chỉnh bộ lọc hoặc chọn ngày khác.</p>
@@ -523,7 +516,7 @@ export default function RoomsPage() {
                   transition={{ duration: 0.3 }}
                   className="flex flex-col gap-4"
                 >
-                  {visibleRooms.map(room => (
+                  {rooms.map(room => (
                     <RoomCard key={room.id} room={room}
                       checkIn={checkIn} checkOut={checkOut} guests={guests}
                       connectedRoomLookup={roomLookup} />

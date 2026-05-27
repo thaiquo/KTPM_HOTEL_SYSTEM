@@ -1,5 +1,9 @@
 import axios from 'axios';
-import type { Room, Booking, BookingGuest, User, UserProfile, SearchFilters } from '../types';
+import type { Room, Booking, BookingGuest, BookingItem, User, UserProfile, SearchFilters } from '../types';
+
+const API_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 15000;
+const PAYMENT_FLOW_TIMEOUT_MS = Number(import.meta.env.VITE_PAYMENT_FLOW_TIMEOUT_MS) || 45000;
+const NETWORK_ERROR_MESSAGE = 'Không thể tải dữ liệu. Vui lòng kiểm tra kết nối hoặc thử lại.';
 
 export interface EmployeeBackend {
   id: number;
@@ -117,6 +121,10 @@ type BookingBackend = {
   paymentType?: string;
   paymentStatus?: string;
   paymentTransactionId?: string;
+  customerName?: string;
+  representativeName?: string;
+  representativePhone?: string;
+  representativeCccd?: string;
   cancelledAt?: string;
   cancellationReason?: string;
   actualCheckInAt?: string;
@@ -133,12 +141,16 @@ type BookingBackend = {
 type BookingGuestBackend = {
   id?: number | string;
   bookingId?: number | string;
+  bookingRoomId?: number | string;
   roomId?: number | string;
   fullName?: string;
   dateOfBirth?: string;
   phone?: string;
   email?: string;
   cccd?: string;
+  passport?: string;
+  gender?: string;
+  role?: string;
   note?: string;
   type?: string;
   primaryGuest?: boolean;
@@ -299,12 +311,19 @@ export type BookingGuestPayload = {
 };
 
 export type CreateBookingPayload = {
-  rooms: { roomId: number; priceSnapshot: number }[];
+  rooms: Array<{
+    roomId: number;
+    roomTypeId?: number;
+    priceSnapshot: number;
+    guests?: Array<BookingGuestPayload & { citizenId?: string; passport?: string; gender?: string; role?: 'REPRESENTATIVE' | 'MEMBER' }>;
+  }>;
   userId: number;
   checkIn: string;
   checkOut: string;
   paymentType?: PaymentType;
   ratePlan?: 'FLEXIBLE' | 'NON_REFUNDABLE';
+  source?: string;
+  notes?: string;
   guestCount: number;
   roomCapacitySnapshot?: number;
   primaryGuest: BookingGuestPayload;
@@ -313,7 +332,7 @@ export type CreateBookingPayload = {
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_BOOKING_API_URL || '/booking-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -321,7 +340,7 @@ const api = axios.create({
 
 const authHttp = axios.create({
   baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -330,7 +349,7 @@ const authHttp = axios.create({
 
 const userHttp = axios.create({
   baseURL: import.meta.env.VITE_USER_API_URL || '/user-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -338,7 +357,7 @@ const userHttp = axios.create({
 
 const roomHttp = axios.create({
   baseURL: import.meta.env.VITE_ROOM_API_URL || '/room-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -346,7 +365,7 @@ const roomHttp = axios.create({
 
 const paymentHttp = axios.create({
   baseURL: import.meta.env.VITE_PAYMENT_API_URL || '/payment-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -354,7 +373,7 @@ const paymentHttp = axios.create({
 
 const notificationHttp = axios.create({
   baseURL: import.meta.env.VITE_NOTIFICATION_API_URL || '/notification-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -362,7 +381,7 @@ const notificationHttp = axios.create({
 
 const authResourceHttp = axios.create({
   baseURL: import.meta.env.VITE_AUTH_API_URL || '/auth-api',
-  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS) || 60000,
+  timeout: API_TIMEOUT_MS,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -387,6 +406,36 @@ export const tokenStorage = {
   },
 };
 
+const attachFriendlyError = (error: any) => {
+  const backendMessage = error?.response?.data?.message || error?.response?.data?.error;
+  if (backendMessage) {
+    error.userMessage = backendMessage;
+    return error;
+  }
+  if (error?.code === 'ECONNABORTED' || String(error?.message || '').toLowerCase().includes('timeout')) {
+    error.userMessage = NETWORK_ERROR_MESSAGE;
+    return error;
+  }
+  if (!error?.response) {
+    error.userMessage = NETWORK_ERROR_MESSAGE;
+    return error;
+  }
+  error.userMessage = error?.message || NETWORK_ERROR_MESSAGE;
+  return error;
+};
+
+const logApiError = (error: any) => {
+  if (!import.meta.env.DEV) return;
+  console.error('API ERROR:', {
+    url: error?.config?.url,
+    baseURL: error?.config?.baseURL,
+    method: error?.config?.method,
+    status: error?.response?.status,
+    message: error?.message,
+    data: error?.response?.data,
+  });
+};
+
 const attachAuthInterceptors = (client: typeof api) => {
   client.interceptors.request.use(
     (config) => {
@@ -402,12 +451,14 @@ const attachAuthInterceptors = (client: typeof api) => {
   client.interceptors.response.use(
     (response) => response,
     async (error) => {
+      attachFriendlyError(error);
       const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
 
-      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      if ((error.response?.status === 401 || error.response?.status === 403) && originalRequest && !originalRequest._retry) {
         const refreshToken = tokenStorage.getRefreshToken();
 
-        if (!refreshToken) {
+        if (!refreshToken || error.response?.status === 403) {
+          logApiError(error);
           tokenStorage.clear();
           window.location.href = '/login';
           return Promise.reject(error);
@@ -425,12 +476,15 @@ const attachAuthInterceptors = (client: typeof api) => {
           originalRequest.headers.Authorization = `Bearer ${refreshed.data.accessToken}`;
           return client(originalRequest);
         } catch (refreshError) {
+          attachFriendlyError(refreshError);
+          logApiError(refreshError);
           tokenStorage.clear();
           window.location.href = '/login';
           return Promise.reject(refreshError);
         }
       }
 
+      logApiError(error);
       return Promise.reject(error);
     }
   );
@@ -525,8 +579,8 @@ const normalizeOptionalId = (value: unknown): string | undefined => {
 const mapBooking = (booking: BookingBackend): Booking => {
   const rawStatus = String(booking.status || 'pending_payment').toLowerCase();
   const status = ([
-    'pending_payment', 'pending', 'deposit_paid', 'confirmed',
-    'checked_in', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
+    'pending_payment', 'pending', 'deposit_paid', 'confirmed', 'booked',
+    'partially_checked_in', 'checked_in', 'partially_checked_out', 'checkout_pending_payment', 'checked_out', 'completed', 'cancel_requested', 'cancelled', 'no_show'
   ].includes(rawStatus) ? rawStatus : 'pending_payment') as Booking['status'];
   const primaryRoomId = normalizeOptionalId(booking.roomId)
     || normalizeOptionalId(booking.items?.[0]?.roomId);
@@ -556,7 +610,18 @@ const mapBooking = (booking: BookingBackend): Booking => {
       status: item.status,
       checkIn: item.checkIn,
       checkOut: item.checkOut,
-      nights: item.nights
+      nights: item.nights,
+      actualCheckInAt: item.actualCheckInAt,
+      actualCheckOutAt: item.actualCheckOutAt,
+      representativeGuestId: item.representativeGuestId != null ? String(item.representativeGuestId) : undefined,
+      checkedInByStaffId: item.checkedInByStaffId != null ? String(item.checkedInByStaffId) : undefined,
+      checkedOutByStaffId: item.checkedOutByStaffId != null ? String(item.checkedOutByStaffId) : undefined,
+      roomCharge: item.roomCharge != null ? Number(item.roomCharge) : undefined,
+      serviceCharge: item.serviceCharge != null ? Number(item.serviceCharge) : undefined,
+      surcharge: item.surcharge != null ? Number(item.surcharge) : undefined,
+      damageFee: item.damageFee != null ? Number(item.damageFee) : undefined,
+      finalAmount: item.finalAmount != null ? Number(item.finalAmount) : undefined,
+      guests: Array.isArray(item.guests) ? item.guests.map((guest: BookingGuestBackend) => mapBookingGuest(guest)) : undefined,
     })) as any),
     createdAt: booking.createdAt || '',
     confirmedAt: booking.confirmedAt,
@@ -566,6 +631,10 @@ const mapBooking = (booking: BookingBackend): Booking => {
     paidAmount: Number(booking.paidAmount || 0),
     depositAmount: Number(booking.depositAmount || 0),
     paymentTransactionId: booking.paymentTransactionId,
+    customerName: booking.customerName != null ? String(booking.customerName) : undefined,
+    representativeName: booking.representativeName != null ? String(booking.representativeName) : undefined,
+    representativePhone: booking.representativePhone != null ? String(booking.representativePhone) : undefined,
+    representativeCccd: booking.representativeCccd != null ? String(booking.representativeCccd) : undefined,
     cancelledAt: booking.cancelledAt,
     cancellationReason: booking.cancellationReason,
     actualCheckInAt: booking.actualCheckInAt,
@@ -737,7 +806,7 @@ export const roomApi = {
 // Booking APIs
 export const bookingApi = {
   create: async (bookingData: CreateBookingPayload): Promise<Booking> => {
-    const response = await api.post<unknown>('/bookings', bookingData);
+    const response = await api.post<unknown>('/bookings', bookingData, { timeout: PAYMENT_FLOW_TIMEOUT_MS });
     return extractSingleBooking(response.data);
   },
 
@@ -809,12 +878,16 @@ const mapPayment = (payment: PaymentBackend): PaymentRecord => ({
  */
 const normalizeConfirmUrl = (confirmUrl: string, paymentCode: string) => {
   const path = `/payment/confirm?code=${encodeURIComponent(paymentCode)}`;
-  const envOrigin = (import.meta.env.VITE_PUBLIC_APP_ORIGIN as string | undefined)?.trim().replace(/\/$/, '');
-  if (envOrigin) {
-    return `${envOrigin}${path}`;
+  const qrOrigin = (import.meta.env.VITE_FRONTEND_URL as string | undefined)?.trim().replace(/\/$/, '');
+  if (qrOrigin && !qrOrigin.includes('localhost') && !qrOrigin.includes('127.0.0.1')) {
+    return `${qrOrigin}${path}`;
   }
   if (confirmUrl && !confirmUrl.includes('localhost') && !confirmUrl.includes('127.0.0.1')) {
     return confirmUrl;
+  }
+  const envOrigin = (import.meta.env.VITE_PUBLIC_APP_ORIGIN as string | undefined)?.trim().replace(/\/$/, '');
+  if (envOrigin && !envOrigin.includes('localhost') && !envOrigin.includes('127.0.0.1')) {
+    return `${envOrigin}${path}`;
   }
   const origin = window.location.origin.replace(/\/$/, '');
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -1038,12 +1111,16 @@ const extractCheckInOutStats = (payload: unknown): CheckInOutStats => {
 const mapBookingGuest = (guest: BookingGuestBackend): BookingGuest => ({
   id: String(guest.id ?? ''),
   bookingId: String(guest.bookingId ?? ''),
+  bookingRoomId: normalizeOptionalId(guest.bookingRoomId),
   roomId: normalizeOptionalId(guest.roomId),
   fullName: guest.fullName || '',
   dateOfBirth: guest.dateOfBirth,
   phone: guest.phone,
   email: guest.email,
   cccd: guest.cccd,
+  passport: guest.passport,
+  gender: guest.gender,
+  role: guest.role as BookingGuest['role'],
   note: guest.note,
   type: (guest.type || undefined) as BookingGuest['type'],
   primaryGuest: Boolean(guest.primaryGuest),
@@ -1082,7 +1159,7 @@ export const paymentApi = {
     bankCode?: string;
     locale?: 'vn' | 'en';
   }): Promise<{ paymentUrl: string }> => {
-    const response = await paymentHttp.post<any>('/payments/vnpay/create', paymentData);
+    const response = await paymentHttp.post<any>('/payments/vnpay/create', paymentData, { timeout: PAYMENT_FLOW_TIMEOUT_MS });
     const payload = response.data?.data ?? response.data;
     return {
       paymentUrl: payload?.paymentUrl || payload?.url || payload?.payment_url || '',
@@ -1096,7 +1173,7 @@ export const paymentApi = {
     paymentType: PaymentType;
     requestType?: 'captureWallet' | 'payWithATM';
   }): Promise<{ paymentUrl: string }> => {
-    const response = await paymentHttp.post<any>('/payments/momo/create', paymentData);
+    const response = await paymentHttp.post<any>('/payments/momo/create', paymentData, { timeout: PAYMENT_FLOW_TIMEOUT_MS });
     const payload = response.data?.data ?? response.data;
     return {
       paymentUrl: payload?.paymentUrl || payload?.payUrl || payload?.url || payload?.payment_url || '',
@@ -1110,7 +1187,7 @@ export const paymentApi = {
     return extractPaymentList(response.data);
   },
 
-  markLateCheckoutPaid: async (bookingId: string, method?: string, body?: { payerName?: string; payerPhone?: string; payerGuestId?: number; payerCccd?: string }): Promise<PaymentRecord> => {
+  markLateCheckoutPaid: async (bookingId: string, method?: string, body?: { payerName?: string; payerPhone?: string; payerGuestId?: number; payerCccd?: string; receivedAmount?: number; changeAmount?: number }): Promise<PaymentRecord> => {
     const response = await paymentHttp.post<unknown>(
       `/payments/bookings/${bookingId}/late-checkout-fee/paid`,
       body || null,
@@ -1295,6 +1372,57 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
   };
 }
 
+const mapBookingRoom = (item: any): BookingItem => ({
+  id: String(item?.id ?? ''),
+  roomId: normalizeOptionalId(item?.roomId) || '',
+  roomTypeId: normalizeOptionalId(item?.roomTypeId),
+  priceSnapshot: Number(item?.priceSnapshot ?? item?.pricePerNightAtBooking ?? 0),
+  finalPrice: item?.finalPrice != null ? Number(item.finalPrice) : undefined,
+  discount: item?.discount != null ? Number(item.discount) : undefined,
+  status: item?.status,
+  checkIn: item?.checkIn || item?.booking?.checkIn || '',
+  checkOut: item?.checkOut || item?.booking?.checkOut || '',
+  nights: Number(item?.nights || 0),
+  actualCheckInAt: item?.actualCheckInAt,
+  actualCheckOutAt: item?.actualCheckOutAt,
+  representativeGuestId: item?.representativeGuestId != null ? String(item.representativeGuestId) : undefined,
+  checkedInByStaffId: item?.checkedInByStaffId != null ? String(item.checkedInByStaffId) : undefined,
+  checkedOutByStaffId: item?.checkedOutByStaffId != null ? String(item.checkedOutByStaffId) : undefined,
+  roomCharge: item?.roomCharge != null ? Number(item.roomCharge) : undefined,
+  serviceCharge: item?.serviceCharge != null ? Number(item.serviceCharge) : undefined,
+  surcharge: item?.surcharge != null ? Number(item.surcharge) : undefined,
+  damageFee: item?.damageFee != null ? Number(item.damageFee) : undefined,
+  finalAmount: item?.finalAmount != null ? Number(item.finalAmount) : undefined,
+  guests: Array.isArray(item?.guests) ? item.guests.map((guest: BookingGuestBackend) => mapBookingGuest(guest)) : [],
+  bookingId: item?.bookingId != null ? String(item.bookingId) : undefined,
+  bookingCode: item?.bookingCode != null ? String(item.bookingCode) : undefined,
+  bookingPaymentStatus: item?.bookingPaymentStatus != null ? String(item.bookingPaymentStatus) : undefined,
+  bookingStatus: item?.bookingStatus != null ? String(item.bookingStatus) : undefined,
+  booking: item?.booking ? mapBooking(item.booking) : item?.bookingId != null ? {
+    id: String(item.bookingId),
+    bookingCode: item?.bookingCode != null ? String(item.bookingCode) : undefined,
+    userId: '',
+    checkIn: item?.checkIn || '',
+    checkOut: item?.checkOut || '',
+    totalPrice: 0,
+    totalRooms: 0,
+    totalGuests: 0,
+    status: String(item?.bookingStatus || 'pending_payment').toLowerCase() as Booking['status'],
+    guests: 0,
+    items: [],
+    createdAt: '',
+    paymentStatus: item?.bookingPaymentStatus != null ? String(item.bookingPaymentStatus) : undefined,
+  } : undefined,
+});
+
+const extractBookingRoomList = (payload: unknown): BookingItem[] => {
+  if (Array.isArray(payload)) return payload.map(mapBookingRoom);
+  if (payload && typeof payload === 'object' && 'data' in payload && Array.isArray((payload as any).data)) {
+    return (payload as any).data.map(mapBookingRoom);
+  }
+  return [];
+};
+
 export const staffBookingApi = {
   getCheckInList: async (): Promise<Booking[]> => {
     const response = await api.get<unknown>('/api/staff/bookings/check-in-list');
@@ -1306,6 +1434,25 @@ export const staffBookingApi = {
       params: { date: date || vietnamTodayISO() },
     });
     return extractBookingList(response.data);
+  },
+
+  getTodayCheckInRooms: async (date?: string): Promise<BookingItem[]> => {
+    const response = await api.get<unknown>('/api/staff/booking-rooms/check-in-today', {
+      params: { date: date || vietnamTodayISO() },
+    });
+    return extractBookingRoomList(response.data);
+  },
+
+  getInHouseRooms: async (): Promise<BookingItem[]> => {
+    const response = await api.get<unknown>('/api/staff/booking-rooms/in-house');
+    return extractBookingRoomList(response.data);
+  },
+
+  getTodayCheckoutRooms: async (date?: string): Promise<BookingItem[]> => {
+    const response = await api.get<unknown>('/api/staff/booking-rooms/check-out-today', {
+      params: { date: date || vietnamTodayISO() },
+    });
+    return extractBookingRoomList(response.data);
   },
 
   getCheckoutList: async (): Promise<Booking[]> => {
@@ -1342,6 +1489,11 @@ export const staffBookingApi = {
     return extractSingleBooking(response.data);
   },
 
+  getStaffBookings: async (): Promise<Booking[]> => {
+    const response = await api.get<unknown>('/api/staff/bookings');
+    return extractBookingList(response.data);
+  },
+
   checkIn: async (bookingId: string, representativeCccd: string): Promise<Booking> => {
     const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/check-in`, { representativeCccd });
     return extractSingleBooking(response.data);
@@ -1357,6 +1509,39 @@ export const staffBookingApi = {
       representativePhone: payload.representativePhone,
     });
     return extractSingleBooking(response.data);
+  },
+
+  checkInBookingRoom: async (
+    bookingRoomId: string,
+    payload?: { representativeCccd?: string; representativePhone?: string; representativeGuestId?: string }
+  ): Promise<BookingItem> => {
+    const response = await api.post<unknown>(`/api/staff/booking-rooms/${bookingRoomId}/check-in`, {
+      representativeCccd: payload?.representativeCccd,
+      representativePhone: payload?.representativePhone,
+      representativeGuestId: payload?.representativeGuestId ? Number(payload.representativeGuestId) : undefined,
+    });
+    return mapBookingRoom(response.data);
+  },
+
+  checkInMultipleBookingRooms: async (
+    bookingId: string,
+    bookingRoomIds: string[],
+    checkIns?: Array<{ bookingRoomId: string; representativeGuestId?: string; representativePhone?: string; representativeCccd?: string }>
+  ): Promise<{ success: boolean; rooms: BookingItem[]; errors: string[] }> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/check-in-multiple`, {
+      bookingRoomIds,
+      checkIns: checkIns?.map((line) => ({
+        bookingRoomId: Number(line.bookingRoomId),
+        representativeGuestId: line.representativeGuestId ? Number(line.representativeGuestId) : undefined,
+        representativePhone: line.representativePhone,
+        representativeCccd: line.representativeCccd,
+      })),
+    });
+    return {
+      success: Boolean(response.data?.success),
+      rooms: extractBookingRoomList(response.data?.rooms || []),
+      errors: Array.isArray(response.data?.errors) ? response.data.errors.map(String) : [],
+    };
   },
 
   updateCheckInRepresentative: async (
@@ -1412,6 +1597,30 @@ export const staffBookingApi = {
     return mapCheckoutResponse(response.data, bookingId);
   },
 
+  checkOutBookingRoom: async (
+    bookingRoomId: string,
+    payload?: { serviceCharge?: number; surcharge?: number; damageFee?: number; note?: string }
+  ): Promise<BookingItem> => {
+    const response = await api.post<unknown>(`/api/staff/booking-rooms/${bookingRoomId}/check-out`, payload ?? {});
+    return mapBookingRoom(response.data);
+  },
+
+  checkOutMultipleBookingRooms: async (
+    bookingId: string,
+    bookingRoomIds: string[],
+    extraFees?: Array<{ bookingRoomId: string; serviceCharge?: number; surcharge?: number; damageFee?: number; note?: string }>,
+    payment?: { paymentMethod?: 'CASH' | 'BANK_TRANSFER'; receivedAmount?: number; changeAmount?: number }
+  ): Promise<{ success: boolean; rooms: BookingItem[]; errors: string[]; invoiceId?: string; invoiceCode?: string }> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/check-out-multiple`, { bookingRoomIds, extraFees, ...payment });
+    return {
+      success: Boolean(response.data?.success),
+      rooms: extractBookingRoomList(response.data?.rooms || []),
+      errors: Array.isArray(response.data?.errors) ? response.data.errors.map(String) : [],
+      invoiceId: response.data?.invoiceId != null ? String(response.data.invoiceId) : undefined,
+      invoiceCode: response.data?.invoiceCode != null ? String(response.data.invoiceCode) : undefined,
+    };
+  },
+
   completeCheckout: async (bookingId: string): Promise<Booking> => {
     const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/checkout/complete`);
     return extractSingleBooking(response.data);
@@ -1419,24 +1628,38 @@ export const staffBookingApi = {
 
   getInvoice: async (bookingId: string): Promise<BookingInvoiceRecord> => {
     const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/invoice`);
-    return mapBookingInvoiceRecord(response.data?.data ?? response.data);
+    const responseData = response.data as any;
+    return mapBookingInvoiceRecord(responseData?.data ?? responseData);
   },
 
   getInvoices: async (): Promise<BookingInvoiceRecord[]> => {
     const response = await api.get<unknown>(`/api/staff/invoices`);
-    const payload = Array.isArray(response.data) ? response.data : response.data?.data ?? [];
+    const responseData = response.data as any;
+    const payload = Array.isArray(responseData) ? responseData : responseData?.data ?? [];
     return Array.isArray(payload) ? payload.map(mapBookingInvoiceRecord) : [];
+  },
+
+  searchInvoices: async (params: { page?: number; size?: number; invoiceCode?: string; bookingCode?: string; customerName?: string; date?: string; fromDate?: string; toDate?: string; status?: string[] }): Promise<{ content: BookingInvoiceRecord[]; totalElements: number; totalPages: number }> => {
+    const response = await api.get<any>(`/api/staff/invoices/search`, { params });
+    const data = response.data;
+    return {
+      content: Array.isArray(data?.content) ? data.content.map(mapBookingInvoiceRecord) : [],
+      totalElements: data?.totalElements || 0,
+      totalPages: data?.totalPages || 0,
+    };
   },
 
   // Service lines (room service) management for staff
   getServiceLines: async (bookingId: string) => {
     const response = await api.get<unknown>(`/api/staff/bookings/${bookingId}/services`);
-    return Array.isArray(response.data) ? response.data : response.data?.data ?? [];
+    const responseData = response.data as any;
+    return Array.isArray(responseData) ? responseData : responseData?.data ?? [];
   },
 
   addServiceLine: async (bookingId: string, payload: { name: string; quantity?: number; unitPrice?: number }) => {
     const response = await api.post<unknown>(`/api/staff/bookings/${bookingId}/services`, payload);
-    return response.data?.data ?? response.data;
+    const responseData = response.data as any;
+    return responseData?.data ?? responseData;
   },
 
   deleteServiceLine: async (bookingId: string, lineId: string) => {

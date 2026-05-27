@@ -6,7 +6,7 @@ import { ArrowLeft, Info, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { bookingApi, paymentApi } from '../../../services/api';
 import { roomApi } from '../../../services/apiRoom';
-import type { Booking, Room } from '../../../types';
+import type { Booking, BookingGuest, Room } from '../../../types';
 import Button from '../../../shared/components/ui/Button';
 import Spinner from '../../../shared/components/ui/Spinner';
 import { CHECK_IN_TIME_LABEL, CHECK_OUT_TIME_LABEL } from '../../../shared/lib/bookingPricing';
@@ -128,7 +128,7 @@ export default function MyBookingsPage() {
     }
 
     try {
-      const fullBooking = await bookingApi.getById(booking.id).catch(() => booking);
+      const fullBooking = booking;
       const [guests, payments] = await Promise.all([
         bookingApi.getGuests(fullBooking.id).catch(() => []),
         paymentApi.getByBooking(fullBooking.id, user.id).catch(() => []),
@@ -151,6 +151,21 @@ export default function MyBookingsPage() {
         roomIds.map((roomId, index) => [roomId, fetchedRooms[index] || buildPlaceholderRoom(roomId)] as const)
       );
       const rooms: Room[] = roomIds.map((roomId) => roomById.get(roomId)).filter(Boolean) as Room[];
+      const guestsByRoom = new Map<string, BookingGuest[]>();
+      guests.forEach((guest) => {
+        const roomKey = String(guest.bookingRoomId || guest.roomId || '');
+        if (!roomKey) return;
+        guestsByRoom.set(roomKey, [...(guestsByRoom.get(roomKey) || []), guest]);
+      });
+
+      const items = (fullBooking.items || []).map((item) => {
+        const itemKey = String(item.id || '');
+        const roomKey = String(item.roomId || '');
+        return {
+          ...item,
+          guests: guestsByRoom.get(itemKey) || guestsByRoom.get(roomKey) || item.guests || [],
+        };
+      });
 
       const latestPayment = payments.find((payment) => payment.status.toUpperCase() === 'SUCCESS');
       const totalPaidAmount = payments
@@ -159,6 +174,7 @@ export default function MyBookingsPage() {
 
       return {
         ...fullBooking,
+        items,
         guestCount: fullBooking.guests,
         room: rooms.length === 1 ? rooms[0] : null,
         rooms,
@@ -182,6 +198,18 @@ export default function MyBookingsPage() {
     }
   }, [user]);
 
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
+  const [allPaidBookings, setAllPaidBookings] = useState<Booking[]>([]);
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');
+
+  const PAGE_SIZE = 5;
+
   const loadBookings = useCallback(async () => {
     if (!user) return;
     setFetching(true);
@@ -192,20 +220,67 @@ export default function MyBookingsPage() {
         .filter(isPaidBookingRecord)
         .sort((a, b) => new Date(b.createdAt || b.checkIn || 0).getTime() - new Date(a.createdAt || a.checkIn || 0).getTime());
 
-      const detailedItems = await Promise.all(paidBookings.map((booking) => hydrateBooking(booking)));
-      setItems(detailedItems);
+      setAllPaidBookings(paidBookings);
     } catch (loadError) {
       console.error(loadError);
       setItems([]);
       setError('Không thể tải danh sách đặt phòng. Vui lòng thử lại.');
+      setFetching(false);
+    }
+  }, [user]);
+
+  // Apply filters on allPaidBookings
+  useEffect(() => {
+    if (allPaidBookings.length === 0 && !fetching) return;
+
+    let filtered = [...allPaidBookings];
+    if (statusFilter) {
+      filtered = filtered.filter(b => b.status === statusFilter);
+    }
+    if (dateFilter) {
+      const today = new Date();
+      filtered = filtered.filter(b => {
+        const ci = new Date(b.checkIn || 0);
+        if (dateFilter === 'TODAY') return ci.toDateString() === today.toDateString();
+        if (dateFilter === 'FUTURE') return ci > today;
+        if (dateFilter === 'PAST') return ci < today;
+        return true;
+      });
+    }
+    if (searchKeyword.trim()) {
+      const kw = searchKeyword.toLowerCase();
+      filtered = filtered.filter(b => 
+        (b.bookingCode || '').toLowerCase().includes(kw) ||
+        String(b.id).includes(kw)
+      );
+    }
+
+    setTotalElements(filtered.length);
+    setTotalPages(Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
+    loadPage(1, filtered);
+  }, [allPaidBookings, statusFilter, dateFilter, searchKeyword]);
+
+
+  const loadPage = useCallback(async (targetPage: number, sourceList = allPaidBookings) => {
+    setFetching(true);
+    try {
+      const start = (targetPage - 1) * PAGE_SIZE;
+      const currentChunk = sourceList.slice(start, start + PAGE_SIZE);
+      const hydratedChunk = await Promise.all(currentChunk.map(booking => hydrateBooking(booking)));
+      
+      setItems(hydratedChunk);
+      setPage(targetPage);
+    } catch (err) {
+      console.error(err);
+      toast.error('Không thể lấy chi tiết một số booking');
     } finally {
       setFetching(false);
     }
-  }, [hydrateBooking, user]);
+  }, [allPaidBookings, hydrateBooking]);
 
   useEffect(() => {
     loadBookings();
-  }, [loadBookings, location.key]);
+  }, [loadBookings]);
 
   useEffect(() => {
     const handleFocus = () => {
@@ -284,21 +359,53 @@ export default function MyBookingsPage() {
           </Link>
         </motion.div>
 
+        {/* Filters */}
+        <div className="mt-8 grid gap-4 grid-cols-1 md:grid-cols-3">
+          <select 
+            value={statusFilter} 
+            onChange={e => setStatusFilter(e.target.value)}
+            className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-700 outline-none focus:border-slate-400"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="CONFIRMED">Đã xác nhận</option>
+            <option value="CHECKED_IN">Đang lưu trú</option>
+            <option value="COMPLETED">Hoàn tất</option>
+            <option value="CANCELLED">Đã hủy</option>
+          </select>
+          <select 
+            value={dateFilter} 
+            onChange={e => setDateFilter(e.target.value)}
+            className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-700 outline-none focus:border-slate-400"
+          >
+            <option value="">Tất cả thời gian</option>
+            <option value="TODAY">Hôm nay</option>
+            <option value="FUTURE">Sắp tới</option>
+            <option value="PAST">Đã qua</option>
+          </select>
+          <input 
+            type="text" 
+            placeholder="Tìm mã booking..."
+            value={searchKeyword}
+            onChange={e => setSearchKeyword(e.target.value)}
+            className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-slate-400"
+          />
+        </div>
+
         <div className="mt-12">
           {fetching ? (
-            <div className="rounded-[2rem] border border-white/70 bg-white/80 py-24 text-center shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="rounded-4xl border border-white/70 bg-white/80 py-24 text-center shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur">
               <Spinner className="h-12 w-12" />
               <div className="mt-4 text-xs font-bold uppercase tracking-[0.24em] text-slate-500">Đang tải lịch sử booking...</div>
             </div>
           ) : error ? (
-            <div className="rounded-[2rem] border border-rose-200 bg-rose-50 px-8 py-20 text-center">
+            <div className="rounded-4xl border border-rose-200 bg-rose-50 px-8 py-20 text-center">
               <h3 className="text-2xl font-black text-rose-700">{error}</h3>
               <Button onClick={loadBookings} className="mt-8 rounded-full px-8 py-3 text-xs font-black uppercase tracking-[0.18em]">
                 Thử lại
               </Button>
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white/80 px-8 py-24 text-center shadow-[0_20px_80px_rgba(15,23,42,0.05)]">
+            <div className="rounded-4xl border border-dashed border-slate-300 bg-white/80 px-8 py-24 text-center shadow-[0_20px_80px_rgba(15,23,42,0.05)]">
               <div className="text-2xl font-black text-slate-900">Chưa có booking nào</div>
               <p className="mt-3 text-sm font-medium text-slate-500">Khi bạn đặt phòng thành công, lịch sử booking sẽ hiện tại đây với đầy đủ phòng, khách lưu trú và thanh toán.</p>
               <Link to="/rooms" className="mt-8 inline-block">
@@ -317,6 +424,34 @@ export default function MyBookingsPage() {
                   onCancel={handleShowPolicy}
                 />
               ))}
+
+              {totalPages > 1 && (
+                <div className="mt-8 flex items-center justify-center gap-2">
+                  <button
+                    disabled={page === 1}
+                    onClick={() => {
+                        loadPage(page - 1);
+                        window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    ←
+                  </button>
+                  <span className="px-4 font-bold text-slate-700">
+                    Trang {page} / {totalPages}
+                  </span>
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => {
+                        loadPage(page + 1);
+                        window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -341,7 +476,7 @@ export default function MyBookingsPage() {
                 initial={{ opacity: 0, scale: 0.94, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.94, y: 20 }}
-                className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_32px_100px_rgba(15,23,42,0.3)]"
+                className="relative w-full max-w-lg overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-[0_32px_100px_rgba(15,23,42,0.3)]"
               >
                 <div className="border-b border-slate-200 p-7">
                   <div className="flex items-center gap-4">

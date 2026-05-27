@@ -5,7 +5,7 @@ services:
   eureka-server:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx384m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx384m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -14,11 +14,11 @@ services:
       - maven-repo:/root/.m2
     ports:
       - "8761:8761"
-    mem_limit: 768mb
+    mem_limit: 896mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -34,7 +34,7 @@ services:
       - "6379:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -107,7 +107,7 @@ services:
   auth-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -120,9 +120,9 @@ services:
       - postgres-auth
       - rabbitmq
       - eureka-server
-    mem_limit: 896mb
+    mem_limit: 1024mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -135,7 +135,7 @@ services:
   user-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -147,9 +147,9 @@ services:
     depends_on:
       - postgres-user
       - eureka-server
-    mem_limit: 896mb
+    mem_limit: 1024mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -173,7 +173,7 @@ services:
   room-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -187,9 +187,9 @@ services:
       - rabbitmq
       - eureka-server
       - redis
-    mem_limit: 896mb
+    mem_limit: 1152mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -218,7 +218,7 @@ services:
   booking-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -231,9 +231,9 @@ services:
       - postgres-booking
       - rabbitmq
       - eureka-server
-    mem_limit: 896mb
+    mem_limit: 1024mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=384m"
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -261,7 +261,7 @@ services:
   payment-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx640m -Xms256m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -274,9 +274,9 @@ services:
       - postgres-payment
       - rabbitmq
       - eureka-server
-    mem_limit: 1408mb
+    mem_limit: 1536mb
     environment:
-      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx768m -XX:MaxMetaspaceSize=384m"
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -284,12 +284,15 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
-      PAYMENT_CHECKIN_CONFIRM_URL: ${VITE_PUBLIC_APP_ORIGIN:-http://localhost:3000}/payment/confirm
+      PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://192.168.1.8:3000}/payment/confirm
       VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
       VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
       VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
-      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
-      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
+      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://127.0.0.1:8085/payments/vnpay-return}
+      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
+      MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-http://127.0.0.1:8085/payments/momo-return}
+      MOMO_IPN_URL: ${MOMO_IPN_URL:-http://127.0.0.1:8085/payments/momo-ipn}
+      MOMO_FRONTEND_RETURN_URL: ${MOMO_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
 
   # ========================
   # NOTIFICATION DB + SERVICE
@@ -308,7 +311,7 @@ services:
   notification-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -321,9 +324,9 @@ services:
       - postgres-notification
       - rabbitmq
       - eureka-server
-    mem_limit: 896mb
+    mem_limit: 1024mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -333,12 +336,34 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
 
   # ========================
+  # AI CHATBOT SERVICE
+  # ========================
+  ai-service:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:TieredStopAtLevel=1 -Xmx256m -Xms128m -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_AI:/app
+      - maven-repo:/root/.m2
+    depends_on:
+      - eureka-server
+    mem_limit: 1200mb
+    env_file:
+      - ./HotelSystem/.env
+    environment:
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+
+  # ========================
   # API GATEWAY
   # ========================
   api-gateway:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package -q && java -Xmx512m -Xms128m -jar target/*.jar"
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -350,9 +375,10 @@ services:
     depends_on:
       - eureka-server
       - redis
-    mem_limit: 896mb
+      - ai-service
+    mem_limit: 1024mb
     environment:
-      MAVEN_OPTS: "-Xmx256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       EUREKA_URL: http://eureka-server:8761/eureka/
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -368,14 +394,14 @@ services:
       - ./HotelSystem:/app
       - frontend-node-modules:/app/node_modules
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     depends_on:
       - api-gateway
-    profiles:
-      - frontend
+      - ai-service
+    mem_limit: 768mb
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      NODE_OPTIONS: "--max-old-space-size=256"
+      NODE_OPTIONS: "--max-old-space-size=512"
       VITE_DOCKER: "true"
 
 volumes:

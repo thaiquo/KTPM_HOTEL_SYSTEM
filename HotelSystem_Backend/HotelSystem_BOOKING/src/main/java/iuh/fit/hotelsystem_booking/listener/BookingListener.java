@@ -7,6 +7,7 @@ import iuh.fit.hotelsystem_booking.dto.RemainingPaymentRequest;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingLockStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
@@ -76,6 +77,7 @@ public class BookingListener {
             event.setStatus(BookingStatus.CONFIRMED.name());
 
             for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                item.setStatus(BookingItemStatus.BOOKED);
                 RoomMessage msg = new RoomMessage();
                 msg.setBookingId(booking.getId());
                 msg.setRoomId(item.getRoomId());
@@ -99,6 +101,7 @@ public class BookingListener {
                 event.setStatus(BookingStatus.DEPOSIT_PAID.name());
 
                 for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                    item.setStatus(BookingItemStatus.BOOKED);
                     RoomMessage msg = new RoomMessage();
                     msg.setBookingId(booking.getId());
                     msg.setRoomId(item.getRoomId());
@@ -127,6 +130,7 @@ public class BookingListener {
             event.setStatus(BookingStatus.CANCELLED.name());
 
             for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+                item.setStatus(BookingItemStatus.CANCELLED);
                 RoomMessage msg = new RoomMessage();
                 msg.setBookingId(booking.getId());
                 msg.setRoomId(item.getRoomId());

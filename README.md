@@ -159,18 +159,76 @@ VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
 Đảm bảo bạn đã bật Docker Desktop trên máy (Windows với WSL2). Tại thư mục gốc dự án chạy:
 
 ```bash
-# Khởi động stack backend/dev, không chạy frontend
+# Khởi động toàn bộ stack dev, bao gồm frontend
 docker compose -f docker-compose.dev.yml up -d
 
 # Xem trạng thái hoạt động của các service
 docker compose -f docker-compose.dev.yml ps
 ```
 
-Frontend đã được tách riêng bằng Docker profile `frontend`. Chỉ chạy Web UI ở cổng `3000` khi thật sự cần:
+Frontend hiện đã chạy mặc định trong `docker-compose.dev.yml`, không cần `--profile frontend`.
+
+### 2.1) Khi đổi WiFi / đổi LAN IP
+
+Nếu chỉ dùng web trên chính máy tính, mở:
+
+```text
+http://127.0.0.1:3000
+```
+
+Nếu dùng QR để điện thoại quét, QR phải dùng IP LAN của máy tính, không dùng `localhost` hoặc `127.0.0.1`. Khi chuyển sang WiFi khác, lấy IPv4 mới của máy tính rồi sửa các file dưới đây.
+
+Trên Windows xem IP:
 
 ```bash
-docker compose -f docker-compose.dev.yml --profile frontend up -d
+ipconfig
 ```
+
+Tìm IPv4 của card WiFi, ví dụ `192.168.1.23`.
+
+Các file cần kiểm tra/sửa:
+
+```text
+.env
+HotelSystem/.env
+docker-compose.dev.yml
+HotelSystem_Backend/HotelSystem_PAYMENT/src/main/resources/application.properties
+```
+
+Các biến cần chú ý:
+
+```env
+# .env ở thư mục gốc
+PAYMENT_PUBLIC_APP_ORIGIN=http://192.168.1.23:3000
+
+# HotelSystem/.env
+VITE_FRONTEND_URL=http://192.168.1.23:3000
+```
+
+Trong `docker-compose.dev.yml`, kiểm tra dòng này đang lấy đúng biến:
+
+```yaml
+PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://192.168.1.23:3000}/payment/confirm
+```
+
+Trong `HotelSystem_Backend/HotelSystem_PAYMENT/src/main/resources/application.properties`, fallback nên đổi theo IP hiện tại nếu cần:
+
+```properties
+payment.checkin.confirm-url=${PAYMENT_CHECKIN_CONFIRM_URL:http://192.168.1.23:3000/payment/confirm}
+```
+
+Sau khi đổi IP, chạy lại:
+Nếu đổi WiFi/IP, sửa lại IP trong HotelSystem/.env, root .env, và HotelSystem_Mobile/network.local.env, rồi recreate frontend/payment service.
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate payment-service frontend
+```
+
+Ghi chú:
+
+- `VNP_RETURN_URL` và `VNP_FRONTEND_RETURN_URL` nên giữ `127.0.0.1` nếu thanh toán VNPay trên chính trình duyệt máy tính.
+- `PAYMENT_PUBLIC_APP_ORIGIN` phải là IP LAN nếu điện thoại quét QR.
+- Điện thoại và máy tính phải cùng WiFi, và firewall Windows phải cho phép truy cập cổng `3000`.
 
 Nếu muốn build lại từ đầu hoặc chạy bản Production hoàn chỉnh:
 

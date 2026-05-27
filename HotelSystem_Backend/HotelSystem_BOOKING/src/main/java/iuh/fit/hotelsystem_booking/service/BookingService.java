@@ -26,6 +26,8 @@ import java.util.UUID;
 import java.util.List;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class BookingService {
@@ -141,7 +143,7 @@ public class BookingService {
             item.setCheckIn(booking.getCheckIn());
             item.setCheckOut(booking.getCheckOut());
             item.setNights(nights);
-            item.setStatus(BookingItemStatus.ACTIVE);
+            item.setStatus(BookingItemStatus.PENDING_PAYMENT);
 
             // Fetch room details to apply bonuses (view, bathtub)
             double basePrice = item.getPriceSnapshot();
@@ -274,15 +276,31 @@ public class BookingService {
             booking.addItem(item);
         }
 
-        List<BookingGuest> guests = bookingGuestService.validateAndBuildGuests(
-                request.getPrimaryGuest(),
-                request.getGuests(),
-                request.getCheckIn(),
-                request.getGuestCount(),
-                request.getRoomCapacitySnapshot());
-
         Booking saved = createBooking(booking);
-        List<BookingGuest> savedGuests = bookingGuestService.saveGuests(saved.getId(), guests);
+        List<BookingGuest> savedGuests = new ArrayList<>();
+        boolean hasRoomScopedGuests = request.getRooms() != null
+                && request.getRooms().stream().anyMatch(room -> room.getGuests() != null && !room.getGuests().isEmpty());
+        if (hasRoomScopedGuests) {
+            Map<Long, BookingCreateRequest.RoomBookingRequest> roomsByRoomId = request.getRooms().stream()
+                    .collect(Collectors.toMap(BookingCreateRequest.RoomBookingRequest::getRoomId, room -> room, (left, right) -> left));
+            for (BookingItem item : saved.getItems()) {
+                BookingCreateRequest.RoomBookingRequest roomRequest = roomsByRoomId.get(item.getRoomId());
+                List<BookingGuest> roomGuests = bookingGuestService.validateAndBuildRoomGuests(
+                        roomRequest != null ? roomRequest.getGuests() : List.of(),
+                        item.getRoomId(),
+                        item.getCheckIn(),
+                        request.getRoomCapacitySnapshot());
+                savedGuests.addAll(bookingGuestService.saveRoomGuests(saved.getId(), item.getId(), roomGuests));
+            }
+        } else {
+            List<BookingGuest> guests = bookingGuestService.validateAndBuildGuests(
+                    request.getPrimaryGuest(),
+                    request.getGuests(),
+                    request.getCheckIn(),
+                    request.getGuestCount(),
+                    request.getRoomCapacitySnapshot());
+            savedGuests = bookingGuestService.saveGuests(saved.getId(), guests);
+        }
         savedGuests.stream()
                 .filter(guest -> Boolean.TRUE.equals(guest.getPrimaryGuest()))
                 .findFirst()
@@ -290,17 +308,18 @@ public class BookingService {
         saved.setPreCheckinCompleted(false);
         saved.setGuestCount(savedGuests.size());
         saved.setTotalGuests(savedGuests.size());
-        return bookingRepository.save(saved);
+        return attachGuestsToItems(bookingRepository.save(saved));
     }
 
     public Booking getBooking(Long id) {
-        return normalizePaidBooking(findBookingWithItems(id));
+        return attachGuestsToItems(normalizePaidBooking(findBookingWithItems(id)));
     }
 
     public List<Booking> getBookingsByUserId(Long userId) {
         return bookingRepository.findByUserIdWithItems(userId).stream()
                 .map(this::reconcilePaymentStatusIfNeeded)
                 .map(this::normalizePaidBooking)
+                .map(this::attachGuestsToItems)
                 .toList();
     }
 
@@ -365,7 +384,7 @@ public class BookingService {
 
     public List<Booking> getStaffCheckInList() {
         return bookingRepository.findByStatusInOrderByCheckInAsc(
-                List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.DEPOSIT_PAID, BookingStatus.CONFIRMED, BookingStatus.PENDING, BookingStatus.CREATED))
+                List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.DEPOSIT_PAID, BookingStatus.CONFIRMED, BookingStatus.BOOKED, BookingStatus.PENDING, BookingStatus.CREATED))
                 .stream()
                 .map(this::reconcilePaymentStatusIfNeeded)
                 .toList();
@@ -373,7 +392,7 @@ public class BookingService {
 
     public List<Booking> getStaffCheckoutList() {
         return bookingRepository.findByStatusInOrderByCheckInAsc(
-                List.of(BookingStatus.CHECKED_IN, BookingStatus.CHECKOUT_PENDING_PAYMENT)
+                List.of(BookingStatus.CHECKED_IN, BookingStatus.PARTIALLY_CHECKED_IN, BookingStatus.PARTIALLY_CHECKED_OUT, BookingStatus.CHECKOUT_PENDING_PAYMENT)
         ).stream()
                 .map(this::withStayTimes)
                 .toList();
@@ -385,8 +404,10 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.CHECKED_IN) {
             return updateCheckInRepresentative(bookingId, request);
         }
-        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.DEPOSIT_PAID) {
-            throw new IllegalStateException("Booking can only be checked in when status is CONFIRMED or DEPOSIT_PAID");
+        if (booking.getStatus() != BookingStatus.CONFIRMED
+                && booking.getStatus() != BookingStatus.DEPOSIT_PAID
+                && booking.getStatus() != BookingStatus.BOOKED) {
+            throw new IllegalStateException("Booking can only be checked in when status is CONFIRMED, DEPOSIT_PAID or BOOKED");
         }
 
         LocalDateTime now = ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime();
@@ -746,6 +767,10 @@ public class BookingService {
 
             if (targetStatus != booking.getStatus()) {
                 booking.setStatus(targetStatus);
+                if (targetStatus == BookingStatus.CONFIRMED || targetStatus == BookingStatus.DEPOSIT_PAID) {
+                    markPendingRoomsBooked(booking);
+                    applyAggregatedBookingStatus(booking);
+                }
                 bookingRepository.save(booking);
             }
         } catch (Exception ex) {
@@ -966,11 +991,17 @@ public class BookingService {
         RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
         dto.setRoomId(roomId);
         dto.setStatus(status);
+        try {
+            roomServiceClient.updateRoomStatus(roomId, dto);
+        } catch (Exception ex) {
+            log.debug("Direct room status update skipped. roomId={}, status={}, reason={}", roomId, status, ex.getMessage());
+        }
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.status", dto);
     }
 
     private Booking findBookingWithItems(Long bookingId) {
         return bookingRepository.findByIdWithItems(bookingId)
+                .or(() -> bookingRepository.findById(bookingId))
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
     }
 
@@ -978,7 +1009,10 @@ public class BookingService {
         List<BookingItem> activeItems = booking.getItems() == null
                 ? java.util.Collections.emptyList()
                 : booking.getItems().stream()
-                    .filter(item -> item.getStatus() == null || item.getStatus() == BookingItemStatus.ACTIVE)
+                    .filter(item -> item.getStatus() == null
+                            || item.getStatus() == BookingItemStatus.ACTIVE
+                            || item.getStatus() == BookingItemStatus.BOOKED
+                            || item.getStatus() == BookingItemStatus.CHECKED_IN)
                     .toList();
         if (activeItems.isEmpty()) {
             throw new IllegalStateException("Booking has no active room item");
@@ -1049,6 +1083,66 @@ public class BookingService {
             return BigDecimal.ZERO;
         }
         return BigDecimal.valueOf(checkInOutService.calculateEarlyCheckInFee(booking, checkInAt));
+    }
+
+    private Booking attachGuestsToItems(Booking booking) {
+        if (booking == null || booking.getItems() == null || booking.getItems().isEmpty()) {
+            return booking;
+        }
+        List<BookingGuest> guests = bookingGuestService.getGuests(booking.getId());
+        Map<Long, List<BookingGuest>> guestsByRoomItem = guests.stream()
+                .filter(guest -> guest.getBookingRoomId() != null)
+                .collect(Collectors.groupingBy(BookingGuest::getBookingRoomId));
+        Map<Long, List<BookingGuest>> legacyGuestsByRoomId = guests.stream()
+                .filter(guest -> guest.getBookingRoomId() == null && guest.getRoomId() != null)
+                .collect(Collectors.groupingBy(BookingGuest::getRoomId));
+        for (BookingItem item : booking.getItems()) {
+            List<BookingGuest> itemGuests = guestsByRoomItem.get(item.getId());
+            if ((itemGuests == null || itemGuests.isEmpty()) && item.getRoomId() != null) {
+                itemGuests = legacyGuestsByRoomId.get(item.getRoomId());
+            }
+            item.setGuests(itemGuests != null ? itemGuests : List.of());
+        }
+        return booking;
+    }
+
+    private void markPendingRoomsBooked(Booking booking) {
+        if (booking.getItems() == null) {
+            return;
+        }
+        for (BookingItem item : booking.getItems()) {
+            if (item.getStatus() == null
+                    || item.getStatus() == BookingItemStatus.PENDING_PAYMENT
+                    || item.getStatus() == BookingItemStatus.ACTIVE) {
+                item.setStatus(BookingItemStatus.BOOKED);
+            }
+        }
+    }
+
+    private void applyAggregatedBookingStatus(Booking booking) {
+        if (booking.getItems() == null || booking.getItems().isEmpty()) {
+            return;
+        }
+        long activeRooms = booking.getItems().stream()
+                .filter(item -> item.getStatus() != BookingItemStatus.CANCELLED)
+                .count();
+        long booked = booking.getItems().stream().filter(item -> item.getStatus() == BookingItemStatus.BOOKED).count();
+        long checkedIn = booking.getItems().stream().filter(item -> item.getStatus() == BookingItemStatus.CHECKED_IN).count();
+        long checkedOut = booking.getItems().stream().filter(item -> item.getStatus() == BookingItemStatus.CHECKED_OUT).count();
+        long cancelled = booking.getItems().stream().filter(item -> item.getStatus() == BookingItemStatus.CANCELLED).count();
+        if (cancelled == booking.getItems().size()) {
+            booking.setStatus(BookingStatus.CANCELLED);
+        } else if (activeRooms > 0 && checkedOut == activeRooms) {
+            booking.setStatus(BookingStatus.COMPLETED);
+        } else if (checkedOut > 0) {
+            booking.setStatus(BookingStatus.PARTIALLY_CHECKED_OUT);
+        } else if (activeRooms > 0 && checkedIn == activeRooms) {
+            booking.setStatus(BookingStatus.CHECKED_IN);
+        } else if (checkedIn > 0) {
+            booking.setStatus(BookingStatus.PARTIALLY_CHECKED_IN);
+        } else if (activeRooms > 0 && booked == activeRooms) {
+            booking.setStatus(BookingStatus.BOOKED);
+        }
     }
 
     private void persistEarlyCheckInSurcharge(Long bookingId, BookingStay stay, Long staffId, BigDecimal amount) {

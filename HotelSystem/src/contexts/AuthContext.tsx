@@ -75,9 +75,17 @@ const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string
   };
 };
 
-const isAuthError = (error: unknown) => {
-  if (!(error instanceof AxiosError)) return false;
-  return error.response?.status === 401 || error.response?.status === 403;
+/**
+ * Returns true if the error means the token is invalid/user not found in DB.
+ * - Any HTTP response error (4xx, 5xx) = credentials are invalid → force logout.
+ * - No response (network timeout/offline) = keep token, don't logout.
+ */
+const isHardAuthError = (error: unknown): boolean => {
+  if (!(error instanceof AxiosError)) return false; // Unknown → don't logout
+  if (!error.response) return false;                // Network timeout/offline → keep token
+  const status = error.response.status;
+  // Only clear auth on identity/authorization errors, NOT on server-side failures
+  return status === 401 || status === 403 || status === 404;
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -89,6 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const accessToken = tokenStorage.getAccessToken();
       const refreshToken = tokenStorage.getRefreshToken();
 
+      // ── CASE 1: access token exists → verify against backend ──────────────
       if (accessToken) {
         const tokenUser = buildUserFromAccessToken(accessToken);
         if (tokenUser) {
@@ -96,10 +105,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const profileRes = await userApi.getMe();
             setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
           } catch (error) {
-            if (isAuthError(error)) {
+            if (isHardAuthError(error)) {
+              // Backend returned error → user/token invalid (e.g. DB was reset)
               tokenStorage.clear();
               setUser(null);
             } else {
+              // Network offline only → trust local token temporarily
               setUser(tokenUser);
             }
           }
@@ -108,6 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
+      // ── CASE 2: no access token but refresh token exists → try refresh ────
       if (refreshToken) {
         try {
           const refreshed = await authApi.refreshTokens(refreshToken);
@@ -117,13 +129,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             try {
               const profileRes = await userApi.getMe();
               setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
-            } catch {
-              setUser(tokenUser);
+            } catch (meError) {
+              // getMe failed even after fresh token → DB was reset
+              if (isHardAuthError(meError)) {
+                tokenStorage.clear();
+                setUser(null);
+              } else {
+                setUser(tokenUser);
+              }
             }
           } else {
+            tokenStorage.clear();
             setUser(null);
           }
         } catch {
+          // Refresh itself failed → DB was reset or tokens expired
           tokenStorage.clear();
           setUser(null);
         }
@@ -135,7 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     initAuth();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<User | null> => {
     const response = await authApi.login(email, password);
     const { accessToken, refreshToken } = response.data;
     tokenStorage.setTokens(accessToken, refreshToken);
@@ -147,11 +167,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(mergedUser);
         return mergedUser;
       } catch (error) {
-        if (isAuthError(error)) {
+        if (isHardAuthError(error)) {
           tokenStorage.clear();
           setUser(null);
           return null;
         }
+        // Network offline: use token-derived user
         setUser(tokenUser);
         return tokenUser;
       }
@@ -171,7 +192,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       await userApi.createProfile({
-        fullName: userData.name || '',
+        name: userData.name || '',
         phone: userData.phone || '',
         address: '',
         dateOfBirth: '',
@@ -186,7 +207,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const profileRes = await userApi.getMe();
         setUser(mergeProfileIntoUser(tokenUser, profileRes.data));
       } catch (error) {
-        if (isAuthError(error)) {
+        if (isHardAuthError(error)) {
           tokenStorage.clear();
           setUser(null);
           return;
@@ -200,6 +221,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     authApi.logout();
+    tokenStorage.clear();
     setUser(null);
   };
 

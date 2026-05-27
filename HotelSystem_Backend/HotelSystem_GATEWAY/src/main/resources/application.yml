@@ -23,6 +23,7 @@ spring:
               - "http://localhost:3000"
               - "http://127.0.0.1:3000"
               - "http://frontend:3000"
+              - "http://192.168.1.8:3000"
             allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
             allowedHeaders: ["*"]
             allowCredentials: true
@@ -36,12 +37,12 @@ spring:
             - Path=/auth-api/**
           filters:
             - RewritePath=/auth-api(?<segment>/?.*), ${segment}
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 20
-                redis-rate-limiter.burstCapacity: 40
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@ipKeyResolver}"
+            # - name: RequestRateLimiter
+            #   args:
+            #     redis-rate-limiter.replenishRate: 20
+            #     redis-rate-limiter.burstCapacity: 40
+            #     redis-rate-limiter.requestedTokens: 1
+            #     key-resolver: "#{@ipKeyResolver}"
 
         # USER
         - id: user-service
@@ -112,6 +113,14 @@ spring:
             #     redis-rate-limiter.burstCapacity: 30
             #     redis-rate-limiter.requestedTokens: 1
             #     key-resolver: "#{@ipKeyResolver}"
+
+        # AI CHATBOT
+        - id: ai-service
+          uri: lb://ai-service
+          predicates:
+            - Path=/ai-api/**
+          filters:
+            - RewritePath=/ai-api(?<segment>/?.*), ${segment}
 
 eureka:
   client:

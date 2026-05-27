@@ -310,8 +310,16 @@ public class CheckoutService {
             }
 
             if (amountDue.compareTo(BigDecimal.ZERO) > 0 && !checkoutChargesPaid) {
+                boolean alreadyPending = stayExisting.getLateCheckoutPaymentStatus() == LateCheckoutPaymentStatus.PENDING
+                        || booking.getStatus() == BookingStatus.CHECKOUT_PENDING_PAYMENT;
                 stayExisting.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.PENDING);
                 bookingStayRepository.save(stayExisting);
+                if (alreadyPending) {
+                    CheckoutResponse response = buildResponse(bookingId, actualCheckOutAt, booking.getStatus(), lateMinutes, lateFee, early, booking, false);
+                    response.setPaymentRequired(true);
+                    applyRepresentativeToResponse(response, rep);
+                    return response;
+                }
                 try {
                     iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest lateReq = new iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest();
                     lateReq.setBookingId(bookingId);
