@@ -146,6 +146,8 @@ public class RefundTransaction {
         this.processedByStaffId = processedByStaffId;
     }
 
+    
+
     public String getNote() {
         return note;
     }

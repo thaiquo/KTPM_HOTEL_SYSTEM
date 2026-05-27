@@ -3,7 +3,7 @@ package iuh.fit.hotelsystem_booking.config;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,10 +12,13 @@ public class RabbitConfig {
 
     public static final String EXCHANGE = "hotel.exchange";
     public static final String REFUND_EXCHANGE = "refund.exchange";
+    public static final String DLX_EXCHANGE = "hotel.dlx";
 
     // QUEUES
     public static final String ROOM_HELD_QUEUE = "room.held.queue";
+    public static final String ROOM_HELD_DLQ = "room.held.dlq";
     public static final String PAYMENT_RESULT_QUEUE = "payment.result.queue";
+    public static final String PAYMENT_RESULT_DLQ = "payment.result.dlq";
     public static final String REFUND_REQUESTED_QUEUE = "refund.requested.queue";
     public static final String REFUND_ASSIGNED_QUEUE = "refund.assigned.queue";
     public static final String REFUND_OVERDUE_QUEUE = "refund.overdue.queue";
@@ -25,6 +28,8 @@ public class RabbitConfig {
     // ROUTING KEYS
     public static final String ROOM_HELD_ROUTING_KEY = "room.held";
     public static final String PAYMENT_RESULT_ROUTING_KEY = "payment.result";
+    public static final String DLQ_ROUTING_KEY_ROOM = "dlq.room.held";
+    public static final String DLQ_ROUTING_KEY_PAYMENT = "dlq.payment.result";
     public static final String REFUND_REQUESTED_ROUTING_KEY = "refund.requested";
     public static final String REFUND_ASSIGNED_ROUTING_KEY = "refund.assigned";
     public static final String REFUND_OVERDUE_ROUTING_KEY = "refund.overdue";
@@ -41,12 +46,25 @@ public class RabbitConfig {
         return new TopicExchange(REFUND_EXCHANGE);
     }
 
+    @Bean
+    public TopicExchange deadLetterExchange() {
+        return new TopicExchange(DLX_EXCHANGE);
+    }
+
     // -------------------------
     // ROOM HELD
     // -------------------------
     @Bean
     public Queue roomHeldQueue() {
-        return new Queue(ROOM_HELD_QUEUE);
+        return QueueBuilder.durable(ROOM_HELD_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY_ROOM)
+                .build();
+    }
+
+    @Bean
+    public Queue roomHeldDlq() {
+        return new Queue(ROOM_HELD_DLQ);
     }
 
     @Bean
@@ -57,12 +75,27 @@ public class RabbitConfig {
                 .with(ROOM_HELD_ROUTING_KEY);
     }
 
+    @Bean
+    public Binding roomHeldDlqBinding() {
+        return BindingBuilder.bind(roomHeldDlq())
+                .to(deadLetterExchange())
+                .with(DLQ_ROUTING_KEY_ROOM);
+    }
+
     // -------------------------
     // PAYMENT RESULT
     // -------------------------
     @Bean
     public Queue paymentResultQueue() {
-        return new Queue(PAYMENT_RESULT_QUEUE);
+        return QueueBuilder.durable(PAYMENT_RESULT_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY_PAYMENT)
+                .build();
+    }
+
+    @Bean
+    public Queue paymentResultDlq() {
+        return new Queue(PAYMENT_RESULT_DLQ);
     }
 
     @Bean
@@ -71,6 +104,13 @@ public class RabbitConfig {
                 .bind(paymentResultQueue())
                 .to(exchange())
                 .with(PAYMENT_RESULT_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding paymentResultDlqBinding() {
+        return BindingBuilder.bind(paymentResultDlq())
+                .to(deadLetterExchange())
+                .with(DLQ_ROUTING_KEY_PAYMENT);
     }
 
     @Bean
@@ -141,8 +181,8 @@ public class RabbitConfig {
     // JSON CONVERTER (QUAN TRỌNG)
     // -------------------------
     @Bean
-    public JacksonJsonMessageConverter jsonMessageConverter() {
-        JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();
+    public Jackson2JsonMessageConverter jsonMessageConverter() {
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
         converter.setAlwaysConvertToInferredType(true); // QUAN TRỌNG
         return converter;
     }

@@ -45,6 +45,13 @@ public class NotificationConsumer {
                     "BOOKING_EXPIRED",
                     "Đơn đặt phòng #" + event.getBookingId() + " đã hết hạn thanh toán và bị hủy tự động."
             );
+        } else if ("CHECKED_IN".equals(event.getStatus()) || "BookingCheckedInEvent".equals(event.getStatus())) {
+            notificationService.saveNotification(
+                    event.getBookingId(),
+                    event.getUserId(),
+                    "CHECK_IN_SUCCESS",
+                    "Check-in cho booking #" + event.getBookingId() + " da thanh cong. Chuc quy khach co ky nghi tot lanh."
+            );
         }
     }
 

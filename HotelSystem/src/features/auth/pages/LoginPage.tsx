@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
@@ -12,7 +12,7 @@ import { getManagementHomeByRole } from '../../../shared/lib/roleRoute';
 const LoginPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login } = useAuth();
+  const { login, user, isAuthenticated } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,6 +21,21 @@ const LoginPage = () => {
     password: '',
   });
 
+  // Already logged in → redirect to role dashboard or redirect param
+  // RULE: role-based home takes priority over redirect='/' to prevent STAFF landing on homepage
+  if (isAuthenticated && user) {
+    const roleHome = getManagementHomeByRole(user.role);
+    const redirect = searchParams.get('redirect');
+    let redirectTarget = roleHome;
+    
+    if (redirect && redirect.startsWith('/') && redirect !== '/') {
+      if (roleHome === '/staff' && redirect.startsWith('/staff')) redirectTarget = redirect;
+      else if (roleHome === '/admin' && redirect.startsWith('/admin')) redirectTarget = redirect;
+      else if (roleHome === '/' && !redirect.startsWith('/staff') && !redirect.startsWith('/admin')) redirectTarget = redirect;
+    }
+    return <Navigate to={redirectTarget} replace />;
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -28,12 +43,16 @@ const LoginPage = () => {
 
     try {
       const loggedInUser = await login(formData.email, formData.password);
+      const roleHome = getManagementHomeByRole(loggedInUser?.role);
       const redirect = searchParams.get('redirect');
-      if (redirect && redirect.startsWith('/')) {
-        navigate(redirect, { replace: true });
-      } else {
-        navigate(getManagementHomeByRole(loggedInUser?.role), { replace: true });
+      
+      let redirectTarget = roleHome;
+      if (redirect && redirect.startsWith('/') && redirect !== '/') {
+        if (roleHome === '/staff' && redirect.startsWith('/staff')) redirectTarget = redirect;
+        else if (roleHome === '/admin' && redirect.startsWith('/admin')) redirectTarget = redirect;
+        else if (roleHome === '/' && !redirect.startsWith('/staff') && !redirect.startsWith('/admin')) redirectTarget = redirect;
       }
+      navigate(redirectTarget, { replace: true });
     } catch (err: unknown) {
       const message = isAxiosError<{ message?: string }>(err)
         ? err.response?.data?.message

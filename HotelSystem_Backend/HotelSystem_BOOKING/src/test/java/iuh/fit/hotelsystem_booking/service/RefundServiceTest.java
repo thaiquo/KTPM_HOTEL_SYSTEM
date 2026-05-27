@@ -1,7 +1,9 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.dto.CancellationPolicyResult;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundPaymentTransaction;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
@@ -11,11 +13,14 @@ import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class RefundServiceTest {
@@ -29,11 +34,13 @@ class RefundServiceTest {
         RefundService refundService = new RefundService(
                 refundRepository,
                 bookingRepository,
+            mock(CancellationPolicyService.class),
                 paymentGateway,
                 refundQueueProducer,
                 mock(RefundPaymentTransactionRepository.class),
                 new RefundAuditService(mock(RefundAuditLogRepository.class)),
-                mock(RefundNotificationService.class));
+            mock(RefundNotificationService.class),
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class));
 
         Booking booking = new Booking();
         booking.setId(10L);
@@ -70,11 +77,13 @@ class RefundServiceTest {
         RefundService refundService = new RefundService(
                 refundRepository,
                 bookingRepository,
+            mock(CancellationPolicyService.class),
                 paymentGateway,
                 refundQueueProducer,
                 mock(RefundPaymentTransactionRepository.class),
                 auditService,
-                notificationService);
+            notificationService,
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class));
 
         Booking booking = new Booking();
         booking.setId(10L);
@@ -114,11 +123,13 @@ class RefundServiceTest {
         RefundService refundService = new RefundService(
                 refundRepository,
                 bookingRepository,
+            mock(CancellationPolicyService.class),
                 paymentGateway,
                 refundQueueProducer,
                 paymentTransactionRepository,
                 auditService,
-                notificationService);
+            notificationService,
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class));
 
         RefundTransaction refund = new RefundTransaction();
         refund.setId(1L);
@@ -152,6 +163,52 @@ class RefundServiceTest {
     }
 
     @Test
+    void approveRefundByStaffUsesPaymentServiceAndMarksRefunded() {
+        RefundTransactionRepository refundRepository = mock(RefundTransactionRepository.class);
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        PaymentServiceClient paymentServiceClient = mock(PaymentServiceClient.class);
+        RefundAuditService auditService = mock(RefundAuditService.class);
+        RefundNotificationService notificationService = mock(RefundNotificationService.class);
+        RefundService refundService = new RefundService(
+                refundRepository,
+                bookingRepository,
+                mock(CancellationPolicyService.class),
+                mock(PaymentGateway.class),
+                mock(RefundQueueProducer.class),
+                mock(RefundPaymentTransactionRepository.class),
+                auditService,
+                notificationService,
+                paymentServiceClient);
+
+        RefundTransaction refund = new RefundTransaction();
+        refund.setId(5L);
+        refund.setBookingId(37L);
+        refund.setRefundAmount(3_000_000.0);
+        refund.setPaymentTransactionId("37_02e52914cac0");
+        refund.setStatus(RefundStatus.ASSIGNED);
+        refund.setAssignedTo(2L);
+
+        Booking booking = new Booking();
+        booking.setId(37L);
+        booking.setStatus(BookingStatus.CANCELLED);
+
+        when(refundRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(refund));
+        when(bookingRepository.findById(37L)).thenReturn(Optional.of(booking));
+        when(refundRepository.save(any(RefundTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(paymentServiceClient.processRefund(eq(5L), any())).thenReturn(Map.of("status", "SUCCESS"));
+
+        RefundTransaction result = refundService.approveRefundByStaff(5L, 2L);
+
+        assertEquals(RefundStatus.REFUNDED, result.getStatus());
+        assertNotNull(result.getCompletedAt());
+        verify(paymentServiceClient).processRefund(eq(5L), any());
+        verify(auditService).log(eq(5L), eq("APPROVED"), eq(RefundStatus.ASSIGNED), eq(RefundStatus.PROCESSING), eq("2"), eq("REFUND_STAFF"), any());
+        verify(auditService).log(eq(5L), eq("REFUNDED"), eq(RefundStatus.PROCESSING), eq(RefundStatus.REFUNDED), eq("2"), eq("SYSTEM"), any());
+        verify(notificationService).notifyApproved(refund);
+        verify(notificationService).notifyRefunded(refund, "PAYMENT_SERVICE");
+    }
+
+    @Test
     void rejectRefundWritesAuditAndNotificationWithReason() {
         RefundTransactionRepository refundRepository = mock(RefundTransactionRepository.class);
         BookingRepository bookingRepository = mock(BookingRepository.class);
@@ -160,11 +217,13 @@ class RefundServiceTest {
         RefundService refundService = new RefundService(
                 refundRepository,
                 bookingRepository,
+            mock(CancellationPolicyService.class),
                 mock(PaymentGateway.class),
                 mock(RefundQueueProducer.class),
                 mock(RefundPaymentTransactionRepository.class),
                 auditService,
-                notificationService);
+            notificationService,
+            mock(iuh.fit.hotelsystem_booking.client.PaymentServiceClient.class));
 
         RefundTransaction refund = new RefundTransaction();
         refund.setId(1L);

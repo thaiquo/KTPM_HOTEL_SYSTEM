@@ -5,12 +5,11 @@ import iuh.fit.hotelsystem_booking.entity.RefundStaff;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
+import iuh.fit.hotelsystem_booking.client.UserServiceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -24,19 +23,18 @@ public class RefundAssignmentService {
     private final StaffWorkloadService staffWorkloadService;
     private final RefundQueueProducer refundQueueProducer;
     private final RefundAuditService refundAuditService;
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    @Value("${user.service.url:http://user-service:8082}")
-    private String userServiceUrl;
+    private final UserServiceClient userServiceClient;
 
     public RefundAssignmentService(RefundTransactionRepository refundRepository,
                                    StaffWorkloadService staffWorkloadService,
                                    RefundQueueProducer refundQueueProducer,
-                                   RefundAuditService refundAuditService) {
+                                   RefundAuditService refundAuditService,
+                                   UserServiceClient userServiceClient) {
         this.refundRepository = refundRepository;
         this.staffWorkloadService = staffWorkloadService;
         this.refundQueueProducer = refundQueueProducer;
         this.refundAuditService = refundAuditService;
+        this.userServiceClient = userServiceClient;
     }
 
     @Transactional
@@ -73,8 +71,7 @@ public class RefundAssignmentService {
 
     private boolean isStaffOrAdmin(Long staffId) {
         try {
-            Boolean result = restTemplate.getForObject(userServiceUrl + "/api/users/" + staffId + "/staff-or-admin",
-                    Boolean.class);
+            Boolean result = userServiceClient.isStaffOrAdmin(staffId);
             return Boolean.TRUE.equals(result);
         } catch (Exception ex) {
             log.warn("Could not verify staff role via USER service. staffId={}, reason={}", staffId, ex.getMessage());

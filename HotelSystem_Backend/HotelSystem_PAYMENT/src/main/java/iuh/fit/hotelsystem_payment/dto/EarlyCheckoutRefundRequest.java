@@ -11,6 +11,7 @@ public class EarlyCheckoutRefundRequest {
     /** e.g. EARLY_CHECKOUT */
     private String reason;
     private Long processedByStaffId;
+    private boolean forceImmediate;
 
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
@@ -28,5 +29,8 @@ public class EarlyCheckoutRefundRequest {
 
     public Long getProcessedByStaffId() { return processedByStaffId; }
     public void setProcessedByStaffId(Long processedByStaffId) { this.processedByStaffId = processedByStaffId; }
+
+    public boolean isForceImmediate() { return forceImmediate; }
+    public void setForceImmediate(boolean forceImmediate) { this.forceImmediate = forceImmediate; }
 }
 

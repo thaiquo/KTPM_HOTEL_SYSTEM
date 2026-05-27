@@ -1,15 +1,19 @@
 package iuh.fit.hotelsystem_payment.service;
+import iuh.fit.hotelsystem_payment.client.BookingServiceClient;
 import iuh.fit.hotelsystem_payment.config.MoMoConfig;
 import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import iuh.fit.hotelsystem_payment.dto.CreateMoMoRequest;
 import iuh.fit.hotelsystem_payment.dto.MoMoResponse;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
+import iuh.fit.hotelsystem_payment.entity.InvoiceCategory;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -20,6 +24,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -32,15 +37,20 @@ public class MoMoService {
     private final PaymentRepository paymentRepository;
     private final RabbitTemplate rabbitTemplate;
     private final MoMoConfig moMoConfig;
+    private final BookingServiceClient bookingServiceClient;
     private final HttpClient httpClient;
 
     public MoMoService(PaymentRepository paymentRepository,
                        RabbitTemplate rabbitTemplate,
-                       MoMoConfig moMoConfig) {
+                       MoMoConfig moMoConfig,
+                       BookingServiceClient bookingServiceClient) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.moMoConfig = moMoConfig;
-        this.httpClient = HttpClient.newHttpClient();
+        this.bookingServiceClient = bookingServiceClient;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
     }
 
     public MoMoResponse createPayment(CreateMoMoRequest request) {
@@ -52,8 +62,11 @@ public class MoMoService {
         if (paymentType == PaymentType.REMAINING) {
             throw new IllegalArgumentException("Use /payments/momo/create-remaining for remaining payment");
         }
+        ensurePaymentNotCompleted(request.getBookingId(), paymentType);
 
-        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), request.getTotalAmount(), paymentType, request);
+        Double authoritativeTotalAmount = resolveBookingTotalAmount(request.getBookingId(), request.getTotalAmount());
+
+        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request);
     }
 
     public MoMoResponse createRemainingPayment(CreateMoMoRequest request) {
@@ -80,7 +93,61 @@ public class MoMoService {
                 ? request.getTotalAmount()
                 : successfulDeposit.getTotalAmount();
 
+        totalAmount = resolveBookingTotalAmount(request.getBookingId(), totalAmount);
+
         return createAndRequestMoMo(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request);
+    }
+
+    private Double resolveBookingTotalAmount(Long bookingId, Double requestedTotalAmount) {
+        if (bookingId == null) {
+            throw new IllegalArgumentException("bookingId is required");
+        }
+
+        Double bookingTotalAmount = null;
+        try {
+            Map<String, Object> booking = bookingServiceClient.getBooking(bookingId);
+            bookingTotalAmount = extractMoney(booking, "totalPrice");
+            if (bookingTotalAmount == null) {
+                bookingTotalAmount = extractMoney(booking, "finalTotal");
+            }
+        } catch (Exception ignored) {
+            // Keep backward compatibility: fallback to requested amount when booking service is unavailable.
+        }
+
+        if (bookingTotalAmount != null && bookingTotalAmount > 0) {
+            return roundVnd(bookingTotalAmount);
+        }
+
+        if (requestedTotalAmount != null && requestedTotalAmount > 0) {
+            return roundVnd(requestedTotalAmount);
+        }
+
+        throw new IllegalArgumentException("Cannot resolve totalAmount for booking " + bookingId);
+    }
+
+    private Double extractMoney(Map<String, Object> payload, String key) {
+        if (payload == null || key == null) {
+            return null;
+        }
+        Object raw = payload.get(key);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(raw));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private void ensurePaymentNotCompleted(Long bookingId, PaymentType paymentType) {
+        if (paymentRepository.existsByBookingIdAndPaymentTypeAndStatus(bookingId, paymentType, PaymentStatus.SUCCESS)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    paymentType + " payment already completed for this booking");
+        }
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {
@@ -105,6 +172,7 @@ public class MoMoService {
         payment.setPaidAmount(paidAmount);
         payment.setAmount(paidAmount);
         payment.setPaymentType(paymentType);
+        payment.setInvoiceCategory(InvoiceCategory.CHECKIN);
         payment.setMethod("MOMO");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
@@ -145,6 +213,7 @@ public class MoMoService {
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(moMoConfig.getPayUrl()))
                     .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(10))
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
                     .build();
 

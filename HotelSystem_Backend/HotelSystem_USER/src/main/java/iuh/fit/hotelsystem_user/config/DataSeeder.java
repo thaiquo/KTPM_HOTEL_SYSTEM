@@ -10,6 +10,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.List;
+
 @Configuration
 public class DataSeeder {
 
@@ -57,6 +59,37 @@ public class DataSeeder {
                 staff2.setRole(staffRole);
                 userRepo.save(staff2);
             }
+
+            List<CustomerSeed> customers = List.of(
+                    new CustomerSeed("nguyentanthinh@gmail.com", "Nguyễn Tấn Thịnh", "0397994524", "06/11/2004", true, "Quận 1, TP. Hồ Chí Minh"),
+                    new CustomerSeed("minhchau@gmail.com", "Trần Minh Châu", "0397994525", "18/02/2001", false, "Quận 3, TP. Hồ Chí Minh"),
+                    new CustomerSeed("quanghuy@gmail.com", "Lê Quang Huy", "0397994526", "24/09/1999", true, "Thủ Đức, TP. Hồ Chí Minh"),
+                    new CustomerSeed("thuylinh@gmail.com", "Phạm Thùy Linh", "0397994527", "12/07/2002", false, "Biên Hòa, Đồng Nai"),
+                    new CustomerSeed("anhkiet@gmail.com", "Nguyễn Anh Kiệt", "0397994528", "03/03/2000", true, "Dĩ An, Bình Dương"),
+                    new CustomerSeed("ngocanh@gmail.com", "Võ Ngọc Ánh", "0397994529", "27/12/2003", false, "Nha Trang, Khánh Hòa"),
+                    new CustomerSeed("duythanh@gmail.com", "Bùi Duy Thành", "0397994530", "15/05/1998", true, "Cần Thơ"),
+                    new CustomerSeed("maihoang@gmail.com", "Đặng Mai Hoàng", "0397994531", "09/10/2001", false, "Vũng Tàu"),
+                    new CustomerSeed("baotran@gmail.com", "Trịnh Bảo Trân", "0397994532", "21/01/2005", false, "Tây Ninh"),
+                    new CustomerSeed("khoiminh@gmail.com", "Phan Khôi Minh", "0397994533", "30/08/2002", true, "Bình Dương")
+            );
+
+            for (CustomerSeed customer : customers) {
+                if (userRepo.findByEmail(customer.email()).isEmpty()) {
+                    User user = new User();
+                    user.setEmail(customer.email());
+                    user.setPassword(passwordUtil.encode("123456"));
+                    user.setName(customer.name());
+                    user.setPhoneNumber(customer.phoneNumber());
+                    user.setDateOfBirth(customer.dateOfBirth());
+                    user.setGender(customer.gender());
+                    user.setAddress(customer.address());
+                    user.setActive(true);
+                    user.setRole(customerRole);
+                    userRepo.save(user);
+                }
+            }
         };
     }
+
+    private record CustomerSeed(String email, String name, String phoneNumber, String dateOfBirth, Boolean gender, String address) {}
 }

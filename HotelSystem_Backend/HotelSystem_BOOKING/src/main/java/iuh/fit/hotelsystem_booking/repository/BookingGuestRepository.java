@@ -10,5 +10,7 @@ import java.util.Optional;
 @Repository
 public interface BookingGuestRepository extends JpaRepository<BookingGuest, Long> {
     List<BookingGuest> findByBookingIdOrderByPrimaryGuestDescIdAsc(Long bookingId);
+    List<BookingGuest> findByBookingRoomIdOrderByPrimaryGuestDescIdAsc(Long bookingRoomId);
     Optional<BookingGuest> findByIdAndBookingId(Long id, Long bookingId);
+    Optional<BookingGuest> findByIdAndBookingRoomId(Long id, Long bookingRoomId);
 }

@@ -15,6 +15,8 @@ import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutRefundRequest;
 import iuh.fit.hotelsystem_payment.dto.EarlyCheckoutPreviewRequest;
 import iuh.fit.hotelsystem_payment.dto.RefundAllocationPreviewDto;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
+import iuh.fit.hotelsystem_payment.dto.BookingCancellationRequest;
+import iuh.fit.hotelsystem_payment.dto.BookingCancellationResponse;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.RefundTransaction;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
@@ -143,8 +145,9 @@ public class PaymentController {
 
     @PostMapping("/bookings/{bookingId}/early-checkin-fee/paid")
     public ResponseEntity<Payment> markEarlyCheckinFeePaid(
-            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
-        return ResponseEntity.ok(paymentService.markEarlyCheckinFeePaid(bookingId));
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "CASH") String method) {
+        return ResponseEntity.ok(paymentService.markEarlyCheckinFeePaid(bookingId, method));
     }
 
     @GetMapping("/bookings/{bookingId}/early-checkin-fee/status")
@@ -155,8 +158,10 @@ public class PaymentController {
 
     @PostMapping("/bookings/{bookingId}/late-checkout-fee/paid")
     public ResponseEntity<Payment> markLateCheckoutFeePaid(
-            @org.springframework.web.bind.annotation.PathVariable Long bookingId) {
-        return ResponseEntity.ok(paymentService.markLateCheckoutFeePaid(bookingId));
+            @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "CASH") String method,
+            @RequestBody(required = false) OperationalPaymentRequest request) {
+        return ResponseEntity.ok(paymentService.markLateCheckoutFeePaid(bookingId, method, request));
     }
 
     @GetMapping("/bookings/{bookingId}/late-checkout-fee/status")
@@ -206,9 +211,23 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.confirmCheckinPayment(paymentCode));
     }
 
+    @PostMapping("/late-checkout/{paymentCode}/confirm")
+    public ResponseEntity<CheckinPaymentConfirmResponse> confirmLateCheckoutQr(@PathVariable String paymentCode) {
+        return ResponseEntity.ok(paymentService.confirmLateCheckoutPayment(paymentCode));
+    }
+
     @PostMapping("/{paymentCode}/cancel")
     public ResponseEntity<CheckinPaymentConfirmResponse> cancelCheckinQr(@PathVariable String paymentCode) {
         return ResponseEntity.ok(paymentService.cancelCheckinPayment(paymentCode));
+    }
+
+    /**
+     * Cancel a booking with optional refund.
+     * If refund is eligible, creates a RefundTransaction for staff approval.
+     */
+    @PostMapping("/booking/cancel")
+    public ResponseEntity<BookingCancellationResponse> cancelBooking(@RequestBody BookingCancellationRequest request) {
+        return ResponseEntity.ok(paymentService.cancelBooking(request));
     }
 
     private String extractClientIp(HttpServletRequest request) {

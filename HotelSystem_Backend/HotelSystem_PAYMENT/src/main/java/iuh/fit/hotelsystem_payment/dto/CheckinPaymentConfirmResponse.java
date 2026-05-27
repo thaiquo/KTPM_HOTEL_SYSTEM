@@ -6,6 +6,8 @@ public class CheckinPaymentConfirmResponse {
     private String bookingCode;
     private Double amount;
     private String status;
+    private String paymentType;
+    private String invoiceCategory;
 
     public String getPaymentCode() { return paymentCode; }
     public void setPaymentCode(String paymentCode) { this.paymentCode = paymentCode; }
@@ -21,4 +23,10 @@ public class CheckinPaymentConfirmResponse {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getPaymentType() { return paymentType; }
+    public void setPaymentType(String paymentType) { this.paymentType = paymentType; }
+
+    public String getInvoiceCategory() { return invoiceCategory; }
+    public void setInvoiceCategory(String invoiceCategory) { this.invoiceCategory = invoiceCategory; }
 }

@@ -25,6 +25,8 @@ public class RefundCalculationService {
         }
 
         LocalDate plannedCheckout = booking.getCheckOut();
+
+        // Checkout is EARLY only when the actual checkout date is strictly BEFORE planned checkout date
         boolean early = plannedCheckout != null && actualCheckoutAt.toLocalDate().isBefore(plannedCheckout);
 
         EarlyCheckoutRefundResult result = new EarlyCheckoutRefundResult();
@@ -44,9 +46,10 @@ public class RefundCalculationService {
             return result;
         }
 
+        // --- NEW POLICY: No minimum charged nights. ---
+        // chargeNights = usedNights.  Unused nights are all refundable at 80%.
         int usedNights = Math.max(1, resolveUsedNights(booking, stay, actualCheckoutAt));
-        int chargeNights = Math.max(usedNights, BookingConstants.EARLY_CHECKOUT_MIN_CHARGE_NIGHTS);
-        chargeNights = Math.min(chargeNights, totalNights);
+        int chargeNights = Math.min(usedNights, totalNights);
         int unusedNights = Math.max(0, totalNights - chargeNights);
 
         if (booking.getRatePlan() == RatePlan.NON_REFUNDABLE || booking.isNonRefundable()) {
@@ -79,8 +82,9 @@ public class RefundCalculationService {
     }
 
     private int resolveUsedNights(Booking booking, BookingStay stay, LocalDateTime actualCheckoutAt) {
+        // Always calculate from planned check-in date to avoid awarding fewer nights for late arrivals
         LocalDate start = booking.getCheckIn();
-        if (stay != null && stay.getActualCheckInAt() != null) {
+        if (start == null && stay != null && stay.getActualCheckInAt() != null) {
             start = stay.getActualCheckInAt().toLocalDate();
         }
         if (start == null) {
@@ -116,4 +120,3 @@ public class RefundCalculationService {
         return value != null ? value : 0.0;
     }
 }
-

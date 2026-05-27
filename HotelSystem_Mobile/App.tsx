@@ -21,6 +21,11 @@ type PaymentRow = {
   bookingCode: string;
   amount: number;
   status: string;
+  paymentType?: string;
+  payerName?: string | null;
+  payerGuestId?: number | null;
+  payerPhone?: string | null;
+  payerCccd?: string | null;
 };
 
 type Screen = 'home' | 'scan' | 'detail';
@@ -67,6 +72,11 @@ async function fetchPayment(apiOrigin: string, paymentCode: string): Promise<Pay
     bookingCode: String(body.bookingCode ?? body.bookingId ?? ''),
     amount: Number(body.amount ?? 0),
     status: String(body.status ?? ''),
+    paymentType: typeof body.paymentType === 'string' ? body.paymentType : undefined,
+    payerName: typeof body.payerName === 'string' ? body.payerName : null,
+    payerGuestId: typeof body.payerGuestId === 'number' ? body.payerGuestId : (typeof body.payerGuestId === 'string' ? Number(body.payerGuestId) : null),
+    payerPhone: typeof body.payerPhone === 'string' ? body.payerPhone : null,
+    payerCccd: typeof body.payerCccd === 'string' ? body.payerCccd : null,
   };
 }
 
@@ -89,6 +99,11 @@ async function postConfirm(apiOrigin: string, paymentCode: string): Promise<Paym
     bookingCode: String(body.bookingCode ?? body.bookingId ?? ''),
     amount: Number(body.amount ?? 0),
     status: String(body.status ?? ''),
+    paymentType: typeof body.paymentType === 'string' ? body.paymentType : undefined,
+    payerName: typeof body.payerName === 'string' ? body.payerName : null,
+    payerGuestId: typeof body.payerGuestId === 'number' ? body.payerGuestId : (typeof body.payerGuestId === 'string' ? Number(body.payerGuestId) : null),
+    payerPhone: typeof body.payerPhone === 'string' ? body.payerPhone : null,
+    payerCccd: typeof body.payerCccd === 'string' ? body.payerCccd : null,
   };
 }
 
@@ -151,7 +166,20 @@ export default function App() {
         if (data?.payload?.paymentCode !== paymentCode) return;
         if (data.event === 'payment:success') {
           setWsHint('Socket: payment:success ✓');
-          loadDetail(paymentCode);
+          // Update only the current payment detail from payload to avoid full reload
+          const p = data.payload || {};
+          setPayment((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: typeof p.status === 'string' ? p.status : prev.status,
+              amount: typeof p.amount === 'number' ? p.amount : prev.amount,
+              payerName: typeof p.payerName === 'string' ? p.payerName : prev.payerName,
+              payerGuestId: typeof p.payerGuestId === 'number' ? p.payerGuestId : (typeof p.payerGuestId === 'string' ? Number(p.payerGuestId) : prev.payerGuestId),
+              payerPhone: typeof p.payerPhone === 'string' ? p.payerPhone : prev.payerPhone,
+              payerCccd: typeof p.payerCccd === 'string' ? p.payerCccd : prev.payerCccd,
+            };
+          });
         }
       } catch {
         /* ignore */
@@ -205,7 +233,32 @@ export default function App() {
     if (!paymentCode) return;
     setConfirming(true);
     try {
-      const row = await postConfirm(apiOrigin, paymentCode);
+      const row = payment?.paymentType === 'LATE_CHECKOUT_FEE'
+        ? await (async () => {
+            const result = await fetch(`${apiOrigin.replace(/\/$/, '')}/payment-api/payments/late-checkout/${encodeURIComponent(paymentCode)}/confirm`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            const text = await result.text();
+            let body: Record<string, unknown> = {};
+            try {
+              body = text ? JSON.parse(text) : {};
+            } catch {
+              throw new Error('Phản hồi không phải JSON');
+            }
+            if (!result.ok) {
+              throw new Error(typeof body.message === 'string' ? body.message : `HTTP ${result.status}`);
+            }
+            return {
+              paymentCode: String(body.paymentCode ?? paymentCode),
+              bookingId: String(body.bookingId ?? ''),
+              bookingCode: String(body.bookingCode ?? body.bookingId ?? ''),
+              amount: Number(body.amount ?? 0),
+              status: String(body.status ?? ''),
+              paymentType: typeof body.paymentType === 'string' ? body.paymentType : undefined,
+            };
+          })()
+        : await postConfirm(apiOrigin, paymentCode);
       setPayment(row);
       Alert.alert('Đã xác nhận', `Trạng thái: ${row.status}`);
     } catch (e: unknown) {
@@ -283,6 +336,17 @@ export default function App() {
             <>
               <Row label="Mã" value={payment.paymentCode} />
               <Row label="Booking" value={payment.bookingCode} />
+              {payment.payerName ? (
+                <Row label="Khách" value={payment.payerName} />
+              ) : payment.payerGuestId ? (
+                <Row label="Khách ID" value={String(payment.payerGuestId)} />
+              ) : null}
+              {payment.payerPhone ? (
+                <Row label="SĐT" value={payment.payerPhone} />
+              ) : null}
+              {payment.payerCccd ? (
+                <Row label="CCCD" value={payment.payerCccd} />
+              ) : null}
               <Row label="Số tiền" value={formatMoney(payment.amount)} accent />
               <Row label="Trạng thái" value={payment.status} />
               <Text style={styles.ws}>{wsHint}</Text>

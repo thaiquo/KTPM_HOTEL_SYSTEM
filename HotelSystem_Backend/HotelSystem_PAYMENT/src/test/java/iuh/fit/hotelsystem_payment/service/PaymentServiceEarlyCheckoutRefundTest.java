@@ -39,7 +39,8 @@ class PaymentServiceEarlyCheckoutRefundTest {
         refundTransactionRepository = mock(RefundTransactionRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
         PaymentSocketService socketService = mock(PaymentSocketService.class);
-        paymentService = new PaymentService(paymentRepository, refundTransactionRepository, rabbitTemplate, socketService);
+        VNPayService vnPayService = mock(VNPayService.class);
+        paymentService = new PaymentService(paymentRepository, refundTransactionRepository, rabbitTemplate, socketService, vnPayService);
         when(refundTransactionRepository.save(any(RefundTransaction.class))).thenAnswer(inv -> {
             RefundTransaction rt = inv.getArgument(0);
             if (rt.getId() == null) {
@@ -47,8 +48,6 @@ class PaymentServiceEarlyCheckoutRefundTest {
             }
             return rt;
         });
-        when(refundTransactionRepository.sumAllocatedGroupedByOriginalPaymentIds(anyList(), any()))
-                .thenReturn(Collections.emptyList());
     }
 
     @Test
@@ -76,7 +75,7 @@ class PaymentServiceEarlyCheckoutRefundTest {
         assertEquals(RefundReceiverType.USER, first.getReceiverType());
         assertEquals(10L, first.getReceiverId());
         assertEquals(RefundTransactionMethod.CASH, first.getMethod());
-        assertEquals(RefundTransactionStatus.PENDING, first.getStatus());
+        assertEquals(RefundTransactionStatus.COMPLETED, first.getStatus());
 
         RefundTransaction second = saved.stream().filter(r -> r.getOriginalPaymentId().equals(1L)).findFirst().orElseThrow();
         assertEquals(new BigDecimal("2600000.00"), second.getAmount());
@@ -101,7 +100,7 @@ class PaymentServiceEarlyCheckoutRefundTest {
     }
 
     @Test
-    void cashRefund_startsPendingForStaffConfirmation() {
+    void cashRefund_startsCompletedForImmediateCounterHandout() {
         List<Payment> payments = List.of(remaining(3L, null, 2_000_000.0, "CASH"));
         payments.get(0).setPayerName("Guest B");
         payments.get(0).setPayerPhone("0909111222");
@@ -113,7 +112,7 @@ class PaymentServiceEarlyCheckoutRefundTest {
 
         RefundTransaction rt = paymentService.createEarlyCheckoutRefund(req).get(0);
         assertEquals(RefundTransactionMethod.CASH, rt.getMethod());
-        assertEquals(RefundTransactionStatus.PENDING, rt.getStatus());
+        assertEquals(RefundTransactionStatus.COMPLETED, rt.getStatus());
         assertEquals(RefundReceiverType.WALK_IN_GUEST, rt.getReceiverType());
     }
 

@@ -1,339 +1,220 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '../../../contexts/CartContext';
-import { roomApi } from '../../../services/api';
-import { ShoppingCart, Trash2, Plus, ArrowLeft, Calendar, ArrowRight, CheckCircle } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, ArrowLeft, Calendar, ArrowRight, CheckCircle, Info } from 'lucide-react';
 
-function bedTypeLabel(type: string): string {
-  return type
-    .replace(/DOUBLE/g, 'giường đôi')
-    .replace(/SINGLE/g, 'giường đơn')
-    .replace(/KING/g, 'giường King')
-    .replace(/QUEEN/g, 'giường Queen')
-    .replace(/EXTRA/g, 'giường phụ')
-    .replace(/SOFA/g, 'sofa bed')
-    .replace(/BUNK/g, 'giường tầng')
-    .replace(/TWIN/g, 'giường đơn');
+// ─── Helpers ─────────────────────────────────────────────
+const VIEW_BONUS: Record<string, number> = {
+  'River View': 150000, 'Pool View': 150000,
+  'Garden View': 50000, 'City View': 0,
+};
+
+function calculateNightlyPrice(room: import('../../../types').Room, date: string): number {
+  const base = room.roomType?.basePrice ?? 0;
+  const viewBonus = VIEW_BONUS[room.viewType] ?? 0;
+  const bathtubBonus = room.hasBathtub ? 50000 : 0;
+  const adjustedBase = base + viewBonus + bathtubBonus;
+
+  const d = new Date(date);
+  const day = d.getDay();
+  return (day === 0 || day === 6) ? adjustedBase * 1.2 : adjustedBase;
+}
+
+function getDatesInRange(startDate: string, endDate: string): string[] {
+  const dates = [];
+  let curr = new Date(startDate);
+  const end = new Date(endDate);
+  while (curr < end) {
+    dates.push(curr.toISOString().split('T')[0]);
+    curr.setDate(curr.getDate() + 1);
+  }
+  return dates;
 }
 
 export default function BookingCartPage() {
   const navigate = useNavigate();
-  const { cartItems, checkIn: cartCheckIn, checkOut: cartCheckOut, setDates, removeFromCart, updateQuantity, clearCart } = useCart();
-  const [checkIn, setCheckIn] = useState(cartCheckIn || '');
-  const [checkOut, setCheckOut] = useState(cartCheckOut || '');
+  const { cartItems, checkIn: cartIn, checkOut: cartOut, setDates, removeFromCart, clearCart } = useCart();
+  
+  const [checkIn, setCheckIn] = useState(cartIn || '');
+  const [checkOut, setCheckOut] = useState(cartOut || '');
   const [error, setError] = useState('');
 
   const today = new Date().toISOString().split('T')[0];
 
-  const nights = (() => {
-    if (!checkIn || !checkOut) return 0;
-    const diff = new Date(checkOut).getTime() - new Date(checkIn).getTime();
-    return Math.max(0, Math.floor(diff / 86400000));
-  })();
+  const pricing = useMemo(() => {
+    if (!checkIn || !checkOut || cartItems.length === 0) return null;
+    const dateList = getDatesInRange(checkIn, checkOut);
+    
+    const items = cartItems.map(item => {
+      const nightlyPrices = dateList.map(date => calculateNightlyPrice(item.room, date));
+      const total = nightlyPrices.reduce((a, b) => a + b, 0);
+      return { ...item, total, nightlyPrices };
+    });
 
-  const subtotal = cartItems.reduce((sum, item) => {
-    return sum + item.roomType.basePrice * item.count;
-  }, 0);
+    const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
+    return { items, grandTotal, nights: dateList.length };
+  }, [cartItems, checkIn, checkOut]);
 
-  const total = subtotal * Math.max(nights, 1);
-
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (cartItems.length === 0) {
-      setError('Giỏ hàng đang trống. Vui lòng chọn phòng trước!');
+      setError('Giỏ hàng trống!');
       return;
     }
-
-    // Current backend booking flow supports creating 1 booking with a single roomId.
-    // Cart UI can contain multiple items/rooms, so block to avoid creating inconsistent bookings.
-    if (cartItems.length !== 1 || cartItems[0].count !== 1) {
-      setError('Hiện tại demo chỉ hỗ trợ đặt 1 phòng mỗi lần. Vui lòng chọn 1 phòng trong giỏ hàng.');
-      return;
-    }
-
     if (!checkIn || !checkOut) {
-      setError('Vui lòng nhập đầy đủ ngày nhận và trả phòng!');
+      setError('Vui lòng chọn ngày nhận/trả phòng!');
       return;
     }
-    if (checkIn >= checkOut) {
-      setError('Ngày trả phòng phải sau ngày nhận phòng!');
+    if (new Date(checkIn) >= new Date(checkOut)) {
+      setError('Ngày trả phòng phải sau ngày nhận!');
       return;
     }
-    setError('');
 
-    try {
-      const roomTypeId = cartItems[0]?.roomType?.id;
-      if (!roomTypeId) {
-        setError('Không xác định được loại phòng. Vui lòng chọn lại phòng.');
-        return;
-      }
-
-      const availableRooms = await roomApi.getAvailableRooms(String(roomTypeId), checkIn, checkOut);
-
-      if (!availableRooms.length) {
-        setError('Không còn phòng trống theo ngày bạn chọn. Vui lòng đổi ngày hoặc chọn phòng khác.');
-        return;
-      }
-
-      // Prefer a room that matches selected bed configuration if possible.
-      const selectedBedType = cartItems[0].bedType;
-      const preferred = availableRooms.find(r => r.bedType === selectedBedType);
-      const chosenRoom = preferred || availableRooms[0];
-
-      navigate(`/booking?roomId=${encodeURIComponent(chosenRoom.id)}&checkIn=${encodeURIComponent(checkIn)}&checkOut=${encodeURIComponent(checkOut)}`);
-    } catch (err) {
-      console.error('Error selecting available room:', err);
-      setError('Không thể kiểm tra phòng trống lúc này. Vui lòng thử lại.');
-    }
+    setDates(checkIn, checkOut);
+    // Proceed to Booking Info (Checkout Form for primary guest)
+    navigate('/booking');
   };
 
   return (
     <div className="min-h-screen bg-[#f7f7f7] py-16 text-[#141414]">
-      <div className="container-custom mx-auto max-w-5xl">
+      <div className="container-custom mx-auto max-w-5xl px-4">
+        
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between"
-        >
+        <div className="mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
-            <Link to="/rooms" className="mb-3 inline-flex items-center gap-2 text-sm font-bold text-[#5a5a5a] hover:text-black">
-              <ArrowLeft size={15} /> Tiếp tục chọn phòng
+            <Link to="/rooms" className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#888] hover:text-[#111] mb-2">
+              <ArrowLeft size={14} /> Tiếp tục chọn phòng
             </Link>
-            <h1 className="text-3xl font-black tracking-tight text-[#111]">
-              <ShoppingCart className="mr-2 inline-block text-[#d4af37]" size={28} />
-              Giỏ Hàng Đặt Phòng
+            <h1 className="text-4xl font-black tracking-tight flex items-center gap-3">
+              Giỏ Hàng <ShoppingCart className="text-[#d4af37]" />
             </h1>
-            <p className="mt-1 text-sm text-[#888]">
-              {cartItems.length === 0 ? 'Chưa có phòng nào được chọn' : `${cartItems.reduce((s, i) => s + i.count, 0)} phòng đã chọn`}
-            </p>
           </div>
           {cartItems.length > 0 && (
-            <button
-              onClick={clearCart}
-              className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-500 transition-all hover:bg-red-100"
-            >
-              <Trash2 size={14} /> Xóa tất cả
+            <button onClick={clearCart} className="text-xs font-black uppercase text-red-500 flex items-center gap-2 hover:bg-red-50 px-4 py-2 rounded-xl transition-all">
+              <Trash2 size={14} /> Xóa toàn bộ
             </button>
           )}
-        </motion.div>
+        </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          {/* Left: Cart Items */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          
+          {/* Main Items */}
           <div className="lg:col-span-2 space-y-4">
-            <AnimatePresence>
+            <AnimatePresence mode="popLayout">
               {cartItems.length === 0 ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-black/10 bg-white py-20 text-center"
-                >
-                  <ShoppingCart size={52} className="mb-4 text-[#ccc]" />
-                  <h2 className="text-xl font-black text-[#aaa]">Giỏ hàng trống</h2>
-                  <p className="mt-2 text-sm text-[#bbb]">Hãy chọn phòng bạn yêu thích!</p>
-                  <Link
-                    to="/rooms"
-                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#0f0f0f] px-6 py-3 font-bold text-[#d4af37]"
-                  >
-                    <Plus size={16} /> Xem các phòng
-                  </Link>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-3xl p-20 text-center border-2 border-dashed border-black/5">
+                   <div className="text-6xl mb-6">🏜️</div>
+                   <h2 className="text-2xl font-black text-[#ccc]">Giỏ hàng đang trống</h2>
+                   <Link to="/rooms" className="mt-8 inline-block bg-[#0f0f0f] text-[#d4af37] px-8 py-4 rounded-2xl font-black shadow-xl">KHÁM PHÁ PHÒNG</Link>
                 </motion.div>
               ) : (
-                cartItems.map((item, idx) => {
-                  const thumbnail = item.roomType.images?.find((img: any) => img.isThumbnail)?.imageUrl
-                    || item.roomType.images?.[0]?.imageUrl
-                    || 'https://images.unsplash.com/photo-1566073771259-6a8506099945';
-
-                  return (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20, height: 0, marginBottom: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm"
-                    >
-                      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-                        <img
-                          src={thumbnail}
-                          alt={item.roomType.type}
-                          className="h-24 w-32 shrink-0 rounded-xl object-cover"
-                        />
-                        <div className="flex-1">
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-[#d4af37]">Hạng phòng</div>
-                          <div className="text-lg font-black uppercase text-[#111]">{item.roomType.type} ROOM</div>
-                          <div className="mt-1 text-sm text-[#666]">
-                            🛏️ {bedTypeLabel(item.bedType)}
-                          </div>
-                          <div className="mt-1 text-sm font-bold text-[#888]">
-                            {item.roomType.basePrice.toLocaleString('vi-VN')}đ / đêm / phòng
+                cartItems.map(item => (
+                  <motion.div key={item.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+                    className="bg-white rounded-3xl p-6 shadow-xl border border-black/5 flex flex-col md:flex-row gap-6 relative group"
+                  >
+                    <div className="w-full md:w-40 aspect-square rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0">
+                      <img src={item.room.roomType.images?.[0]?.imageUrl || 'https://images.unsplash.com/photo-1566073771259-6a8506099945'} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-grow">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-[#d4af37]">Phòng số {item.room.roomNumber}</span>
+                          <h3 className="text-xl font-black text-[#111] uppercase">{item.room.roomType.type} ROOM</h3>
+                          <div className="flex gap-2 mt-2">
+                             {item.room.beds.map((b, i) => (
+                               <span key={i} className="text-[11px] font-bold bg-[#f4f4f4] px-2 py-1 rounded-lg">
+                                 {b.quantity} × {b.type}
+                               </span>
+                             ))}
                           </div>
                         </div>
-
-                        <div className="flex shrink-0 items-center gap-3">
-                          {/* Qty control */}
-                          <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-[#f7f7f7] p-1">
-                            <button
-                              onClick={() => {
-                                if (item.count <= 1) removeFromCart(item.id);
-                                else updateQuantity(item.id, item.count - 1);
-                              }}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-lg font-bold shadow-sm hover:bg-gray-50"
-                            >
-                              -
-                            </button>
-                            <span className="w-6 text-center font-black">{item.count}</span>
-                            <button
-                              onClick={() => updateQuantity(item.id, Math.min(item.maxCount, item.count + 1))}
-                              disabled={item.count >= item.maxCount}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-lg font-bold shadow-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              +
-                            </button>
-                          </div>
-                          {/* Remaining indicator */}
-                          <div className="text-[10px] text-center text-[#aaa] mt-0.5">
-                            {item.count >= item.maxCount
-                              ? <span className="text-orange-400 font-bold">Hết phòng</span>
-                              : <span>còn {item.maxCount - item.count} phòng</span>}
-                          </div>
-
-                          {/* Subtotal */}
-                          <div className="min-w-[90px] text-right">
-                            <div className="text-[11px] text-[#aaa]">Tạm tính</div>
-                            <div className="font-black text-[#d4af37]">
-                              {(item.roomType.basePrice * item.count).toLocaleString('vi-VN')}đ
-                            </div>
-                          </div>
-
-                          {/* Remove */}
-                          <button
-                            onClick={() => removeFromCart(item.id)}
-                            className="rounded-full p-2 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                        <button onClick={() => removeFromCart(item.id)} className="p-2 bg-red-50 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                      <div className="mt-6 flex justify-between items-end">
+                        <div className="text-xs font-bold text-[#888] uppercase tracking-widest">Giá cơ bản: {item.room.roomType.basePrice.toLocaleString('vi-VN')}đ</div>
+                        <div className="text-right">
+                           <div className="text-[10px] font-black text-[#aaa] uppercase mb-1">Thành tiền cho phòng này</div>
+                           <div className="text-lg font-black text-[#0f0f0f]">
+                             {pricing ? pricing.items.find(pi => pi.id === item.id)?.total.toLocaleString('vi-VN') : '---'}đ
+                           </div>
                         </div>
                       </div>
-                    </motion.div>
-                  );
-                })
+                    </div>
+                  </motion.div>
+                ))
               )}
             </AnimatePresence>
 
             {cartItems.length > 0 && (
-              <Link
-                to="/rooms"
-                className="mt-2 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-white py-4 text-sm font-bold text-[#888] transition-all hover:border-[#d4af37]/40 hover:text-[#d4af37]"
-              >
-                <Plus size={16} /> Thêm loại phòng khác (khách đoàn)
+              <Link to="/rooms" className="block p-8 border-2 border-dashed border-black/10 rounded-3xl text-center text-sm font-black text-[#aaa] hover:text-[#d4af37] hover:border-[#d4af37]/50 transition-all">
+                + THÊM PHÒNG KHÁC VÀO GIỎ
               </Link>
             )}
           </div>
 
-          {/* Right: Booking Summary */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="lg:col-span-1"
-          >
-            <div className="sticky top-24 rounded-2xl border border-black/10 bg-white p-6 shadow-xl">
-              <h2 className="mb-5 text-xl font-black text-[#111]">Tóm tắt đặt phòng</h2>
+          {/* Checkout Panel */}
+          <div className="lg:col-span-1">
+             <div className="sticky top-24 bg-[#0f0f0f] rounded-[2.5rem] p-8 text-white shadow-2xl">
+                <h2 className="text-2xl font-black mb-8 flex items-center gap-3">
+                  TỔNG KẾT <span className="p-2 bg-[#d4af37] rounded-full text-black"><CheckCircle size={18} /></span>
+                </h2>
 
-              {/* Shared Dates - KEY UX IMPROVEMENT for group bookings */}
-              <div className="mb-5 rounded-xl bg-[#fffbf0] border border-[#d4af37]/20 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-black text-[#d4af37]">
-                  <Calendar size={16} /> Ngày lưu trú (áp dụng cho tất cả phòng)
+                <div className="space-y-6 mb-10">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black text-white/50 uppercase tracking-[0.2em] mb-2 block">Ngày nhận phòng</label>
+                      <div className="relative">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-[#d4af37]" size={16} />
+                        <input type="date" min={today} value={checkIn} onChange={e => { setCheckIn(e.target.value); if (checkOut <= e.target.value) setCheckOut(''); }}
+                          className="w-full bg-white/10 border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:ring-2 focus:ring-[#d4af37] outline-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-white/50 uppercase tracking-[0.2em] mb-2 block">Ngày trả phòng</label>
+                      <div className="relative">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-[#d4af37]" size={16} />
+                        <input type="date" min={checkIn || today} value={checkOut} onChange={e => setCheckOut(e.target.value)}
+                          className="w-full bg-white/10 border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:ring-2 focus:ring-[#d4af37] outline-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {pricing && (
+                    <div className="pt-6 border-t border-white/10 space-y-3">
+                      <div className="flex justify-between text-xs font-bold text-white/50">
+                        <span>Lưu trú:</span>
+                        <span>{pricing.nights} đêm</span>
+                      </div>
+                      <div className="flex justify-between text-xs font-bold text-white/50">
+                        <span>Số lượng phòng:</span>
+                        <span>{cartItems.length} phòng</span>
+                      </div>
+                      <div className="bg-[#d4af37]/10 p-3 rounded-xl border border-[#d4af37]/20 flex items-center gap-3">
+                         <Info size={14} className="text-[#d4af37]" />
+                         <span className="text-[10px] font-bold text-[#d4af37] uppercase">Giá đã bao gồm phụ phí cuối tuần (nếu có)</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <div>
-                    <label className="text-xs font-bold text-[#888]">Nhận phòng</label>
-                    <input
-                      type="date"
-                      min={today}
-                      value={checkIn}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCheckIn(val);
-                        let newOut = checkOut;
-                        if (checkOut && val >= checkOut) {
-                          newOut = '';
-                          setCheckOut('');
-                        }
-                        setDates(val, newOut);
-                        setError('');
-                      }}
-                      className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#d4af37]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-[#888]">Trả phòng</label>
-                    <input
-                      type="date"
-                      min={checkIn || today}
-                      value={checkOut}
-                      onChange={(e) => { 
-                        const val = e.target.value;
-                        setCheckOut(val);
-                        setDates(checkIn, val);
-                        setError(''); 
-                      }}
-                      className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#d4af37]"
-                    />
-                  </div>
+
+                <div className="mb-10 text-right">
+                   <div className="text-[11px] font-black text-white/40 uppercase tracking-widest mb-1">Tổng số tiền cần trả</div>
+                   <div className="text-4xl font-black text-[#d4af37]">{pricing?.grandTotal.toLocaleString('vi-VN') || '0'}đ</div>
                 </div>
-                {nights > 0 && (
-                  <div className="mt-3 text-center text-sm font-bold text-green-600">
-                    ✅ {nights} đêm lưu trú
-                  </div>
-                )}
-              </div>
 
-              {/* Price Breakdown */}
-              <div className="mb-4 space-y-2 border-b border-black/5 pb-4">
-                {cartItems.map(item => (
-                  <div key={item.id} className="flex items-center justify-between text-sm text-[#555]">
-                    <span className="truncate max-w-[55%]">{item.roomType.type} × {item.count}</span>
-                    <span className="font-bold">{(item.roomType.basePrice * item.count).toLocaleString('vi-VN')}đ</span>
-                  </div>
-                ))}
-                {nights > 1 && (
-                  <div className="flex items-center justify-between text-sm text-[#888]">
-                    <span>× {nights} đêm</span>
-                    <span className="font-bold text-[#d4af37]">{total.toLocaleString('vi-VN')}đ</span>
-                  </div>
-                )}
-              </div>
+                {error && <div className="mb-6 p-4 bg-red-500/20 text-red-300 text-xs font-bold rounded-2xl border border-red-500/30">⚠️ {error}</div>}
 
-              <div className="mb-6 flex items-center justify-between">
-                <span className="font-black text-[#111]">Tổng cộng</span>
-                <span className="text-2xl font-black text-[#d4af37]">
-                  {total.toLocaleString('vi-VN')}đ
-                </span>
-              </div>
+                <button onClick={handleCheckout} disabled={cartItems.length === 0}
+                  className="w-full bg-[#d4af37] text-black py-5 rounded-3xl font-black flex items-center justify-center gap-3 shadow-[0_10px_40px_-10px_rgba(212,175,55,0.4)] hover:bg-white transition-all active:scale-95 disabled:opacity-30 disabled:grayscale"
+                >
+                  ĐẶT PHÒNG NGAY <ArrowRight size={20} />
+                </button>
+                <p className="mt-6 text-center text-[10px] font-bold text-white/30 uppercase tracking-widest">An toàn · Bảo mật · Xác nhận tức thì</p>
+             </div>
+          </div>
 
-              {error && (
-                <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-500">
-                  ⚠️ {error}
-                </div>
-              )}
-
-              <button
-                onClick={handleCheckout}
-                disabled={cartItems.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0f0f0f] py-4 font-black text-[#d4af37] shadow-lg transition-all hover:bg-[#d4af37] hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <CheckCircle size={18} />
-                Tiến hành đặt phòng
-                <ArrowRight size={18} />
-              </button>
-
-              <p className="mt-3 text-center text-[11px] text-[#aaa]">
-                Thanh toán an toàn · Hủy miễn phí trong 24h
-              </p>
-            </div>
-          </motion.div>
         </div>
       </div>
     </div>

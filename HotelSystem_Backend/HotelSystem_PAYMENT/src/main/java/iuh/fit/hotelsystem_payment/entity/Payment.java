@@ -1,7 +1,5 @@
 package iuh.fit.hotelsystem_payment.entity;
 
-
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -31,6 +29,9 @@ public class Payment {
     @Enumerated(EnumType.STRING)
     private PaymentType paymentType;
 
+    @Enumerated(EnumType.STRING)
+    private InvoiceCategory invoiceCategory;
+
     private String method; // CASH, BANK
     @Enumerated(EnumType.STRING)
     private PaymentStatus status; // PENDING, SUCCESS, FAILED
@@ -43,6 +44,8 @@ public class Payment {
     private LocalDateTime expiredAt;
     private LocalDateTime paidAt;
 
+    @Column(unique = true)
+    private String idempotencyKey;
 
     public Long getId() {
         return id;
@@ -107,6 +110,14 @@ public class Payment {
 
     public void setPaymentType(PaymentType paymentType) {
         this.paymentType = paymentType;
+    }
+
+    public InvoiceCategory getInvoiceCategory() {
+        return invoiceCategory;
+    }
+
+    public void setInvoiceCategory(InvoiceCategory invoiceCategory) {
+        this.invoiceCategory = invoiceCategory;
     }
 
     public String getMethod() {
@@ -180,5 +191,12 @@ public class Payment {
     public void setPaidAt(LocalDateTime paidAt) {
         this.paidAt = paidAt;
     }
-}
 
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+}

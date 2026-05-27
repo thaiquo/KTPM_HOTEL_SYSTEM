@@ -1,6 +1,8 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
 
+ENV MAVEN_OPTS="-Xmx256m -XX:MaxMetaspaceSize=128m"
+
 COPY pom.xml ./
 RUN mvn -q -DskipTests dependency:go-offline
 

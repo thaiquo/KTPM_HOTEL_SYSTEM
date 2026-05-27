@@ -52,6 +52,21 @@ const getNotificationTarget = (item: UserNotification) => {
   return `/my-bookings?bookingId=${encodeURIComponent(item.bookingId)}`;
 };
 
+const dedupeNotifications = (items: UserNotification[]) => {
+  const seen = new Map<string, UserNotification>();
+
+  for (const item of items) {
+    const key = `${item.bookingId}:${item.type.toUpperCase()}`;
+    const current = seen.get(key);
+
+    if (!current || new Date(item.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+      seen.set(key, item);
+    }
+  }
+
+  return Array.from(seen.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth();
   const { totalRooms } = useCart();
@@ -91,17 +106,23 @@ export default function Header() {
     const loadNotifications = async () => {
       try {
         const list = await notificationApi.getByUser(user.id);
-        if (!cancelled) setNotifications(list);
+        if (!cancelled) setNotifications(dedupeNotifications(list));
       } catch (error) {
-        console.error(error);
+        console.error('Notification API Error:', error);
         if (!cancelled) setNotifications([]);
       }
     };
 
-    loadNotifications();
+    // Đợi 5 giây trước khi thực hiện pull notification lần đầu, 
+    // tránh tình trạng call dồn dập vào lúc mới mở app làm block tài nguyên kết nối của browser (lỗi Vite chunk load timeout)
+    const initialDelay = window.setTimeout(() => {
+      if (!cancelled) loadNotifications();
+    }, 5000);
+
     const timer = window.setInterval(loadNotifications, 30000);
     return () => {
       cancelled = true;
+      window.clearTimeout(initialDelay);
       window.clearInterval(timer);
     };
   }, [user]);

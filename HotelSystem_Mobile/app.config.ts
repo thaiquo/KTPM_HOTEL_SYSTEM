@@ -28,7 +28,7 @@ const networkEnv = parseNetworkLocalEnv(__dirname);
 const apiOrigin = (
   process.env.EXPO_PUBLIC_API_ORIGIN ||
   networkEnv.EXPO_PUBLIC_API_ORIGIN ||
-  'http://192.168.1.6:3000'
+  'http://192.168.1.8:3000'
 )
   .trim()
   .replace(/\/$/, '');
@@ -40,7 +40,8 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
-  newArchEnabled: true,
+  jsEngine: 'jsc',
+  newArchEnabled: false,
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',

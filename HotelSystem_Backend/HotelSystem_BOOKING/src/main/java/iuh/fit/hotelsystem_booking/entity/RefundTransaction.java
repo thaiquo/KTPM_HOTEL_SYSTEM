@@ -149,6 +149,10 @@ public class RefundTransaction {
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
+    public iuh.fit.hotelsystem_booking.entity.PublicRefundStatus getPublicStatus() {
+        return this.status != null ? this.status.toPublic() : null;
+    }
+
     // ─── Factory ─────────────────────────────────────────────────
     public static RefundTransaction create(Long bookingId,
                                            String paymentTransactionId,
@@ -158,6 +162,18 @@ public class RefundTransaction {
                                            String refundMethod,
                                            String reason,
                                            String idempotencyKey) {
+        return create(bookingId, paymentTransactionId, paidAmount, cancellationFee, refundAmount, refundMethod, reason, idempotencyKey, LocalDateTime.now());
+    }
+
+    public static RefundTransaction create(Long bookingId,
+                                           String paymentTransactionId,
+                                           Double paidAmount,
+                                           Double cancellationFee,
+                                           Double refundAmount,
+                                           String refundMethod,
+                                           String reason,
+                                           String idempotencyKey,
+                                           LocalDateTime now) {
         RefundTransaction rt = new RefundTransaction();
         rt.bookingId             = bookingId;
         rt.paymentTransactionId  = paymentTransactionId;
@@ -169,10 +185,10 @@ public class RefundTransaction {
         rt.reason                = reason;
         rt.idempotencyKey        = idempotencyKey;
         rt.status                = RefundStatus.PENDING;
-        rt.createdAt             = LocalDateTime.now();
+        rt.createdAt             = now != null ? now : LocalDateTime.now();
         rt.dueAt                 = rt.createdAt.plusHours(iuh.fit.hotelsystem_booking.constants.BookingConstants.REFUND_SLA_HOURS);
         rt.priority              = iuh.fit.hotelsystem_booking.constants.BookingConstants.REFUND_PRIORITY_NORMAL;
-        rt.updatedAt             = LocalDateTime.now();
+        rt.updatedAt             = rt.createdAt;
         return rt;
     }
 }

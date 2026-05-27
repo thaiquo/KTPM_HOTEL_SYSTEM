@@ -1,783 +1,547 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { addDays, differenceInCalendarDays, format } from 'date-fns';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Calendar, Users, BedDouble, CheckCircle2, ShieldCheck, CreditCard, Info } from 'lucide-react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, CheckCircle2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 
 import { useAuth } from '../../../contexts/AuthContext';
-import { bookingApi, paymentApi, roomApi, userApi } from '../../../services/api';
+import { useCart } from '../../../contexts/CartContext';
+import { bookingApi, paymentApi, userApi } from '../../../services/api';
 import type { PaymentType } from '../../../services/api';
-import type { Room } from '../../../types';
-import Card from '../../../shared/components/ui/Card';
 import Alert from '../../../shared/components/ui/Alert';
-import Button from '../../../shared/components/ui/Button';
-import Spinner from '../../../shared/components/ui/Spinner';
+import { CHECK_IN_TIME_LABEL, CHECK_OUT_TIME_LABEL, calculateStayPricing } from '../../../shared/lib/bookingPricing';
+import { normalizeDateInputValue } from '../../../shared/lib/date';
 
-const normalizeDateParam = (value: string | null, fallback: string) => {
-  const match = value?.match(/\d{4}-\d{2}-\d{2}/);
-  return match?.[0] || fallback;
+type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+type RoomGuest = {
+  fullName: string;
+  phone: string;
+  citizenId: string;
+  dateOfBirth: string;
+  gender: Gender;
+  email?: string;
+};
+type RoomGuestForm = {
+  useAccount: boolean;
+  representative: RoomGuest;
+  members: RoomGuest[];
 };
 
-const emptyGuest = {
+type GuestFieldErrors = Partial<Record<keyof RoomGuest, string>>;
+type RoomValidationErrors = {
+  representative: GuestFieldErrors;
+  members: GuestFieldErrors[];
+  room?: string;
+};
+
+type BookingValidationState = {
+  rooms: Record<string, RoomValidationErrors>;
+  formError: string;
+  isValid: boolean;
+};
+
+const PHONE_PATTERN = /^(?:0\d{9}|\+?84\d{9})$/;
+const PASSPORT_PATTERN = /^[A-Za-z0-9-]{5,20}$/;
+
+const emptyGuest = (): RoomGuest => ({
   fullName: '',
-  dateOfBirth: '',
   phone: '',
+  citizenId: '',
+  dateOfBirth: '',
+  gender: 'MALE',
   email: '',
+});
+
+const getAge = (dob: string) => {
+  if (!dob) return 0;
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return 0;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return age;
 };
 
-const fixedHolidayKeys = new Set(['01-01', '04-30', '05-01', '09-02']);
+const formatCurrency = (value: number) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`;
 
-const addDaysToDate = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
+const isValidPhone = (value: string) => PHONE_PATTERN.test(value.trim());
+
+const isValidDocument = (value: string) => {
+  const document = value.trim();
+  if (!document) return false;
+  if (/^\d+$/.test(document)) return document.length === 12;
+  return PASSPORT_PATTERN.test(document);
 };
 
-const overlapsFixedHoliday = (checkIn: string, checkOut: string) => {
-  const start = new Date(`${checkIn}T00:00:00`);
-  const end = new Date(`${checkOut}T00:00:00`);
-  for (let cursor = start; cursor < end; cursor = addDaysToDate(cursor, 1)) {
-    const key = `${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-    if (fixedHolidayKeys.has(key)) return true;
-  }
-  return false;
+const isValidDate = (value: string) => {
+  if (!value) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime());
 };
 
-const buildFallbackPricing = (
-  checkIn: string,
-  checkOut: string,
-  pricePerNight: number,
-  ratePlan: 'FLEXIBLE' | 'NON_REFUNDABLE'
-) => {
-  const nights = differenceInCalendarDays(new Date(`${checkOut}T00:00:00`), new Date(`${checkIn}T00:00:00`));
-  const holidayBooking = overlapsFixedHoliday(checkIn, checkOut);
-  const priceMultiplier = holidayBooking ? 1.3 : 1;
-  const discountPercent = ratePlan === 'NON_REFUNDABLE' ? 10 : 0;
-  const depositPercent = ratePlan === 'NON_REFUNDABLE' ? 100 : 50;
-  const baseTotal = nights * pricePerNight;
-  const finalTotal = baseTotal * priceMultiplier * (1 - discountPercent / 100);
+const validateBookingForm = (items: Array<{ id?: string; room: { maxCapacity?: number; roomType: { maxCapacity?: number } } }>, roomForms: Record<string, RoomGuestForm>): BookingValidationState => {
+  const rooms: BookingValidationState['rooms'] = {};
+  let formError = '';
 
-  return {
-    nights,
-    holidayBooking,
-    appliedRule: holidayBooking ? 'HOLIDAY' : 'NORMAL',
-    pricePerNight,
-    baseTotal,
-    priceMultiplier,
-    finalTotal,
-    depositPercent,
-    depositAmount: finalTotal * depositPercent / 100,
-    freeCancelBeforeHours: ratePlan === 'NON_REFUNDABLE' ? 0 : holidayBooking ? 72 : 24,
-    ratePlan,
-    discountPercent,
-    refundable: ratePlan !== 'NON_REFUNDABLE',
-    paymentType: ratePlan === 'NON_REFUNDABLE' ? 'FULL' : 'DEPOSIT',
-  };
+  items.forEach((item) => {
+    if (!item.id) return;
+    const form = roomForms[item.id];
+    if (!form) return;
+
+    const representativeErrors: GuestFieldErrors = {};
+    const memberErrors: GuestFieldErrors[] = [];
+    const capacity = Number(item.room.maxCapacity || item.room.roomType.maxCapacity || 1);
+    const maxCompanions = Math.max(0, capacity - 1);
+
+    const rep = form.representative;
+    if (!rep.fullName.trim()) representativeErrors.fullName = 'Họ tên không được để trống.';
+    if (!rep.phone.trim()) representativeErrors.phone = 'SĐT không được để trống.';
+    else if (!isValidPhone(rep.phone)) representativeErrors.phone = 'SĐT không hợp lệ.';
+    if (!rep.citizenId.trim()) representativeErrors.citizenId = 'CCCD/Passport không được để trống.';
+    else if (!isValidDocument(rep.citizenId)) representativeErrors.citizenId = 'CCCD phải đúng 12 chữ số hoặc Passport hợp lệ.';
+    if (!rep.dateOfBirth) representativeErrors.dateOfBirth = 'Ngày sinh là bắt buộc.';
+    else if (!isValidDate(rep.dateOfBirth)) representativeErrors.dateOfBirth = 'Ngày sinh không hợp lệ.';
+    else if (getAge(rep.dateOfBirth) < 18) representativeErrors.dateOfBirth = 'Người đại diện phải từ 18 tuổi trở lên.';
+
+    if (form.members.length > maxCompanions) {
+      rooms[item.id] = {
+        representative: representativeErrors,
+        members: form.members.map(() => ({})),
+        room: `Phòng chỉ nhận tối đa ${capacity} khách gồm 1 người đại diện + ${maxCompanions} người đi cùng.`,
+      };
+      formError = formError || `Phòng ${item.room.roomType.maxCapacity ? 'đang vượt quá sức chứa.' : 'không hợp lệ.'}`;
+      return;
+    }
+
+    form.members.forEach((member, index) => {
+      const memberError: GuestFieldErrors = {};
+      if (!member.fullName.trim()) memberError.fullName = 'Họ tên không được để trống.';
+      if (member.phone.trim() && !isValidPhone(member.phone)) memberError.phone = 'SĐT không hợp lệ.';
+      if (member.dateOfBirth && !isValidDate(member.dateOfBirth)) memberError.dateOfBirth = 'Ngày sinh không hợp lệ.';
+      memberErrors[index] = memberError;
+    });
+
+    rooms[item.id] = { representative: representativeErrors, members: memberErrors };
+
+    const hasRoomError = Boolean(representativeErrors.fullName || representativeErrors.phone || representativeErrors.citizenId || representativeErrors.dateOfBirth || rooms[item.id].room || memberErrors.some((error) => Object.values(error).some(Boolean)));
+    if (hasRoomError && !formError) {
+      formError = `Vui lòng kiểm tra lại thông tin phòng ${item.room.roomType.maxCapacity ? item.room.roomType.maxCapacity : ''}`.trim();
+    }
+  });
+
+  const isValid = Object.values(rooms).every((roomError) => {
+    const representativeValid = Object.keys(roomError.representative).length === 0;
+    const membersValid = roomError.members.every((member) => Object.keys(member).length === 0);
+    return representativeValid && membersValid && !roomError.room;
+  });
+
+  return { rooms, formError, isValid: isValid && !formError };
 };
 
 export default function BookingInfoPage() {
   const location = useLocation();
-  const { user, loading } = useAuth();
-  const [searchParams] = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
+  const { cartItems, checkIn, checkOut, clearCart } = useCart();
 
-  const roomId = searchParams.get('roomId') || '';
-  const initialCheckIn = normalizeDateParam(searchParams.get('checkIn'), format(new Date(), 'yyyy-MM-dd'));
-  const initialCheckOut = normalizeDateParam(searchParams.get('checkOut'), format(addDays(new Date(), 1), 'yyyy-MM-dd'));
-
-  const [room, setRoom] = useState<Room | null>(null);
-  const [fetchingRoom, setFetchingRoom] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType>('DEPOSIT');
   const [paymentProvider, setPaymentProvider] = useState<'VNPAY' | 'MOMO'>('VNPAY');
-  const [ratePlan, setRatePlan] = useState<'FLEXIBLE' | 'NON_REFUNDABLE'>('FLEXIBLE');
-  const [isSelfCheckIn, setIsSelfCheckIn] = useState(true);
-  const [primaryGuest, setPrimaryGuest] = useState({
-    fullName: user?.name || '',
-    dateOfBirth: user?.dateOfBirth || '',
-    phone: user?.phone || '',
-    email: '',
-  });
-  const [additionalGuests, setAdditionalGuests] = useState<Array<{ fullName: string; dateOfBirth: string; phone: string; email: string }>>([]);
+  const [ratePlan] = useState<'FLEXIBLE' | 'NON_REFUNDABLE'>('FLEXIBLE');
+  const [notes, setNotes] = useState('');
+  const [roomForms, setRoomForms] = useState<Record<string, RoomGuestForm>>({});
 
-  const [form, setForm] = useState({
-    checkIn: initialCheckIn,
-    checkOut: initialCheckOut,
-    guests: 2,
-    rooms: 1,
-  });
-
-  const [pricing, setPricing] = useState<any>(null);
-  const [fetchingPricing, setFetchingPricing] = useState(false);
-  const [pricingWarning, setPricingWarning] = useState('');
+  const accountGuest = useMemo<RoomGuest>(() => ({
+    fullName: user?.fullName || user?.name || '',
+    phone: user?.phoneNumber || user?.phone || '',
+    citizenId: '',
+    dateOfBirth: normalizeDateInputValue(user?.dateOfBirth),
+    gender: 'MALE',
+    email: user?.email || '',
+  }), [user]);
 
   useEffect(() => {
-    const companionCount = Math.max(0, Number(form.guests || 1) - 1);
-    setAdditionalGuests((current) => {
-      const next = current.slice(0, companionCount);
-      while (next.length < companionCount) {
-        next.push({ ...emptyGuest });
-      }
+    setRoomForms((current) => {
+      const next: Record<string, RoomGuestForm> = {};
+      cartItems.forEach((item, index) => {
+        next[item.id] = current[item.id] || {
+          useAccount: index === 0,
+          representative: index === 0 ? accountGuest : emptyGuest(),
+          members: [],
+        };
+      });
       return next;
     });
-  }, [form.guests]);
+  }, [cartItems, accountGuest]);
 
   useEffect(() => {
-    if (!user || !isSelfCheckIn) return;
-    let mounted = true;
-    userApi.getMe()
-      .then((res) => {
-        if (!mounted) return;
-        setPrimaryGuest({
-          fullName: res.data.fullName || user.name || '',
-          dateOfBirth: res.data.dateOfBirth || '',
-          phone: res.data.phone || res.data.phoneNumber || user.phone || '',
-          email: '',
+    if (!user?.dateOfBirth) {
+      userApi.getMe().then((response) => {
+        const profileDob = normalizeDateInputValue(response.data.dateOfBirth);
+        if (!profileDob) return;
+        setRoomForms((current) => {
+          const next = { ...current };
+          Object.keys(next).forEach((roomKey) => {
+            if (next[roomKey].useAccount && !next[roomKey].representative.dateOfBirth) {
+              next[roomKey] = { ...next[roomKey], representative: { ...next[roomKey].representative, dateOfBirth: profileDob } };
+            }
+          });
+          return next;
         });
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setPrimaryGuest({
-          fullName: user.name || '',
-          dateOfBirth: user.dateOfBirth || '',
-          phone: user.phone || '',
-          email: '',
-        });
-      });
-    return () => { mounted = false; };
-  }, [user, isSelfCheckIn]);
+      }).catch(() => undefined);
+    }
+  }, [user?.dateOfBirth]);
 
-  useEffect(() => {
-    const loadRoom = async () => {
-      if (!roomId) {
-        setRoom(null);
-        setFetchingRoom(false);
-        return;
-      }
-
-      setFetchingRoom(true);
-      try {
-        const data = await roomApi.getById(roomId);
-        setRoom(data);
-      } catch (e) {
-        console.error(e);
-        setRoom(null);
-      } finally {
-        setFetchingRoom(false);
-      }
+  const orderSummary = useMemo(() => {
+    if (!checkIn || !checkOut || cartItems.length === 0) return null;
+    const summary = calculateStayPricing(cartItems.map((item) => item.room), checkIn, checkOut, ratePlan);
+    if (!summary) return null;
+    return {
+      ...summary,
+      items: summary.rooms.map((roomSummary, index) => ({
+        ...cartItems[index],
+        total: roomSummary.totalBeforeHoliday,
+        nightlyDetails: roomSummary.nightlyDetails,
+      })),
     };
+  }, [cartItems, checkIn, checkOut, ratePlan]);
 
-    loadRoom();
-  }, [roomId]);
-
-  useEffect(() => {
-    const fetchPricing = async () => {
-      if (!room || !form.checkIn || !form.checkOut) return;
-      
-      const n = differenceInCalendarDays(new Date(form.checkOut), new Date(form.checkIn));
-      if (n <= 0) {
-        setPricing(null);
-        return;
-      }
-
-      const fallbackPricing = buildFallbackPricing(form.checkIn, form.checkOut, room.price, ratePlan);
-      setPricing(fallbackPricing);
-      setFetchingPricing(true);
-      setPricingWarning('');
-      try {
-        const data = await bookingApi.getPricing({
-          checkInDate: form.checkIn,
-          checkOutDate: form.checkOut,
-          pricePerNight: room.price,
-          ratePlan
-        });
-        if (!data?.nights || !data?.finalTotal) {
-          throw new Error('Invalid pricing response');
-        }
-        setPricing(data);
-      } catch (e) {
-        console.error(e);
-        setPricing(fallbackPricing);
-        setPricingWarning('Đang dùng giá tạm tính. Hệ thống sẽ xác nhận lại khi tạo booking.');
-      } finally {
-        setFetchingPricing(false);
-      }
-    };
-
-    fetchPricing();
-  }, [room, form.checkIn, form.checkOut, ratePlan]);
-
-  const nights = useMemo(() => {
-    return pricing?.nights || 0;
-  }, [pricing]);
-
-  const total = useMemo(() => {
-    return (pricing?.finalTotal || 0) * (form.rooms || 1);
-  }, [pricing, form.rooms]);
+  const validationState = useMemo(
+    () => validateBookingForm(orderSummary?.items || [], roomForms),
+    [orderSummary, roomForms]
+  );
 
   const payableAmount = useMemo(() => {
-    if (ratePlan === 'NON_REFUNDABLE') return total;
-    if (paymentType === 'DEPOSIT') return (pricing?.depositAmount || 0) * (form.rooms || 1);
-    return total;
-  }, [paymentType, pricing, total, form.rooms, ratePlan]);
+    if (!orderSummary) return 0;
+    if (ratePlan === 'NON_REFUNDABLE' || paymentType === 'FULL') return orderSummary.finalTotal;
+    return orderSummary.depositAmount;
+  }, [orderSummary, ratePlan, paymentType]);
 
-  useEffect(() => {
-    setPaymentType(ratePlan === 'NON_REFUNDABLE' ? 'FULL' : 'DEPOSIT');
-  }, [ratePlan]);
-
-  const handleSelfCheckInChange = (checked: boolean) => {
-    setIsSelfCheckIn(checked);
-    if (!checked) {
-      setPrimaryGuest({ ...emptyGuest });
-      return;
-    }
-    setPrimaryGuest({
-      fullName: user?.name || '',
-      dateOfBirth: user?.dateOfBirth || '',
-      phone: user?.phone || '',
-      email: '',
-    });
+  const updateRepresentative = (roomKey: string, patch: Partial<RoomGuest>) => {
+    setRoomForms((current) => ({
+      ...current,
+      [roomKey]: {
+        ...current[roomKey],
+        representative: { ...current[roomKey].representative, ...patch },
+      },
+    }));
   };
 
-  if (loading) return null;
-  if (!user) {
-    const redirect = `${location.pathname}${location.search}`;
-    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
-  }
+  const toggleUseAccount = (roomKey: string, checked: boolean) => {
+    setRoomForms((current) => ({
+      ...current,
+      [roomKey]: {
+        ...current[roomKey],
+        useAccount: checked,
+        representative: checked ? { ...accountGuest, citizenId: current[roomKey].representative.citizenId } : current[roomKey].representative,
+      },
+    }));
+  };
 
-  const canSubmit = !!room && !!pricing && nights > 0 && total > 0 && !submitting;
-  const money = (value: number) => `${Math.round(value || 0).toLocaleString('vi-VN')}đ`;
-  const baseTotal = (pricing?.baseTotal || 0) * (form.rooms || 1);
-  const holidaySurcharge = Math.max(0, ((pricing?.baseTotal || 0) * ((pricing?.priceMultiplier || 1) - 1)) * (form.rooms || 1));
-  const discountAmount = Math.max(0, baseTotal + holidaySurcharge - total);
-  const paymentLabel = paymentType === 'FULL' ? 'Thanh toán toàn bộ' : `Đặt cọc ${pricing?.depositPercent || 50}%`;
+  const addMember = (roomKey: string) => {
+    setRoomForms((current) => ({
+      ...current,
+      [roomKey]: { ...current[roomKey], members: [...current[roomKey].members, emptyGuest()] },
+    }));
+  };
 
-  const calculateAge = (dateOfBirth: string) => {
-    if (!dateOfBirth) return 0;
-    const dob = new Date(dateOfBirth);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const monthDiff = today.getMonth() - dob.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age -= 1;
-    return age;
+  const updateMember = (roomKey: string, index: number, patch: Partial<RoomGuest>) => {
+    setRoomForms((current) => ({
+      ...current,
+      [roomKey]: {
+        ...current[roomKey],
+        members: current[roomKey].members.map((member, memberIndex) => memberIndex === index ? { ...member, ...patch } : member),
+      },
+    }));
+  };
+
+  const removeMember = (roomKey: string, index: number) => {
+    setRoomForms((current) => ({
+      ...current,
+      [roomKey]: { ...current[roomKey], members: current[roomKey].members.filter((_, memberIndex) => memberIndex !== index) },
+    }));
+  };
+
+  const validate = () => {
+    if (!orderSummary || !checkIn || !checkOut) return 'Thiếu ngày nhận/trả phòng.';
+    for (const item of orderSummary.items) {
+      const form = roomForms[item.id];
+      const rep = form?.representative;
+      const capacity = Number(item.room.maxCapacity || item.room.roomType.maxCapacity || 1);
+      const guestCount = 1 + (form?.members.filter((member) => member.fullName.trim()).length || 0);
+      if (!rep?.fullName.trim() || !rep.phone.trim() || !rep.citizenId.trim() || !rep.dateOfBirth) {
+        return `Phòng ${item.room.roomNumber} cần đủ thông tin người đại diện.`;
+      }
+      if (getAge(rep.dateOfBirth) < 18) {
+        return `Người đại diện phòng ${item.room.roomNumber} phải từ 18 tuổi trở lên.`;
+      }
+      if (guestCount > capacity) {
+        return `Phòng ${item.room.roomNumber} vượt quá sức chứa ${capacity} khách.`;
+      }
+    }
+    return '';
   };
 
   const handleCreateBooking = async () => {
-    if (!canSubmit || !room) return;
-    setError('');
-    if (!primaryGuest.fullName.trim() || !primaryGuest.phone.trim() || !primaryGuest.dateOfBirth) {
-      setError('Người nhận phòng phải từ 18 tuổi trở lên và có số điện thoại liên hệ.');
-      return;
-    }
-    if (calculateAge(primaryGuest.dateOfBirth) < 18) {
-      setError('Người nhận phòng phải từ 18 tuổi trở lên.');
-      return;
-    }
-    if (form.guests > room.maxGuests * form.rooms) {
-      setError('Số khách vượt quá sức chứa của phòng.');
-      return;
-    }
+    if (!orderSummary || !user || !checkIn || !checkOut) return;
+    const validationError = validate();
+    setError(validationError);
+    if (validationError) return;
+
     setSubmitting(true);
-
     try {
-      const roomIdNum = Number(room.id);
-      const userIdNum = Number(user.id);
-      const companionGuests = additionalGuests
-        .filter((guest) => guest.fullName.trim())
-        .map((guest) => ({
-          ...guest,
-          dateOfBirth: guest.dateOfBirth || undefined,
-          primary: false,
-          checkInPerson: false,
-        }));
+      const totalRoomCapacity = cartItems.reduce((sum, item) => sum + Number(item.room.maxCapacity || item.room.roomType.maxCapacity || 0), 0);
+      const rooms = orderSummary.items.map((item) => {
+        const form = roomForms[item.id];
+        const rep = form.representative;
+        return {
+          roomId: Number(item.room.id),
+          roomTypeId: Number(item.room.roomType.id),
+          priceSnapshot: item.room.roomType.basePrice,
+          guests: [
+            {
+              ...rep,
+              roomId: Number(item.room.id),
+              primary: true,
+              checkInPerson: true,
+              role: 'REPRESENTATIVE' as const,
+              cccd: rep.citizenId,
+            },
+            ...form.members.filter((member) => member.fullName.trim()).map((member) => ({
+              ...member,
+              roomId: Number(item.room.id),
+              primary: false,
+              role: 'MEMBER' as const,
+              cccd: member.citizenId,
+            })),
+          ],
+        };
+      });
 
-      const booking = await bookingApi.create({ 
-        roomId: roomIdNum, 
-        userId: userIdNum, 
-        checkIn: form.checkIn, 
-        checkOut: form.checkOut,
-        pricePerNight: room.price,
+      const firstRep = rooms[0].guests[0];
+      const booking = await bookingApi.create({
+        userId: Number(user.id),
+        checkIn,
+        checkOut,
         paymentType,
         ratePlan,
-        guestCount: form.guests,
-        roomCapacitySnapshot: room.maxGuests * form.rooms,
-        primaryGuest: {
-          ...primaryGuest,
-          primary: true,
-          checkInPerson: true,
-        },
-        guests: [{
-          ...primaryGuest,
-          primary: true,
-          checkInPerson: true,
-        }, ...companionGuests],
+        source: 'WEB',
+        notes,
+        guestCount: rooms.reduce((sum, room) => sum + room.guests.length, 0),
+        roomCapacitySnapshot: totalRoomCapacity,
+        rooms,
+        primaryGuest: firstRep,
+        guests: rooms.flatMap((room) => room.guests),
       });
-      
-      const bookingId = Number(booking.id);
 
+      const bookingTotal = Number((booking as any).totalPrice || (booking as any).finalTotal || orderSummary.finalTotal);
       const payment = paymentProvider === 'MOMO'
         ? await paymentApi.createMoMo({
-            bookingId,
-            userId: userIdNum,
-            totalAmount: total,
-            paymentType,
-            requestType: 'payWithATM',
-          })
+          bookingId: Number(booking.id),
+          userId: Number(user.id),
+          totalAmount: bookingTotal,
+          paymentType,
+          requestType: 'payWithATM',
+        })
         : await paymentApi.createVNPay({
-            bookingId,
-            userId: userIdNum,
-            totalAmount: total,
-            paymentType,
-            locale: 'vn',
-          });
+          bookingId: Number(booking.id),
+          userId: Number(user.id),
+          totalAmount: bookingTotal,
+          paymentType,
+          locale: 'vn',
+        });
 
-      if (!payment.paymentUrl) {
-        throw new Error(`Payment service không trả về URL thanh toán ${paymentProvider}.`);
-      }
-
+      if (!payment.paymentUrl) throw new Error('Không nhận được liên kết thanh toán.');
+      clearCart();
       window.location.href = payment.paymentUrl;
     } catch (e: any) {
-      console.error(e);
-      const serverMessage = typeof e.response?.data === 'string'
-        ? e.response.data
-        : e.response?.data?.message;
-      const rawMessage = `${serverMessage || e.message || ''}`;
-      const isBookingServiceDown = e.code === 'ERR_NETWORK'
-        || rawMessage.includes('Network Error')
-        || rawMessage.includes('proxy')
-        || rawMessage.includes('ECONNREFUSED')
-        || rawMessage.includes('Booking service không trả về');
-      setError(isBookingServiceDown
-        ? 'Không kết nối được Booking service ở cổng 8084. Vui lòng bật HotelSystem_BOOKING rồi thử lại.'
-        : rawMessage || 'Đặt phòng thất bại. Vui lòng thử lại.');
+      setError(e.userMessage || e.response?.data?.message || e.message || 'Đặt phòng thất bại. Vui lòng thử lại.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (authLoading) return null;
+  if (!user) {
+    const redirect = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
+  }
+  if (cartItems.length === 0) return <Navigate to="/rooms" replace />;
+
   return (
-    <div className="min-h-screen bg-background py-10 pb-20">
-      <div className="mx-auto max-w-7xl px-6">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="flex items-center justify-between gap-4"
-        >
-          <Link
-            to={room ? `/rooms/${room.id}` : '/rooms'}
-            className="group inline-flex items-center gap-2 text-primary-fixed-dim hover:text-primary font-bold transition-all"
-          >
-            <div className="w-8 h-8 rounded-full border border-primary-fixed-dim/30 flex items-center justify-center group-hover:border-primary transition-all">
-               <ArrowLeft size={16} />
+    <div className="min-h-screen bg-[#f5f1e8] py-10">
+      <div className="container-custom mx-auto max-w-7xl px-4">
+        <div className="mb-8 flex items-center justify-between">
+          <Link to="/booking/cart" className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-stone-500 hover:text-stone-950">
+            <ArrowLeft size={16} /> Quay lại giỏ hàng
+          </Link>
+          <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-black text-emerald-700 shadow-sm">
+            <ShieldCheck size={14} /> Thanh toán bảo mật
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr,420px]">
+          <div className="space-y-6">
+            <div className="rounded-4xl bg-stone-950 p-8 text-white shadow-2xl">
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-amber-300">Thông tin khách lưu trú</p>
+              <h1 className="mt-3 text-4xl font-black tracking-tight">Nhập khách theo từng phòng</h1>
+              <p className="mt-3 max-w-2xl text-sm font-medium text-stone-300">
+                Booking là đơn tổng, nhưng mỗi phòng cần người đại diện và danh sách khách riêng để staff check-in/check-out theo phòng.
+              </p>
             </div>
-            Quay lại chi tiết phòng
-          </Link>
-          <Link
-            to="/my-bookings"
-            className="text-sm font-bold text-on-surface-variant hover:text-on-surface underline underline-offset-4 decoration-outline-variant/30 transition-all"
-          >
-            Quản lý phòng đã đặt
-          </Link>
-        </motion.div>
 
-        <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-          {/* Left: Main Content */}
-          <div className="lg:col-span-8 space-y-8">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <Card className="p-8 sm:p-10 border-outline-variant/10 shadow-xl overflow-visible">
-                <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Reservation Details</div>
-                <h1 className="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight text-on-surface font-headline leading-tight">Hoàn tất đặt phòng</h1>
-                <p className="text-on-surface-variant mt-2 font-medium flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-primary-fixed-dim" />
-                  Thanh toán online an toàn qua VNPAY (Sandbox).
-                </p>
+            {error && <Alert variant="error" className="rounded-2xl font-bold">{error}</Alert>}
 
-                {error && (
-                  <Alert variant="error" className="mt-6 border-none bg-error/5 text-error font-bold">{error}</Alert>
-                )}
-
-                <div className="mt-10">
-                  {fetchingRoom ? (
-                    <div className="py-20 text-center">
-                      <Spinner className="h-12 w-12" />
-                      <p className="mt-4 text-on-surface-variant font-medium">Đang tải thông tin phòng...</p>
+            {orderSummary?.items.map((item) => {
+              const form = roomForms[item.id];
+              if (!form) return null;
+              const capacity = Number(item.room.maxCapacity || item.room.roomType.maxCapacity || 1);
+              const roomError = validationState.rooms[item.id];
+              const canAddMember = form.members.length < Math.max(0, capacity - 1);
+              return (
+                <section key={item.id} className="overflow-hidden rounded-4xl border border-stone-200 bg-white shadow-sm">
+                  <div className="flex flex-col gap-3 border-b border-stone-100 bg-[#fffaf0] px-6 py-5 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-[0.25em] text-amber-700">Phòng {item.room.roomNumber} - {item.room.roomType.type}</div>
+                      <div className="mt-1 text-sm font-bold text-stone-500">Sức chứa tối đa {capacity} khách · {formatCurrency(item.total)}</div>
                     </div>
-                  ) : !room ? (
-                    <div className="py-20 text-center">
-                      <div className="mx-auto w-16 h-16 rounded-3xl bg-surface-container-high flex items-center justify-center text-on-surface-variant mb-6">
-                         <Info size={32} />
-                      </div>
-                      <p className="text-on-surface text-xl font-bold font-headline">Không tìm thấy thông tin phòng</p>
-                      <p className="text-on-surface-variant mt-2 mb-8">Có vẻ như phòng này không còn khả dụng hoặc ID không chính xác.</p>
-                      <Link to="/rooms">
-                        <Button className="px-8 py-3 rounded-xl font-bold">Quay lại danh sách phòng</Button>
-                      </Link>
+                    <label className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-stone-700 shadow-sm">
+                      <input type="checkbox" checked={form.useAccount} onChange={(event) => toggleUseAccount(item.id, event.target.checked)} />
+                      Dùng thông tin tài khoản của tôi làm người đại diện phòng này
+                    </label>
+                  </div>
+
+                  <div className="space-y-6 p-6">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+                      Mỗi phòng cần ít nhất 1 người đại diện từ 18 tuổi trở lên và có CCCD hợp lệ.
                     </div>
-                  ) : (
-                    <div className="space-y-10">
-                      {/* Room Summary Header */}
-                      <div className="flex flex-col md:flex-row gap-8 items-start p-6 rounded-3xl bg-surface-container-low border border-outline-variant/5">
-                        <div className="w-full md:w-56 h-40 rounded-2xl overflow-hidden shadow-inner flex-shrink-0">
-                          <img src={room.images?.[0]} alt={room.name} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div>
-                               <div className="flex items-center gap-2 mb-2">
-                                 <div className="px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] tracking-widest font-black uppercase inline-block">
-                                     {room.type}
-                                 </div>
-                                 {pricing?.holidayBooking && (
-                                   <div className="px-2.5 py-0.5 rounded-lg bg-orange-500 text-white text-[10px] tracking-widest font-black uppercase inline-block animate-pulse">
-                                       Dịp Lễ / Tết
-                                   </div>
-                                 )}
-                               </div>
-                               <h2 className="text-2xl font-black tracking-tight text-on-surface font-headline">{room.name}</h2>
-                            </div>
-                            <div className="bg-white px-5 py-3 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
-                               <span className="text-[10px] font-black uppercase text-on-surface-variant tracking-widest mb-1">Giá mỗi đêm</span>
-                               <span className="text-lg font-black text-primary leading-none">{room.price.toLocaleString('vi-VN')}₫</span>
-                            </div>
-                          </div>
-                        </div>
+                    {roomError?.room && (
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+                        {roomError.room}
                       </div>
+                    )}
 
-                      {/* Form Details */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
-                        <div className="group">
-                          <label className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-black font-label">
-                            <Calendar size={14} className="text-primary-fixed-dim" />
-                            Ngày nhận phòng
-                          </label>
-                          <input
-                            type="date"
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-bold"
-                            value={form.checkIn}
-                            onChange={(e) => setForm({ ...form, checkIn: e.target.value })}
-                          />
-                        </div>
-
-                        <div className="group">
-                          <label className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-black font-label">
-                            <Calendar size={14} className="text-primary-fixed-dim" />
-                            Ngày trả phòng
-                          </label>
-                          <input
-                            type="date"
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-bold"
-                            min={form.checkIn}
-                            value={form.checkOut}
-                            onChange={(e) => setForm({ ...form, checkOut: e.target.value })}
-                          />
-                        </div>
-
-                        <div className="group">
-                          <label className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-black font-label">
-                            <Users size={14} className="text-primary-fixed-dim" />
-                            Số lượng khách
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-bold"
-                            value={form.guests}
-                            onChange={(e) => setForm({ ...form, guests: Number(e.target.value) })}
-                          />
-                        </div>
-
-                        <div className="group">
-                          <label className="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-black font-label">
-                            <BedDouble size={14} className="text-primary-fixed-dim" />
-                            Số lượng phòng
-                          </label>
-                          <input
-                            type="number"
-                            min={1}
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all font-bold"
-                            value={form.rooms}
-                            onChange={(e) => setForm({ ...form, rooms: Number(e.target.value) })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="pt-8 border-t border-outline-variant/10">
-                        <div className="text-[10px] tracking-[0.2em] uppercase text-on-surface-variant mb-3 font-black font-label">
-                          Gói giá
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <button
-                            type="button"
-                            onClick={() => setRatePlan('FLEXIBLE')}
-                            className={`rounded-2xl border p-5 text-left transition ${ratePlan === 'FLEXIBLE' ? 'border-primary bg-primary/10' : 'border-outline-variant/15 bg-surface-container-low'}`}
-                          >
-                            <div className="font-black text-on-surface">Linh hoạt</div>
-                            <p className="mt-1 text-xs font-medium text-on-surface-variant">Thanh toán cọc, hủy miễn phí trước 24h.</p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setRatePlan('NON_REFUNDABLE')}
-                            className={`rounded-2xl border p-5 text-left transition ${ratePlan === 'NON_REFUNDABLE' ? 'border-primary bg-primary/10' : 'border-outline-variant/15 bg-surface-container-low'}`}
-                          >
-                            <div className="font-black text-on-surface">Không hoàn tiền</div>
-                            <p className="mt-1 text-xs font-medium text-on-surface-variant">Giá rẻ hơn 10%, thanh toán toàn bộ.</p>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="pt-6 border-t border-outline-variant/10 flex flex-col sm:flex-row items-center gap-6">
-                        <div className="flex items-center gap-4 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex-1">
-                           <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
-                              <CheckCircle2 size={24} />
-                           </div>
-                           <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-                              Chính sách hủy phòng: <strong>Miễn phí hủy bỏ trước {pricing?.freeCancelBeforeHours} giờ</strong> ({pricing?.appliedRule === 'HOLIDAY' ? 'Gói Ngày lễ' : 'Gói Ngày thường'}).
-                           </p>
-                        </div>
-                        <div className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/5 border border-secondary/10 flex-1">
-                           <div className="w-10 h-10 rounded-xl bg-secondary/20 text-secondary flex items-center justify-center shrink-0">
-                              <CreditCard size={24} />
-                           </div>
-                           <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
-                              Đảm bảo giá tốt nhất: <strong>{pricing?.appliedRule === 'HOLIDAY' ? 'Nhân hệ số 1.3x dịp lễ' : 'Giá gốc tiết kiệm'}</strong>. Yêu cầu cọc {pricing?.depositPercent}% ({pricing?.appliedRule === 'HOLIDAY' ? 'Holiday Rule' : 'Standard'}).
-                           </p>
-                        </div>
-                      </div>
-
-                      <div className="pt-8 border-t border-outline-variant/10">
-                        <label className="flex items-center gap-3 rounded-2xl border border-outline-variant/15 bg-surface-container-highest/40 px-5 py-4 font-bold text-on-surface">
-                          <input
-                            type="checkbox"
-                            checked={isSelfCheckIn}
-                            onChange={(e) => handleSelfCheckInChange(e.target.checked)}
-                            className="h-5 w-5 accent-primary"
-                          />
-                          Tôi là người nhận phòng
+                    <div>
+                      <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-widest text-stone-500">
+                        <UserRound size={18} /> Người đại diện
+                      </h2>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <GuestInput label="Họ tên" value={form.representative.fullName} error={roomError?.representative.fullName} onChange={(value) => updateRepresentative(item.id, { fullName: value })} />
+                        <GuestInput label="SĐT" value={form.representative.phone} error={roomError?.representative.phone} onChange={(value) => updateRepresentative(item.id, { phone: value })} />
+                        <GuestInput label="CCCD/Passport" value={form.representative.citizenId} error={roomError?.representative.citizenId} onChange={(value) => updateRepresentative(item.id, { citizenId: value })} />
+                        <GuestInput type="date" label="Ngày sinh" value={form.representative.dateOfBirth} error={roomError?.representative.dateOfBirth} onChange={(value) => updateRepresentative(item.id, { dateOfBirth: value })} />
+                        <label className="space-y-2">
+                          <span className="ml-1 text-xs font-black uppercase tracking-widest text-stone-400">Giới tính</span>
+                          <select value={form.representative.gender} onChange={(event) => updateRepresentative(item.id, { gender: event.target.value as Gender })} className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold outline-none focus:border-amber-500">
+                            <option value="MALE">Nam</option>
+                            <option value="FEMALE">Nữ</option>
+                            <option value="OTHER">Khác</option>
+                          </select>
                         </label>
-                        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <input
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 font-bold"
-                            placeholder="Họ tên người nhận phòng"
-                            value={primaryGuest.fullName}
-                            onChange={(e) => setPrimaryGuest({ ...primaryGuest, fullName: e.target.value })}
-                          />
-                          <input
-                            type="date"
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 font-bold"
-                            value={primaryGuest.dateOfBirth}
-                            onChange={(e) => setPrimaryGuest({ ...primaryGuest, dateOfBirth: e.target.value })}
-                          />
-                          <input
-                            className="w-full px-5 py-4 rounded-2xl bg-surface-container-highest/50 text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 font-bold"
-                            placeholder="Số điện thoại liên hệ"
-                            value={primaryGuest.phone}
-                            onChange={(e) => setPrimaryGuest({ ...primaryGuest, phone: e.target.value })}
-                          />
-                        </div>
-                        <p className="mt-3 text-xs font-medium text-on-surface-variant">
-                          CCCD/hộ chiếu không bắt buộc khi đặt phòng. Bạn có thể hoàn tất thông tin CCCD/hộ chiếu trước để check-in nhanh hơn.
-                        </p>
+                      </div>
+                    </div>
 
-                        {additionalGuests.length > 0 && (
-                          <div className="mt-6 space-y-4">
-                            <div className="text-[10px] tracking-[0.2em] uppercase text-on-surface-variant font-black font-label">
-                              Khách lưu trú đi cùng
+                    <div>
+                      <div className="mb-4 flex items-center justify-between">
+                        <h2 className="text-sm font-black uppercase tracking-widest text-stone-500">Người đi cùng</h2>
+                        <button type="button" disabled={!canAddMember} onClick={() => addMember(item.id)} className="inline-flex items-center gap-2 rounded-2xl bg-stone-950 px-4 py-2 text-xs font-black text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300">
+                          <Plus size={14} /> Thêm khách
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {form.members.length === 0 && <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center text-sm font-bold text-stone-400">Chưa có khách đi cùng cho phòng này.</div>}
+                        {form.members.map((member, memberIndex) => (
+                          <div key={memberIndex} className="rounded-2xl border border-stone-100 bg-stone-50 p-4">
+                            <div className="mb-3 flex items-center justify-between">
+                              <div className="text-xs font-black uppercase text-stone-400">Khách đi cùng {memberIndex + 1}</div>
+                              <button type="button" onClick={() => removeMember(item.id, memberIndex)} className="text-rose-600"><Trash2 size={16} /></button>
                             </div>
-                            {additionalGuests.map((guest, index) => (
-                              <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-2xl bg-surface-container-low p-4">
-                                <input
-                                  className="w-full px-4 py-3 rounded-xl bg-white text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 font-bold"
-                                  placeholder={`Họ tên khách ${index + 2}`}
-                                  value={guest.fullName}
-                                  onChange={(e) => setAdditionalGuests((current) => current.map((item, i) => i === index ? { ...item, fullName: e.target.value } : item))}
-                                />
-                                <input
-                                  type="date"
-                                  className="w-full px-4 py-3 rounded-xl bg-white text-on-surface outline-none border border-outline-variant/15 focus:border-primary/40 font-bold"
-                                  value={guest.dateOfBirth}
-                                  onChange={(e) => setAdditionalGuests((current) => current.map((item, i) => i === index ? { ...item, dateOfBirth: e.target.value } : item))}
-                                />
-                              </div>
-                            ))}
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                              <GuestInput label="Họ tên" value={member.fullName} error={roomError?.members?.[memberIndex]?.fullName} onChange={(value) => updateMember(item.id, memberIndex, { fullName: value })} />
+                              <GuestInput label="SĐT" value={member.phone} error={roomError?.members?.[memberIndex]?.phone} onChange={(value) => updateMember(item.id, memberIndex, { phone: value })} />
+                              <GuestInput type="date" label="Ngày sinh" value={member.dateOfBirth} error={roomError?.members?.[memberIndex]?.dateOfBirth} onChange={(value) => updateMember(item.id, memberIndex, { dateOfBirth: value })} />
+                            </div>
                           </div>
-                        )}
+                        ))}
                       </div>
                     </div>
-                  )}
-                </div>
-              </Card>
-            </motion.div>
+                  </div>
+                </section>
+              );
+            })}
+
+            <section className="rounded-4xl bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-sm font-black uppercase tracking-widest text-stone-500">Yêu cầu đặc biệt</h2>
+              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} placeholder="Ví dụ: cần phòng gần nhau, check-in muộn..." className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm font-bold outline-none focus:border-amber-500" />
+            </section>
           </div>
 
-          {/* Right: Summary Sidebar */}
-          <div className="lg:col-span-4 lg:sticky lg:top-28">
-            <motion.div
-               initial={{ opacity: 0, x: 20 }}
-               animate={{ opacity: 1, x: 0 }}
-               transition={{ delay: 0.2 }}
-            >
-              <Card className="p-7 border border-black/10 bg-white text-[#111] shadow-2xl relative overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(420px_260px_at_95%_0%,rgba(212,175,55,0.12),transparent_70%)]" />
-                
-                <h2 className="text-2xl font-black tracking-tight font-headline relative">Tóm tắt đơn đặt</h2>
-                
-                <div className="mt-7 space-y-4 relative">
-                  <div className="flex items-center justify-between py-2 border-b border-black/10">
-                    <span className="text-[#777] font-bold text-sm tracking-wide">Số đêm lưu trú</span>
-                    <span className="font-black text-lg">{nights} đêm</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b border-black/10">
-                    <span className="text-[#777] font-bold text-sm tracking-wide">Số lượng phòng</span>
-                    <span className="font-black text-lg">{form.rooms}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b border-black/10">
-                    <span className="text-[#777] font-bold text-sm tracking-wide">Gói giá</span>
-                    <span className="font-bold text-sm text-right">{ratePlan === 'NON_REFUNDABLE' ? 'Không hoàn tiền' : 'Linh hoạt'} · {pricing?.appliedRule === 'HOLIDAY' ? 'Ngày lễ' : 'Ngày thường'}</span>
-                  </div>
-                  <div className="space-y-2 rounded-2xl bg-[#fffbf0] border border-[#d4af37]/20 p-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-[#777] font-bold">Giá phòng gốc</span>
-                      <span className="font-bold">{money(baseTotal)}</span>
-                    </div>
-                    {holidaySurcharge > 0 && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-[#b45309] font-bold">Phụ thu lễ/Tết x{pricing?.priceMultiplier}</span>
-                        <span className="font-bold text-[#b45309]">+{money(holidaySurcharge)}</span>
-                      </div>
-                    )}
-                    {discountAmount > 0 && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-green-700 font-bold">Giảm giá gói {pricing?.discountPercent}%</span>
-                        <span className="font-bold text-green-700">-{money(discountAmount)}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between border-t border-[#d4af37]/20 pt-3 text-sm">
-                      <span className="text-[#555] font-bold">Tổng tiền phòng</span>
-                      <span className="font-black">{money(total)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="py-2 border-b border-black/10">
-                    <span className="text-[#777] font-bold text-sm tracking-wide">Thanh toán</span>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentType('DEPOSIT')}
-                        disabled={ratePlan === 'NON_REFUNDABLE'}
-                        className={`rounded-2xl border px-3 py-3 text-left transition ${
-                          paymentType === 'DEPOSIT'
-                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
-                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
-                        }`}
-                      >
-                        <div className="text-xs font-black uppercase tracking-wider">Coc {pricing?.depositPercent}%</div>
-                        <div className="mt-1 text-sm font-black">{money((pricing?.depositAmount || 0) * (form.rooms || 1))}</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentType('FULL')}
-                        className={`rounded-2xl border px-3 py-3 text-left transition ${
-                          paymentType === 'FULL'
-                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
-                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
-                        }`}
-                      >
-                        <div className="text-xs font-black uppercase tracking-wider">Trả 100%</div>
-                        <div className="mt-1 text-sm font-black">{money(total)}</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="py-2 border-b border-black/10">
-                    <span className="text-[#777] font-bold text-sm tracking-wide">Phương thức thanh toán</span>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentProvider('VNPAY')}
-                        className={`rounded-2xl border px-3 py-3 text-left transition ${
-                          paymentProvider === 'VNPAY'
-                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
-                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
-                        }`}
-                      >
-                        <div className="text-xs font-black uppercase tracking-wider">VNPay</div>
-                        <div className="mt-1 text-xs font-bold">Tự chọn ngân hàng/ví ở cổng VNPAY</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPaymentProvider('MOMO')}
-                        className={`rounded-2xl border px-3 py-3 text-left transition ${
-                          paymentProvider === 'MOMO'
-                            ? 'border-[#d4af37] bg-[#fffbf0] text-[#111]'
-                            : 'border-black/10 bg-white text-[#777] hover:bg-[#fafafa]'
-                        }`}
-                      >
-                        <div className="text-xs font-black uppercase tracking-wider">MoMo ATM</div>
-                        <div className="mt-1 text-xs font-bold">Nhập thẻ test/Napas, không cần app</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="pt-6 mt-4">
-                    <div className="mb-3 flex items-center justify-between text-sm">
-                      <span className="text-[#777] font-bold tracking-wide">Tổng chi phí đặt phòng</span>
-                      <span className="font-black">{money(total)}</span>
-                    </div>
-                    <div className="mb-4 flex items-center justify-between text-sm">
-                      <span className="text-[#777] font-bold tracking-wide">{paymentLabel}</span>
-                      <span className="font-black text-primary">{money(payableAmount)}</span>
-                    </div>
-                    <div className="flex items-end justify-between">
-                      <span className="text-[#111] font-bold text-lg tracking-wide uppercase">Thanh toán ngay</span>
-                      <div className="text-right">
-                         <div className="text-3xl font-black tracking-tighter text-primary">
-                           {money(payableAmount)}
-                         </div>
-                         <div className="text-[10px] text-[#999] font-bold mt-1 uppercase tracking-widest">Số tiền gửi sang {paymentProvider}</div>
-                      </div>
-                    </div>
-                    {fetchingPricing && <p className="mt-3 text-xs font-bold text-[#888]">Đang cập nhật giá...</p>}
-                    {pricingWarning && <p className="mt-3 text-xs font-bold text-[#b45309]">{pricingWarning}</p>}
-                  </div>
-                </div>
-
-                <div className="mt-10 relative">
-                  <Button
-                    type="button"
-                    onClick={handleCreateBooking}
-                    disabled={!canSubmit}
-                    loading={submitting}
-                    className="w-full py-4 rounded-2xl bg-[#0f0f0f] text-[#d4af37] font-black tracking-[0.1em] text-sm uppercase shadow-xl shadow-black/20 transition-all hover:bg-[#d4af37] hover:text-black active:scale-95"
-                  >
-                    {submitting ? 'Đang xử lý...' : 'Xác nhận đặt phòng'}
-                  </Button>
-                  
-                  <p className="mt-5 text-[11px] text-[#999] text-center italic font-medium">
-                    Bằng việc nhấn "Xác nhận", bạn đồng ý với mọi Điều khoản đặt phòng của S-T-T Hotel.
-                  </p>
-                </div>
-              </Card>
-              
-              <div className="mt-6 p-6 rounded-3xl bg-surface-container-high border border-outline-variant/10 flex items-start gap-4 shadow-sm">
-                 <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm text-primary">
-                    <ShieldCheck size={20} />
-                 </div>
-                 <div>
-                    <h4 className="font-black text-sm text-on-surface">Book with confidence</h4>
-                    <p className="text-xs text-on-surface-variant mt-1 font-medium leading-relaxed">
-                       Thông tin của bạn được mã hóa và bảo vệ bởi hệ thống bảo mật SSL 256-bit chuẩn quốc tế.
-                    </p>
-                 </div>
+          <aside className="space-y-5 lg:sticky lg:top-24">
+            <div className="rounded-4xl bg-white p-6 shadow-xl">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-stone-400">Xác nhận đặt phòng</p>
+              <h2 className="mt-2 text-2xl font-black text-stone-950">Đơn đặt phòng</h2>
+              <div className="mt-5 space-y-3 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-700">
+                <div className="flex justify-between"><span>Người đặt</span><span>{user.fullName || user.name}</span></div>
+                <div className="flex justify-between"><span>Số phòng</span><span>{cartItems.length}</span></div>
+                <div className="flex justify-between"><span>Ngày nhận</span><span>{checkIn}</span></div>
+                <div className="flex justify-between"><span>Ngày trả</span><span>{checkOut}</span></div>
+                <div className="text-xs text-stone-400">Check-in {CHECK_IN_TIME_LABEL} · Check-out {CHECK_OUT_TIME_LABEL}</div>
               </div>
-            </motion.div>
-          </div>
+
+              <div className="mt-5 space-y-3">
+                {orderSummary?.items.map((item) => {
+                  const form = roomForms[item.id];
+                  return (
+                    <div key={item.id} className="rounded-2xl border border-stone-100 p-4">
+                      <div className="font-black text-stone-950">Phòng {item.room.roomNumber} | {item.room.roomType.type}</div>
+                      <div className="mt-1 text-xs font-bold text-stone-500">Đại diện: {form?.representative.fullName || 'Chưa nhập'} | {(form?.members.length || 0) + 1} khách</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 space-y-3 border-t border-stone-100 pt-5 text-sm font-bold">
+                <div className="flex justify-between"><span>Tổng tiền</span><span>{formatCurrency(orderSummary?.finalTotal || 0)}</span></div>
+                <div className="flex justify-between text-amber-700"><span>Tiền cọc</span><span>{formatCurrency(orderSummary?.depositAmount || 0)}</span></div>
+                <div className="flex justify-between text-stone-500"><span>Còn lại</span><span>{formatCurrency(Math.max(0, (orderSummary?.finalTotal || 0) - payableAmount))}</span></div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <button onClick={() => setPaymentType('DEPOSIT')} className={`rounded-2xl border px-4 py-3 text-xs font-black ${paymentType === 'DEPOSIT' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-stone-200 text-stone-500'}`}>Thanh toán tiền cọc</button>
+                <button onClick={() => setPaymentType('FULL')} className={`rounded-2xl border px-4 py-3 text-xs font-black ${paymentType === 'FULL' ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-stone-200 text-stone-500'}`}>Thanh toán 100%</button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <button onClick={() => setPaymentProvider('VNPAY')} className={`rounded-2xl border px-4 py-3 text-xs font-black ${paymentProvider === 'VNPAY' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-stone-200 text-stone-500'}`}>VNPAY</button>
+                <button onClick={() => setPaymentProvider('MOMO')} className={`rounded-2xl border px-4 py-3 text-xs font-black ${paymentProvider === 'MOMO' ? 'border-pink-500 bg-pink-50 text-pink-700' : 'border-stone-200 text-stone-500'}`}>MoMo</button>
+              </div>
+
+                <button onClick={handleCreateBooking} disabled={submitting || !validationState.isValid} className="mt-6 flex w-full items-center justify-center gap-3 rounded-3xl bg-stone-950 px-5 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl hover:bg-amber-600 disabled:opacity-50">
+                {submitting ? 'Đang xử lý...' : 'Xác nhận & thanh toán'} <ArrowRight size={18} />
+              </button>
+                {!validationState.isValid && (
+                  <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+                    Vui lòng kiểm tra lại thông tin người đại diện, người đi cùng và sức chứa từng phòng trước khi đặt phòng.
+                  </div>
+                )}
+            </div>
+
+            <div className="rounded-3xl border border-emerald-100 bg-white p-5 text-sm font-bold text-stone-600 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 font-black text-emerald-700"><CheckCircle2 size={18} /> Dữ liệu đúng mô hình mới</div>
+              Khách được lưu theo từng phòng, staff sẽ check-in/check-out từng BookingRoom.
+            </div>
+          </aside>
         </div>
       </div>
     </div>
   );
 }
 
+function GuestInput({ label, value, error, onChange, type = 'text' }: { label: string; value: string; error?: string; onChange: (value: string) => void; type?: string }) {
+  return (
+    <label className="space-y-2">
+      <span className="ml-1 text-xs font-black uppercase tracking-widest text-stone-400">{label}</span>
+      <input type={type} value={value} aria-invalid={Boolean(error)} onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border bg-stone-50 px-4 py-3 text-sm font-bold outline-none focus:border-amber-500 ${error ? 'border-rose-300' : 'border-stone-200'}`} />
+      {error && <div className="text-[11px] font-bold text-rose-600">{error}</div>}
+    </label>
+  );
+}

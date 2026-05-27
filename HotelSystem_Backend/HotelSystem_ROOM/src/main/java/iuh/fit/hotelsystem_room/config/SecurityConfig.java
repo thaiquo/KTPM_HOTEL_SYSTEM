@@ -31,10 +31,13 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Cho phép truy cập public để lấy danh sách phòng và loại phòng
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/rooms/**", "/room-types/**").permitAll()
-                        // Các thao tác thêm, sửa, xóa chỉ dành cho ADMIN và STAFF
-                        .requestMatchers("/rooms/**", "/room-types/**").hasAnyRole("ADMIN", "STAFF")
+                    // Cho phép truy cập public cho mọi GET để frontend có thể load danh sách phòng và loại phòng
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/**").permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.PUT, "/rooms/internal/**").permitAll()
+                    // Các thao tác ghi chỉ dành cho ADMIN và STAFF
+                    .requestMatchers(org.springframework.http.HttpMethod.POST, "/**").hasAnyRole("ADMIN", "STAFF")
+                    .requestMatchers(org.springframework.http.HttpMethod.PUT, "/**").hasAnyRole("ADMIN", "STAFF")
+                    .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/**").hasAnyRole("ADMIN", "STAFF")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

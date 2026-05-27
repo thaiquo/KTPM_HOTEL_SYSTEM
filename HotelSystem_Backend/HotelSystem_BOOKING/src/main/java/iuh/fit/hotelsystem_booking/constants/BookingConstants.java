@@ -61,6 +61,11 @@ public final class BookingConstants {
     public static final int    HOLIDAY_FREE_CANCEL_HOURS    = 72;
 
     // ============================================================
+    // RULE CUỐI TUẦN
+    // ============================================================
+    public static final double WEEKEND_PRICE_MULTIPLIER     = 1.2;
+
+    // ============================================================
     // PAYMENT / REFUND
     // ============================================================
     public static final String PAYMENT_TYPE_FULL = "FULL";
@@ -75,6 +80,7 @@ public final class BookingConstants {
 
     public static final String REFUND_METHOD_VNPAY = "VNPAY";
     public static final String REFUND_IDEMPOTENCY_PREFIX = "refund_";
+    public static final String ROOM_CHANGE_REFUND_IDEMPOTENCY_PREFIX = "refund_room_change_";
     public static final int MAX_ACTIVE_REFUND_TASKS_PER_STAFF = 5;
     public static final int REFUND_SLA_HOURS = 48;
     public static final int REFUND_RETRY_DELAY_MINUTES = 5;
@@ -122,7 +128,7 @@ public final class BookingConstants {
     // EARLY CHECK-OUT POLICY
     // ============================================================
     /** Flexible early checkout: tối thiểu tính bao nhiêu đêm */
-    public static final int EARLY_CHECKOUT_MIN_CHARGE_NIGHTS = 2;
+    public static final int EARLY_CHECKOUT_MIN_CHARGE_NIGHTS = 1;
 
     /** Flexible early checkout: refund rate trên số đêm unused */
     public static final double EARLY_CHECKOUT_REFUND_RATE = 0.8;

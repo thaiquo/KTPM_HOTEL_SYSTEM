@@ -5,6 +5,7 @@ public class RefundPaymentRequest {
     private Long bookingId;
     private Long userId;
     private Double amount;
+    private String paymentTransactionId;
 
     public Long getRefundRequestId() { return refundRequestId; }
     public void setRefundRequestId(Long refundRequestId) { this.refundRequestId = refundRequestId; }
@@ -17,4 +18,7 @@ public class RefundPaymentRequest {
 
     public Double getAmount() { return amount; }
     public void setAmount(Double amount) { this.amount = amount; }
+
+    public String getPaymentTransactionId() { return paymentTransactionId; }
+    public void setPaymentTransactionId(String paymentTransactionId) { this.paymentTransactionId = paymentTransactionId; }
 }

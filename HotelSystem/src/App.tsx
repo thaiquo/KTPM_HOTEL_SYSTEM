@@ -1,8 +1,10 @@
 // src/App.tsx
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { CartProvider } from './contexts/CartContext';
 import MainLayout from './shared/components/layout/MainLayout';
+import Spinner from './shared/components/ui/Spinner';
 import AdminLayout from './shared/components/layout/AdminLayout';
 import StaffLayout from './shared/components/layout/StaffLayout';
 import HomePage from './features/room/pages/HomePage';
@@ -16,11 +18,11 @@ import MyBookingsPage from './features/booking/pages/MyBookingsPage';
 import BookingCartPage from './features/booking/pages/BookingCartPage';
 import PaymentResultPage from './features/booking/pages/PaymentResultPage';
 import PaymentConfirmPage from './features/booking/pages/PaymentConfirmPage';
+import HotelPolicyPage from './features/hotel-policy/pages/HotelPolicyPage';
 // import các page khác khi cần...
 
 import ProtectedRoute from './shared/components/auth/ProtectedRoute';
 import RoomManagementPage from './features/dashboard/pages/RoomManagementPage';
-import InvoiceManagementPage from './features/dashboard/pages/InvoiceManagementPage';
 import EmployeeManagementPage from './features/dashboard/pages/EmployeeManagementPage';
 import CustomerManagementPage from './features/dashboard/pages/CustomerManagementPage';
 import RoomTypeManagementPage from './features/dashboard/pages/RoomTypeManagementPage';
@@ -28,8 +30,9 @@ import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
 import ShiftSchedulePage from './features/shift/pages/ShiftSchedulePage';
+import StaffInvoicesPage from './features/dashboard/pages/StaffInvoicesPage';
+import StaffRoomChangePage from './features/dashboard/pages/StaffRoomChangePage';
 
-import { CartProvider } from './contexts/CartContext';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -41,13 +44,29 @@ function ScrollToTop() {
   return null;
 }
 
+function AuthLoader({ children }: { children: React.ReactNode }) {
+  const { loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <Spinner className="h-12 w-12 text-slate-800" />
+          <div className="text-sm font-bold uppercase tracking-widest text-slate-500">Đang khởi tạo ứng dụng...</div>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <AuthProvider>
       <CartProvider>
         <BrowserRouter>
           <ScrollToTop />
-          <Routes>
+          <AuthLoader>
+            <Routes>
             {/* Public & Customer Routes */}
             <Route element={<MainLayout />}>
               <Route path="/" element={<HomePage />} />
@@ -57,12 +76,13 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/payment/confirm" element={<PaymentConfirmPage />} />
-
+              <Route path="/payment-result" element={<PaymentResultPage />} />
+              <Route path="/hotel-policy" element={<HotelPolicyPage />} />
+              
               <Route element={<ProtectedRoute />}>
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/booking" element={<BookingInfoPage />} />
                 <Route path="/my-bookings" element={<MyBookingsPage />} />
-                <Route path="/payment-result" element={<PaymentResultPage />} />
               </Route>
             </Route>
 
@@ -85,12 +105,15 @@ function App() {
                 <Route path="/staff/rooms" element={<RoomManagementPage />} />
                 <Route path="/staff/check-in" element={<StaffCheckInPage />} />
                 <Route path="/staff/checkout" element={<StaffCheckoutPage />} />
+                <Route path="/staff/room-change" element={<StaffRoomChangePage />} />
                 <Route path="/staff/refunds" element={<StaffRefundPage />} />
-                <Route path="/staff/invoices" element={<InvoiceManagementPage />} />
+                <Route path="/staff/invoices" element={<StaffInvoicesPage />} />
+                <Route path="/staff/invoices/:invoiceId" element={<StaffInvoicesPage />} />
                 <Route path="/staff" element={<Navigate to="/staff/rooms" replace />} />
               </Route>
             </Route>
-          </Routes>
+            </Routes>
+          </AuthLoader>
         </BrowserRouter>
       </CartProvider>
     </AuthProvider>

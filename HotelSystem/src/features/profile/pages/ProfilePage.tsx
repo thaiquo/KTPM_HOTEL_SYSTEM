@@ -6,12 +6,12 @@ import {
   bookingApi,
   notificationApi,
   refundApi,
-  roomApi,
   userApi,
   type RefundRecord,
   type UserNotification,
 } from '../../../services/api';
-import type { Booking, Room } from '../../../types';
+import { roomApi } from '../../../services/apiRoom';
+import type { Booking, BookingGuest, Room } from '../../../types';
 import {
   User,
   Mail,
@@ -32,9 +32,19 @@ import {
 import Card from '../../../shared/components/ui/Card';
 import Button from '../../../shared/components/ui/Button';
 import Spinner from '../../../shared/components/ui/Spinner';
+import { normalizeDateInputValue } from '../../../shared/lib/date';
 import { getBookingStatusText, isPaidBookingRecord } from '../../booking/utils/bookingHistory';
 
-type BookingWithRoom = Booking & { room?: Room | null };
+type BookingWithRoom = Booking & { room?: Room | null; rooms?: Room[]; guests?: BookingGuest[] };
+
+type ProfileFormState = {
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  dob: string;
+  imageUrl: string;
+};
 
 type FieldRowProps = {
   label: string;
@@ -160,12 +170,13 @@ const ProfilePage = () => {
   const [refundRecords, setRefundRecords] = useState<RefundRecord[]>([]);
   const [refundNotifications, setRefundNotifications] = useState<UserNotification[]>([]);
   const [refundsLoading, setRefundsLoading] = useState(false);
-  const [profileData, setProfileData] = useState({
-    fullName: user?.name || '',
+  const [profileData, setProfileData] = useState<ProfileFormState>({
+    fullName: user?.fullName || user?.name || '',
     email: user?.email || '',
-    phone: user?.phone || '',
-    address: '',
-    dob: '',
+    phone: user?.phoneNumber || user?.phone || '',
+    address: user?.address || '',
+    dob: normalizeDateInputValue(user?.dateOfBirth),
+    imageUrl: user?.imageUrl || '',
   });
 
   useEffect(() => {
@@ -182,10 +193,11 @@ const ProfilePage = () => {
         setProfileExists(true);
         setProfileData((prev) => ({
           ...prev,
-          fullName: res.data.fullName || prev.fullName,
-          phone: res.data.phone || prev.phone,
-          address: res.data.address || '',
-          dob: res.data.dateOfBirth || '',
+          fullName: res.data.fullName || res.data.name || prev.fullName,
+          phone: res.data.phone || res.data.phoneNumber || prev.phone,
+          address: res.data.address || prev.address,
+          dob: normalizeDateInputValue(res.data.dateOfBirth) || prev.dob,
+          imageUrl: res.data.imageUrl || prev.imageUrl,
           email: user?.email || prev.email,
         }));
       } catch {
@@ -193,6 +205,11 @@ const ProfilePage = () => {
         setProfileData((prev) => ({
           ...prev,
           email: user?.email || prev.email,
+          fullName: user?.fullName || user?.name || prev.fullName,
+          phone: user?.phoneNumber || user?.phone || prev.phone,
+          address: user?.address || prev.address,
+          dob: normalizeDateInputValue(user?.dateOfBirth) || prev.dob,
+          imageUrl: user?.imageUrl || prev.imageUrl,
         }));
       }
     };
@@ -237,8 +254,13 @@ const ProfilePage = () => {
         const enriched = await Promise.all(
           list.map(async (booking) => {
             try {
-              const room = await roomApi.getById(booking.roomId);
-              return { ...booking, room };
+              const roomIds = Array.from(new Set((booking.items || []).map((item) => String(item.roomId)).filter(Boolean)));
+              const [rooms, guests] = await Promise.all([
+                Promise.all(roomIds.map((roomId) => roomApi.getById(roomId).catch(() => null))),
+                bookingApi.getGuests(booking.id).catch(() => []),
+              ]);
+
+              return { ...booking, room: rooms[0] || null, rooms: rooms.filter(Boolean) as Room[], guests };
             } catch {
               return { ...booking, room: null };
             }
@@ -257,6 +279,19 @@ const ProfilePage = () => {
 
     loadBookings();
   }, [user]);
+
+  const displayName = profileData.fullName || user?.fullName || user?.name || 'Khách hàng';
+  const displayPhone = profileData.phone || user?.phoneNumber || user?.phone || 'Chưa cập nhật';
+  const displayAddress = profileData.address || user?.address || 'Chưa cập nhật';
+  const displayDob = profileData.dob || user?.dateOfBirth || 'Chưa cập nhật';
+  const displayEmail = profileData.email || user?.email || '';
+
+  const displayInitials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
   if (loading) {
     return null;
@@ -302,11 +337,14 @@ const ProfilePage = () => {
   const profileBookings = bookings.map((booking) => {
     const nights = getNights(booking.checkIn, booking.checkOut);
     const amount = booking.totalPrice || ((booking.room?.price || 0) * nights);
+    const roomName = booking.rooms?.length
+      ? `${booking.rooms.length} phòng`
+      : booking.room?.name || `Phòng ${booking.roomId}`;
 
     return {
       id: booking.id,
       roomId: booking.roomId,
-      room: { name: booking.room?.name || `Phòng ${booking.roomId}` },
+      room: { name: roomName },
       date: `${booking.checkIn} - ${booking.checkOut}`,
       nights,
       status: booking.status === 'confirmed' || booking.status === 'checked_in' ? 'completed' : 'upcoming',
@@ -372,9 +410,13 @@ const ProfilePage = () => {
 
           <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-8">
             <div className="relative">
-               <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center text-on-primary-container shadow-xl">
-                  <User size={48} />
-               </div>
+               <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl bg-linear-to-br from-primary to-primary-container flex items-center justify-center text-on-primary-container shadow-xl overflow-hidden">
+                {profileData.imageUrl ? (
+                  <img src={profileData.imageUrl} alt={displayName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl sm:text-4xl font-black tracking-tight">{displayInitials || 'U'}</span>
+                )}
+              </div>
                <div className="absolute -bottom-2 -right-2 bg-white rounded-full p-2 shadow-lg border border-gray-50">
                   <Star size={20} className="text-secondary-fixed fill-secondary-fixed" />
                </div>
@@ -387,9 +429,9 @@ const ProfilePage = () => {
                 </span>
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white font-headline">
-                {profileData.fullName}
+                {displayName}
               </h1>
-              <p className="text-white/60 text-base mt-1 font-medium">{profileData.email}</p>
+              <p className="text-white/60 text-base mt-1 font-medium">{displayEmail}</p>
               
               <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-10">
                 <div>
@@ -424,26 +466,37 @@ const ProfilePage = () => {
         {/* Tab Navigation */}
         <div className="mt-12 flex flex-wrap gap-3">
           {tabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key as typeof activeTab)}
-              className={
-                'relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 ' +
-                (activeTab === key
-                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 scale-105'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest')
-              }
-            >
-              <Icon size={18} />
-              {label}
-              {activeTab === key && (
-                <motion.div 
-                   layoutId="activeTab"
-                   className="absolute inset-0 bg-primary rounded-2xl -z-10"
-                />
-              )}
-            </button>
+            key === 'bookings' ? (
+              <Link
+                key={key}
+                to="/my-bookings"
+                className="relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest"
+              >
+                <Icon size={18} />
+                {label}
+              </Link>
+            ) : (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key as typeof activeTab)}
+                className={
+                  'relative inline-flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-extrabold transition-all duration-300 ' +
+                  (activeTab === key
+                    ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 scale-105'
+                    : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest')
+                }
+              >
+                <Icon size={18} />
+                {label}
+                {activeTab === key && (
+                  <motion.div 
+                     layoutId="activeTab"
+                     className="absolute inset-0 bg-primary rounded-2xl -z-10"
+                  />
+                )}
+              </button>
+            )
           ))}
         </div>
 
@@ -460,10 +513,11 @@ const ProfilePage = () => {
             {activeTab === 'profile' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <Card className="lg:col-span-2 p-8 sm:p-10 border-outline-variant/10 shadow-xl overflow-visible">
-                  <div className="flex items-center justify-between mb-10">
+                  <div className="flex items-center justify-between mb-8 gap-4">
                     <div>
-                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Thông tin cá nhân</div>
-                      <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Hồ sơ cá nhân</h2>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Thông tin cơ bản</div>
+                      <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Hồ sơ dùng cho thanh toán</h2>
+                      <p className="mt-2 text-sm text-on-surface-variant font-medium">Dữ liệu này được đồng bộ sau đăng ký / đăng nhập và dùng cho booking, payment, hoàn tiền.</p>
                     </div>
 
                     {!editing && (
@@ -476,6 +530,39 @@ const ProfilePage = () => {
                         Chỉnh sửa
                       </button>
                     )}
+                  </div>
+
+                  <div className="mb-10 rounded-3xl border border-outline-variant/10 bg-linear-to-br from-surface-container-high to-surface-container-low p-6">
+                    <div className="flex flex-col lg:flex-row gap-6 lg:items-center">
+                      <div className="flex items-center gap-4">
+                        <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center overflow-hidden shrink-0">
+                          {profileData.imageUrl ? (
+                            <img src={profileData.imageUrl} alt={displayName} className="h-full w-full object-cover" />
+                          ) : (
+                            <User size={28} />
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-xs font-black uppercase tracking-[0.2em] text-primary-fixed-dim">Thông tin đồng bộ</div>
+                          <div className="mt-1 text-xl font-black text-on-surface font-headline">{displayName}</div>
+                          <div className="text-sm text-on-surface-variant font-medium">{displayEmail}</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 flex-1">
+                        {[
+                          { label: 'Điện thoại', value: displayPhone },
+                          { label: 'Ngày sinh', value: displayDob },
+                          { label: 'Địa chỉ', value: displayAddress },
+                          { label: 'Vai trò', value: user?.role || 'CUSTOMER' },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="rounded-2xl bg-white/70 border border-outline-variant/10 px-4 py-3">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{label}</div>
+                            <div className="mt-1 text-sm font-bold text-on-surface wrap-break-word">{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
@@ -551,7 +638,7 @@ const ProfilePage = () => {
 
                 <div className="space-y-8">
                   <motion.div variants={itemVariants}>
-                    <Card className="p-8 overflow-hidden relative border-none shadow-2xl bg-gradient-to-br from-[#ffb694] to-[#ff6a00] text-white">
+                    <Card className="p-8 overflow-hidden relative border-none shadow-2xl bg-linear-to-br from-[#ffb694] to-[#ff6a00] text-white">
                       <div className="absolute top-0 right-0 p-8 opacity-20 rotate-12">
                          <Star size={120} />
                       </div>
@@ -605,68 +692,6 @@ const ProfilePage = () => {
               </div>
             )}
 
-            {activeTab === 'bookings' && (
-              <motion.div variants={itemVariants}>
-                <Card className="overflow-hidden border-outline-variant/10 shadow-xl">
-                  <div className="p-8 sm:p-10 border-b border-outline-variant/10 bg-surface-container-low">
-                    <div className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant font-black font-label">Lịch sử đặt phòng</div>
-                    <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-on-surface font-headline">Lịch sử đặt phòng</h2>
-                    <p className="mt-2 text-sm text-on-surface-variant font-medium italic">Danh sách các kỳ lưu trú gần đây của bạn tại S-T-T Hotel.</p>
-                  </div>
-                  <div className="divide-y divide-outline-variant/10">
-                    {bookingsLoading ? (
-                      <div className="p-10 text-center">
-                        <Spinner className="h-10 w-10" />
-                        <div className="mt-4 text-xs font-black uppercase tracking-widest text-on-surface-variant">Dang tai lich su dat phong...</div>
-                      </div>
-                    ) : bookingsError ? (
-                      <div className="p-10 text-center text-error font-bold">{bookingsError}</div>
-                    ) : profileBookings.length === 0 ? (
-                      <div className="p-10 text-center">
-                        <div className="text-lg font-black text-on-surface">Chưa có đặt phòng nào</div>
-                        <Link to="/rooms" className="mt-5 inline-block">
-                          <Button className="rounded-2xl px-8">Tim phong ngay</Button>
-                        </Link>
-                      </div>
-                    ) : profileBookings.map((booking, idx) => (
-                      <motion.div 
-                        key={booking.id} 
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.1 }}
-                        className="p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-surface-container-lowest transition-colors group"
-                      >
-                        <div className="flex gap-5">
-                          <div className="w-14 h-14 rounded-2xl bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-all">
-                             <Calendar size={24} />
-                          </div>
-                          <div>
-                            <div className="text-[10px] tracking-widest uppercase text-on-surface-variant font-black">Mã #{booking.id}</div>
-                            <div className="mt-1 text-xl font-black tracking-tight text-on-surface font-headline group-hover:text-primary transition-colors">{booking.room?.name || `Phòng ${booking.roomId}`}</div>
-                            <div className="mt-1 text-sm text-on-surface-variant font-bold">{booking.date} · {booking.nights} đêm</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-8">
-                          <div className="text-lg font-black text-on-surface font-headline">{booking.amount.toLocaleString('vi-VN')} VND</div>
-                          <span className={
-                            'px-4 py-1.5 rounded-full text-[10px] font-black tracking-[0.2em] uppercase border-2 ' +
-                            booking.statusClass
-                          }>
-                            {booking.statusLabel}
-                          </span>
-                          <Link
-                            to={`/my-bookings?bookingId=${encodeURIComponent(booking.id)}`}
-                            className="text-[10px] font-black tracking-widest uppercase text-primary-fixed-dim hover:text-primary transition-colors underline decoration-2 underline-offset-4"
-                          >
-                            Chi tiết
-                          </Link>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </Card>
-              </motion.div>
-            )}
 
             {activeTab === 'refunds' && (
               <motion.div variants={itemVariants}>
@@ -713,9 +738,22 @@ const ProfilePage = () => {
                                       {getRefundStatusText(refund.status)}
                                     </span>
                                   </div>
-                                  <div className="mt-2 text-base font-black text-on-surface">Hoàn dự kiến: {formatCurrency(refund.refundAmount)}</div>
-                                  <div className="mt-1 text-sm text-on-surface-variant font-semibold">
-                                    Đã thanh toán {formatCurrency(refund.paidAmount)} · Phí hủy {formatCurrency(refund.cancellationFee)}
+                                  <div className="mt-2 grid gap-2 rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4 sm:grid-cols-3">
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Đã thanh toán</div>
+                                      <div className="mt-1 text-sm font-black text-on-surface">{formatCurrency(refund.paidAmount)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Giữ lại / hao hụt</div>
+                                      <div className="mt-1 text-sm font-black text-error">{formatCurrency(Math.max(0, Number(refund.paidAmount || 0) - Number(refund.refundAmount || 0)))}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Sẽ hoàn</div>
+                                      <div className="mt-1 text-sm font-black text-green-700">{formatCurrency(refund.refundAmount)}</div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 text-sm text-on-surface-variant font-semibold">
+                                    Phí hủy: {formatCurrency(refund.cancellationFee)} · Giao dịch gốc: {refund.paymentTransactionId || 'Chưa có mã giao dịch'}
                                   </div>
                                   <div className="mt-1 text-sm text-on-surface-variant">Lý do: {getRefundReasonText(refund.reason)}</div>
                                   {latestNotice && (

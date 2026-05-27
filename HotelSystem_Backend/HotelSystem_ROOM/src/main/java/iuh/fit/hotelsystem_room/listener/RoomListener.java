@@ -2,6 +2,7 @@ package iuh.fit.hotelsystem_room.listener;
 
 import iuh.fit.hotelsystem_room.config.RabbitConfig;
 import iuh.fit.hotelsystem_room.dto.RoomMessage;
+import iuh.fit.hotelsystem_room.dto.RoomStatusUpdateRequest;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
@@ -26,29 +27,53 @@ public class RoomListener {
 
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
 
-        if (room.getStatus() == RoomStatus.AVAILABLE) {
-            room.setStatus(RoomStatus.HOLD);
-            roomRepository.save(room);
-
-            rabbitTemplate.convertAndSend(
-                    RabbitConfig.EXCHANGE,
-                    "room.held",
-                    msg
-            );
+        if (isHardUnavailable(room.getStatus())) {
+            throw new IllegalStateException("Room " + room.getId() + " is not bookable with current status " + room.getStatus());
         }
+
+        if (room.getStatus() == RoomStatus.AVAILABLE) {
+            room.setStatus(RoomStatus.RESERVED);
+            roomRepository.save(room);
+        }
+
+        rabbitTemplate.convertAndSend(
+                RabbitConfig.EXCHANGE,
+                "room.held",
+                msg
+        );
     }
 
     @RabbitListener(queues = RabbitConfig.ROOM_CONFIRM_QUEUE)
     public void confirmRoom(RoomMessage msg) {
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
-        room.setStatus(RoomStatus.BOOKED);
-        roomRepository.save(room);
+        if (room.getStatus() == RoomStatus.AVAILABLE) {
+            room.setStatus(RoomStatus.RESERVED);
+            roomRepository.save(room);
+        }
     }
 
     @RabbitListener(queues = RabbitConfig.ROOM_RELEASE_QUEUE)
     public void releaseRoom(RoomMessage msg) {
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
-        room.setStatus(RoomStatus.AVAILABLE);
+        if (room.getStatus() == RoomStatus.RESERVED) {
+            room.setStatus(RoomStatus.AVAILABLE);
+            roomRepository.save(room);
+        }
+    }
+
+    @RabbitListener(queues = RabbitConfig.ROOM_STATUS_QUEUE)
+    public void updateRoomStatus(RoomStatusUpdateRequest msg) {
+        if (msg == null || msg.getRoomId() == null || msg.getStatus() == null || msg.getStatus().isBlank()) {
+            return;
+        }
+        Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
+        room.setStatus(RoomStatus.valueOf(msg.getStatus().trim().toUpperCase()));
         roomRepository.save(room);
+    }
+
+    private boolean isHardUnavailable(RoomStatus status) {
+        return status == RoomStatus.MAINTENANCE
+                || status == RoomStatus.OUT_OF_SERVICE
+                || status == RoomStatus.BLOCKED;
     }
 }

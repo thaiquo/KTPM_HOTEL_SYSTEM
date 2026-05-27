@@ -27,7 +27,7 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
-    void fullCancelWithin24hChargesOneNight() {
+    void fullCancelWithin24hBefore2hRefunds80Percent() {
         Booking booking = booking("FULL", false, false, 1000000, 0);
         booking.setCheckIn(LocalDate.now().plusDays(1));
 
@@ -35,9 +35,9 @@ class CancellationPolicyServiceTest {
                 booking,
                 LocalDateTime.of(booking.getCheckIn(), LocalTime.of(10, 0)));
 
-        assertEquals("LATE_CANCEL", result.getCancelType());
-        assertEquals(500000.0, result.getCancellationFee());
-        assertEquals(500000.0, result.getRefundAmount());
+        assertEquals("PARTIAL_REFUND", result.getCancelType());
+        assertEquals(200000.0, result.getCancellationFee());
+        assertEquals(800000.0, result.getRefundAmount());
     }
 
     @Test
@@ -65,7 +65,7 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
-    void depositCancelWithin24hLosesDeposit() {
+    void depositCancelWithin24hBefore2hRefunds80PercentOfPaidAmount() {
         Booking booking = booking("DEPOSIT", false, false, 300000, 300000);
         booking.setCheckIn(LocalDate.now().plusDays(1));
 
@@ -73,9 +73,9 @@ class CancellationPolicyServiceTest {
                 booking,
                 LocalDateTime.of(booking.getCheckIn(), LocalTime.of(10, 0)));
 
-        assertEquals("LATE_CANCEL", result.getCancelType());
-        assertEquals(300000.0, result.getCancellationFee());
-        assertEquals(0.0, result.getRefundAmount());
+        assertEquals("PARTIAL_REFUND", result.getCancelType());
+        assertEquals(60000.0, result.getCancellationFee());
+        assertEquals(240000.0, result.getRefundAmount());
     }
 
     @Test
@@ -103,7 +103,7 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
-    void holidayCancelBefore72hRefunds() {
+    void holidayCancelBefore24hRefunds() {
         CancellationPolicyResult result = policyService.calculateCancellationPolicy(
                 booking("FULL", true, false, 1300000, 0),
                 LocalDateTime.now());
@@ -114,17 +114,18 @@ class CancellationPolicyServiceTest {
     }
 
     @Test
-    void holidayCancelUnder72hChargesOneNight() {
+    void holidayCancelUnder24hBefore2hRefunds80Percent() {
         Booking booking = booking("FULL", true, false, 1300000, 0);
-        booking.setCheckIn(LocalDate.now().plusDays(2));
+        booking.setCheckIn(LocalDate.now().plusDays(1));
 
         CancellationPolicyResult result = policyService.calculateCancellationPolicy(
                 booking,
-                LocalDateTime.of(booking.getCheckIn().minusDays(2), LocalTime.of(15, 0)));
+                LocalDateTime.of(booking.getCheckIn(), LocalTime.of(10, 0)));
 
         assertEquals("HOLIDAY", result.getPolicyType());
-        assertEquals("LATE_CANCEL", result.getCancelType());
-        assertEquals(650000.0, result.getCancellationFee());
+        assertEquals("PARTIAL_REFUND", result.getCancelType());
+        assertEquals(260000.0, result.getCancellationFee());
+        assertEquals(1040000.0, result.getRefundAmount());
     }
 
     @Test

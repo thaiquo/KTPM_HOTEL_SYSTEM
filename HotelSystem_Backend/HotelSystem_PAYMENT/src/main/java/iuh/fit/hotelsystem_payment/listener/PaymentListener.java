@@ -30,6 +30,13 @@ public class PaymentListener {
 
     @RabbitListener(queues = RabbitConfig.PAYMENT_REQUEST_QUEUE)
     public void processPayment(PaymentMessage msg) {
+        if (msg.getIdempotencyKey() != null) {
+            java.util.Optional<Payment> existing = paymentRepository.findByIdempotencyKey(msg.getIdempotencyKey());
+            if (existing.isPresent()) {
+                sendResult(existing.get());
+                return;
+            }
+        }
 
         Payment payment = new Payment();
         payment.setBookingId(msg.getBookingId());
@@ -41,6 +48,7 @@ public class PaymentListener {
         payment.setMethod("VNPAY");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
+        payment.setIdempotencyKey(msg.getIdempotencyKey());
 
         // Demo rule to exercise both paths:
         // - even bookingId => SUCCESS
@@ -55,11 +63,14 @@ public class PaymentListener {
         }
 
         paymentRepository.save(payment);
+        sendResult(payment);
+    }
 
+    private void sendResult(Payment payment) {
         PaymentResultMessage result = new PaymentResultMessage();
-        result.setBookingId(msg.getBookingId());
-        result.setUserId(msg.getUserId());
-        result.setStatus(finalStatus == PaymentStatus.SUCCESS ? "FULL_PAID" : "FAILED");
+        result.setBookingId(payment.getBookingId());
+        result.setUserId(payment.getUserId());
+        result.setStatus(payment.getStatus() == PaymentStatus.SUCCESS ? "FULL_PAID" : "FAILED");
 
         rabbitTemplate.convertAndSend(
                 RabbitConfig.EXCHANGE,

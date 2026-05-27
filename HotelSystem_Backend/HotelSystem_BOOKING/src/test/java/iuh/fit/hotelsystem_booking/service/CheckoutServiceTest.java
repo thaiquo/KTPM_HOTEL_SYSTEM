@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
-import iuh.fit.hotelsystem_booking.client.PaymentClient;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
+import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.CheckOutRequest;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Optional;
@@ -34,7 +36,7 @@ class CheckoutServiceTest {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        PaymentClient paymentClient = mock(PaymentClient.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
 
         Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
         booking.setStatus(BookingStatus.CHECKED_IN);
@@ -45,16 +47,20 @@ class CheckoutServiceTest {
         when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        Clock clock = fixedClock("2026-05-01T04:00:00Z");
+        Clock clock = fixedClock("2026-05-01T04:59:00Z");
         ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
         when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
                 bookingGuestService,
                 new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
                 new RefundCalculationService(),
                 rabbitTemplate,
                 paymentClient,
@@ -68,8 +74,8 @@ class CheckoutServiceTest {
         assertEquals(BookingStatus.COMPLETED.name(), response.getBookingStatus());
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
         assertFalse(response.isEarlyCheckout());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
-        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any(), anyString(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
 
         verify(rabbitTemplate, never()).convertAndSend(eq(RabbitConfig.EXCHANGE), eq("room.checkout"), any(Object.class));
     }
@@ -79,7 +85,7 @@ class CheckoutServiceTest {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        PaymentClient paymentClient = mock(PaymentClient.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
 
         Booking booking = booking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 6), 5, 1000.0);
         booking.setStatus(BookingStatus.CHECKED_IN);
@@ -96,11 +102,15 @@ class CheckoutServiceTest {
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
         when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
                 bookingGuestService,
                 new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
                 new RefundCalculationService(),
                 rabbitTemplate,
                 paymentClient,
@@ -115,8 +125,8 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
     }
 
     @Test
@@ -124,7 +134,7 @@ class CheckoutServiceTest {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        PaymentClient paymentClient = mock(PaymentClient.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
 
         Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
         booking.setStatus(BookingStatus.CHECKED_IN);
@@ -139,11 +149,15 @@ class CheckoutServiceTest {
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
         when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
                 bookingGuestService,
                 new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
                 new RefundCalculationService(),
                 rabbitTemplate,
                 paymentClient,
@@ -156,7 +170,260 @@ class CheckoutServiceTest {
 
         assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
         assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
-        verify(paymentClient).requestLateCheckoutFeePayment(eq(1L), eq(booking.getUserId()), eq(new BigDecimal("200.00")));
+        verify(paymentClient).requestLateCheckoutFeePayment(eq(1L), any());
+    }
+
+    @Test
+    void calculateCheckoutOnPendingPaymentReturnsSavedLateFee() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
+        booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
+
+        BookingStay stay = new BookingStay();
+        stay.setBookingId(1L);
+        stay.setActualCheckOutAt(LocalDateTime.of(2026, 5, 1, 6, 0));
+        stay.setLateCheckoutMinutes(120);
+        stay.setLateCheckoutFee(new BigDecimal("200.00"));
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+        when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Clock clock = fixedClock("2026-05-01T06:00:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckoutResponse response = service.calculateCheckout(1L);
+
+        assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
+        assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
+        assertTrue(response.isPaymentRequired());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+    }
+
+    @Test
+    void calculateCheckoutOnPendingPaymentWithoutActualCheckoutRecalculatesStaleFee() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
+        booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
+
+        BookingStay stay = new BookingStay();
+        stay.setBookingId(1L);
+        stay.setLateCheckoutMinutes(30);
+        stay.setLateCheckoutFee(new BigDecimal("200.00"));
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+
+        Clock clock = fixedClock("2026-05-01T08:30:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckoutResponse response = service.calculateCheckout(1L);
+
+        assertEquals(210, response.getLateMinutes());
+        assertEquals(new BigDecimal("500.00"), response.getLateCheckoutFee());
+        assertEquals(LocalDateTime.of(2026, 5, 1, 15, 30), response.getActualCheckoutAt());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+    }
+
+    @Test
+    void calculateCheckoutForCheckedInBookingRecalculatesStaleLateFeePreview() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 5, 23), LocalDate.of(2026, 5, 24), 1, 1000.0);
+        booking.setStatus(BookingStatus.CHECKED_IN);
+
+        BookingStay stay = new BookingStay();
+        stay.setBookingId(1L);
+        stay.setLateCheckoutMinutes(90);
+        stay.setLateCheckoutFee(new BigDecimal("200.00"));
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+
+        Clock clock = fixedClock("2026-05-24T16:17:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckoutResponse response = service.calculateCheckout(1L);
+
+        assertEquals(677, response.getLateMinutes());
+        assertEquals(new BigDecimal("1000.00"), response.getLateCheckoutFee());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+    }
+
+    @Test
+    void lateCheckoutAtSixPmChargesFullNight() {
+        Booking booking = booking(LocalDate.of(2026, 5, 23), LocalDate.of(2026, 5, 24), 1, 1000.0);
+
+        CheckInOutService service = new CheckInOutService();
+
+        assertEquals(360, service.calculateLateCheckoutMinutes(booking, LocalDateTime.of(2026, 5, 24, 18, 0)));
+        assertEquals(new BigDecimal("1000.00"), service.calculateLateCheckoutFee(booking, 360));
+    }
+
+    @Test
+    void calculateCheckoutOnPendingPaymentWithPaidLateFeeReturnsNoPaymentRequired() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
+        booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
+
+        BookingStay stay = new BookingStay();
+        stay.setBookingId(1L);
+        stay.setActualCheckOutAt(LocalDateTime.of(2026, 5, 1, 6, 0));
+        stay.setLateCheckoutMinutes(120);
+        stay.setLateCheckoutFee(new BigDecimal("200.00"));
+        stay.setLateCheckoutPaymentStatus(iuh.fit.hotelsystem_booking.entity.LateCheckoutPaymentStatus.PENDING);
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+        iuh.fit.hotelsystem_booking.dto.PaymentStatusResponse lateStatus = new iuh.fit.hotelsystem_booking.dto.PaymentStatusResponse();
+        lateStatus.setStatus("PAID");
+        when(paymentClient.getLateCheckoutFeeStatus(1L)).thenReturn(lateStatus);
+        when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Clock clock = fixedClock("2026-05-01T06:00:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckoutResponse response = service.calculateCheckout(1L);
+
+        assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
+        assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
+        assertFalse(response.isPaymentRequired());
+        verify(paymentClient).getLateCheckoutFeeStatus(1L);
+    }
+
+    @Test
+    void checkoutOnPendingPaymentDoesNotRequestDuplicatePayment() {
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+        Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
+        booking.setStatus(BookingStatus.CHECKOUT_PENDING_PAYMENT);
+
+        BookingStay stay = new BookingStay();
+        stay.setBookingId(1L);
+        stay.setActualCheckOutAt(LocalDateTime.of(2026, 5, 1, 6, 0));
+        stay.setLateCheckoutMinutes(120);
+        stay.setLateCheckoutFee(new BigDecimal("200.00"));
+
+        when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+        when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+        when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Clock clock = fixedClock("2026-05-01T06:00:00Z");
+        ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+        when(clockProvider.getIfAvailable()).thenReturn(clock);
+        BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+        when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+        CheckoutService service = new CheckoutService(
+                bookingRepository,
+                stayRepository,
+                bookingGuestService,
+                new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
+                new RefundCalculationService(),
+                rabbitTemplate,
+                paymentClient,
+                clockProvider
+        );
+
+        CheckOutRequest request = new CheckOutRequest();
+        request.setStaffId(1L);
+        CheckoutResponse response = service.checkout(1L, request);
+
+        assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
+        assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
     }
 
     @Test
@@ -164,7 +431,7 @@ class CheckoutServiceTest {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        PaymentClient paymentClient = mock(PaymentClient.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
 
         Booking booking = booking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 6), 5, 1000.0);
         booking.setStatus(BookingStatus.CHECKED_IN);
@@ -181,11 +448,15 @@ class CheckoutServiceTest {
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
         when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
                 bookingGuestService,
                 new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
                 new RefundCalculationService(),
                 rabbitTemplate,
                 paymentClient,
@@ -199,8 +470,9 @@ class CheckoutServiceTest {
         assertTrue(response.isEarlyCheckout());
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyLong(), any());
+        assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
     }
 
     private Booking booking(LocalDate checkIn, LocalDate checkOut, int nights, double pricePerNight) {
@@ -224,7 +496,7 @@ class CheckoutServiceTest {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        PaymentClient paymentClient = mock(PaymentClient.class);
+        PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
 
         Booking booking = booking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 6), 5, 1000.0);
         booking.setStatus(BookingStatus.CHECKED_IN);
@@ -245,11 +517,15 @@ class CheckoutServiceTest {
         when(clockProvider.getIfAvailable()).thenReturn(clock);
         BookingGuestService bookingGuestService = mock(BookingGuestService.class);
         when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+        CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+        RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
         CheckoutService service = new CheckoutService(
                 bookingRepository,
                 stayRepository,
                 bookingGuestService,
                 new CheckInOutService(),
+                scheduledService,
+                roomServiceClient,
                 new RefundCalculationService(),
                 rabbitTemplate,
                 paymentClient,
@@ -261,7 +537,8 @@ class CheckoutServiceTest {
 
         CheckoutResponse response = service.checkout(1L, request);
         assertTrue(response.isEarlyCheckout());
-        verify(paymentClient).requestEarlyCheckoutRefund(eq(1L), eq(new BigDecimal("2400.00")), eq("EARLY_CHECKOUT"), eq(1L));
+        assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
+        verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
     }
 
     private Clock fixedClock(String isoInstant) {

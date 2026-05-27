@@ -31,7 +31,9 @@ const PaymentConfirmPage: React.FC = () => {
     if (!paymentCode) return;
     try {
       setConfirming(true);
-      const result = await paymentApi.confirmCheckinQr(paymentCode);
+      const result = payment?.paymentType === 'LATE_CHECKOUT_FEE'
+        ? await paymentApi.confirmLateCheckoutQr(paymentCode)
+        : await paymentApi.confirmCheckinQr(paymentCode);
       setPayment(result);
       toast.success('Da xac nhan thanh toan');
     } catch (error: any) {
@@ -73,6 +75,10 @@ const PaymentConfirmPage: React.FC = () => {
           <div className="flex justify-between gap-4 text-sm">
             <span className="font-bold text-gray-500">Trang thai</span>
             <span className={`font-black ${paid ? 'text-emerald-600' : 'text-amber-600'}`}>{payment.status}</span>
+          </div>
+          <div className="flex justify-between gap-4 text-sm">
+            <span className="font-bold text-gray-500">Loai thanh toan</span>
+            <span className="font-black text-gray-900">{payment.paymentType === 'LATE_CHECKOUT_FEE' ? 'Phi checkout tre' : payment.paymentType || '-'}</span>
           </div>
         </div>
 

@@ -2,15 +2,27 @@ package iuh.fit.hotelsystem_payment.service;
 
 import iuh.fit.hotelsystem_payment.config.RabbitConfig;
 import iuh.fit.hotelsystem_payment.config.VNPayConfig;
+import iuh.fit.hotelsystem_payment.client.BookingServiceClient;
 import iuh.fit.hotelsystem_payment.dto.CreateVNPayRequest;
 import iuh.fit.hotelsystem_payment.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_payment.dto.VNPayResponse;
+import iuh.fit.hotelsystem_payment.entity.InvoiceCategory;
 import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -32,19 +44,90 @@ import java.util.UUID;
 @Service
 public class VNPayService {
 
+    private static final Logger log = LoggerFactory.getLogger(VNPayService.class);
+
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ZoneId VNP_TIMEZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final PaymentRepository paymentRepository;
     private final RabbitTemplate rabbitTemplate;
     private final VNPayConfig vnPayConfig;
+    private final BookingServiceClient bookingServiceClient;
+    private final RestTemplate restTemplate;
 
     public VNPayService(PaymentRepository paymentRepository,
                         RabbitTemplate rabbitTemplate,
-                        VNPayConfig vnPayConfig) {
+                        VNPayConfig vnPayConfig,
+                        BookingServiceClient bookingServiceClient,
+                        RestTemplateBuilder restTemplateBuilder) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.vnPayConfig = vnPayConfig;
+        this.bookingServiceClient = bookingServiceClient;
+        this.restTemplate = restTemplateBuilder.build();
+    }
+
+    public VNPayRefundResult refund(String transactionRef,
+                                    String transactionDate,
+                                    Double amount,
+                                    String createdBy,
+                                    String ipAddress,
+                                    String orderInfo,
+                                    String transactionType,
+                                    String transactionNo) {
+        if (transactionRef == null || transactionRef.isBlank()) {
+            throw new IllegalArgumentException("transactionRef is required");
+        }
+        if (amount == null || amount <= 0) {
+            throw new IllegalArgumentException("amount must be greater than zero");
+        }
+
+        String requestId = LocalDateTime.now(VNP_TIMEZONE).format(DateTimeFormatter.ofPattern("HHmmss"));
+        String createDate = LocalDateTime.now(VNP_TIMEZONE).format(VNP_DATE_FORMAT);
+        String vnpVersion = "2.1.0";
+        String vnpCommand = "refund";
+        String txnType = (transactionType == null || transactionType.isBlank()) ? "02" : transactionType;
+        String txnNo = (transactionNo == null || transactionNo.isBlank()) ? "0" : transactionNo;
+        String txnDate = (transactionDate == null || transactionDate.isBlank()) ? createDate : transactionDate;
+        String created = (createdBy == null || createdBy.isBlank()) ? "SYSTEM" : createdBy;
+        String info = (orderInfo == null || orderInfo.isBlank()) ? ("Refund for " + transactionRef) : orderInfo;
+
+        String data = requestId + "|" + vnpVersion + "|" + vnpCommand + "|" + vnPayConfig.getTmnCode()
+                + "|" + txnType + "|" + transactionRef + "|" + toVnpAmount(amount) + "|" + txnNo
+                + "|" + txnDate + "|" + created + "|" + createDate + "|" + normalizeIp(ipAddress)
+                + "|" + info;
+        String secureHash = hmacSHA512(vnPayConfig.getHashSecret(), data);
+
+        Map<String, String> payload = new HashMap<>();
+        payload.put("vnp_RequestId", requestId);
+        payload.put("vnp_Version", vnpVersion);
+        payload.put("vnp_Command", vnpCommand);
+        payload.put("vnp_TmnCode", vnPayConfig.getTmnCode());
+        payload.put("vnp_TransactionType", txnType);
+        payload.put("vnp_TxnRef", transactionRef);
+        payload.put("vnp_Amount", toVnpAmount(amount));
+        payload.put("vnp_TransactionNo", txnNo);
+        payload.put("vnp_TransactionDate", txnDate);
+        payload.put("vnp_CreateBy", created);
+        payload.put("vnp_OrderInfo", info);
+        payload.put("vnp_CreateDate", createDate);
+        payload.put("vnp_IpAddr", normalizeIp(ipAddress));
+        payload.put("vnp_SecureHash", secureHash);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(payload, headers);
+        ResponseEntity<Map> response = restTemplate.postForEntity(vnPayConfig.getApiUrl(), entity, Map.class);
+        Map<String, Object> body = response.getBody() != null ? response.getBody() : new HashMap<>();
+        String responseCode = String.valueOf(body.getOrDefault("vnp_ResponseCode", "99"));
+        String message = String.valueOf(body.getOrDefault("vnp_Message", "Unknown"));
+        String refundTxnNo = body.get("vnp_TransactionNo") != null
+                ? String.valueOf(body.get("vnp_TransactionNo"))
+                : null;
+        return new VNPayRefundResult("00".equals(responseCode), responseCode, message, refundTxnNo);
+    }
+
+    public record VNPayRefundResult(boolean success, String responseCode, String message, String transactionNo) {
     }
 
     public VNPayResponse createPayment(CreateVNPayRequest request, String ipAddress) {
@@ -56,8 +139,11 @@ public class VNPayService {
         if (paymentType == PaymentType.REMAINING) {
             throw new IllegalArgumentException("Use /payments/vnpay/create-remaining for remaining payment");
         }
+        ensurePaymentNotCompleted(request.getBookingId(), paymentType);
 
-        return createAndBuildUrl(request.getBookingId(), request.getUserId(), request.getTotalAmount(), paymentType, request, ipAddress);
+        Double authoritativeTotalAmount = resolveBookingTotalAmount(request.getBookingId(), request.getTotalAmount());
+
+        return createAndBuildUrl(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request, ipAddress);
     }
 
     public VNPayResponse createRemainingPayment(CreateVNPayRequest request, String ipAddress) {
@@ -84,7 +170,65 @@ public class VNPayService {
                 ? request.getTotalAmount()
                 : successfulDeposit.getTotalAmount();
 
+        totalAmount = resolveBookingTotalAmount(request.getBookingId(), totalAmount);
+
         return createAndBuildUrl(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, ipAddress);
+    }
+
+    private Double resolveBookingTotalAmount(Long bookingId, Double requestedTotalAmount) {
+        if (bookingId == null) {
+            throw new IllegalArgumentException("bookingId is required");
+        }
+
+        Double bookingTotalAmount = null;
+        try {
+            Map<String, Object> booking = bookingServiceClient.getBooking(bookingId);
+            bookingTotalAmount = extractMoney(booking, "totalPrice");
+            if (bookingTotalAmount == null) {
+                bookingTotalAmount = extractMoney(booking, "finalTotal");
+            }
+        } catch (Exception ex) {
+            log.warn("Could not fetch booking total from booking-service. bookingId={}, error={}", bookingId, ex.getMessage());
+        }
+
+        if (bookingTotalAmount != null && bookingTotalAmount > 0) {
+            if (requestedTotalAmount != null && Math.abs(requestedTotalAmount - bookingTotalAmount) > 1.0) {
+                log.warn("Payment amount mismatch detected. bookingId={}, requested={}, booking={}. Use booking amount.",
+                        bookingId, requestedTotalAmount, bookingTotalAmount);
+            }
+            return roundVnd(bookingTotalAmount);
+        }
+
+        if (requestedTotalAmount != null && requestedTotalAmount > 0) {
+            return roundVnd(requestedTotalAmount);
+        }
+
+        throw new IllegalArgumentException("Cannot resolve totalAmount for booking " + bookingId);
+    }
+
+    private Double extractMoney(Map<String, Object> payload, String key) {
+        if (payload == null || key == null) {
+            return null;
+        }
+        Object raw = payload.get(key);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(raw));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private void ensurePaymentNotCompleted(Long bookingId, PaymentType paymentType) {
+        if (paymentRepository.existsByBookingIdAndPaymentTypeAndStatus(bookingId, paymentType, PaymentStatus.SUCCESS)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    paymentType + " payment already completed for this booking");
+        }
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {
@@ -232,6 +376,7 @@ public class VNPayService {
         payment.setPaidAmount(paidAmount);
         payment.setAmount(paidAmount);
         payment.setPaymentType(paymentType);
+        payment.setInvoiceCategory(InvoiceCategory.CHECKIN);
         payment.setMethod("VNPAY");
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());

@@ -14,15 +14,22 @@ public class BookingGuest {
     private Long id;
 
     private Long bookingId;
+    private Long bookingRoomId;
+    private Long roomId;
     private String fullName;
     private LocalDate dateOfBirth;
     private String phone;
     private String email;
     private String cccd;
+    private String passport;
+    private String gender;
     private String note;
 
     @Enumerated(EnumType.STRING)
     private GuestType type;
+
+    @Enumerated(EnumType.STRING)
+    private BookingRoomGuestRole role;
 
     private Boolean primaryGuest;
     private Boolean checkInPerson;
@@ -32,6 +39,12 @@ public class BookingGuest {
 
     public Long getBookingId() { return bookingId; }
     public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
+
+    public Long getBookingRoomId() { return bookingRoomId; }
+    public void setBookingRoomId(Long bookingRoomId) { this.bookingRoomId = bookingRoomId; }
+
+    public Long getRoomId() { return roomId; }
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
 
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }
@@ -48,11 +61,20 @@ public class BookingGuest {
     public String getCccd() { return cccd; }
     public void setCccd(String cccd) { this.cccd = cccd; }
 
+    public String getPassport() { return passport; }
+    public void setPassport(String passport) { this.passport = passport; }
+
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
 
     public GuestType getType() { return type; }
     public void setType(GuestType type) { this.type = type; }
+
+    public BookingRoomGuestRole getRole() { return role; }
+    public void setRole(BookingRoomGuestRole role) { this.role = role; }
 
     public Boolean getPrimaryGuest() { return primaryGuest; }
     public void setPrimaryGuest(Boolean primaryGuest) { this.primaryGuest = primaryGuest; }

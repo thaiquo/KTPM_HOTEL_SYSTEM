@@ -7,7 +7,7 @@ import {
   HiOutlineX,
   HiOutlinePhotograph
 } from 'react-icons/hi';
-import { roomApi } from '../../../services/api';
+import { roomApi } from '../../../services/roomApi';
 import toast from 'react-hot-toast';
 
 interface RoomType {

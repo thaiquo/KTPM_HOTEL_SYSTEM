@@ -176,14 +176,6 @@ public class BookingController {
         return ResponseEntity.ok(refundService.approveRefund(refundId, processedBy));
     }
 
-    @PostMapping("/refunds/{refundId}/reject")
-    public ResponseEntity<iuh.fit.hotelsystem_booking.entity.RefundTransaction> rejectRefund(
-            @PathVariable Long refundId,
-            @RequestBody(required = false) java.util.Map<String, String> body) {
-        String processedBy = body != null ? body.get("processedBy") : "admin";
-        String reason = body != null ? body.get("reason") : "Refund rejected by admin";
-        return ResponseEntity.ok(refundService.rejectRefund(refundId, processedBy, reason));
-    }
     @PostMapping("/{id}/confirm-checkin-payment")
     public ResponseEntity<Booking> confirmCheckinPayment(
             @PathVariable Long id,

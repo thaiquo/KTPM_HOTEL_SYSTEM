@@ -1,7 +1,7 @@
 package iuh.fit.hotelsystem_notification.config;
 
 import org.springframework.amqp.core.*;
-import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -55,8 +55,8 @@ public class RabbitConfig {
     }
 
     @Bean
-    public JacksonJsonMessageConverter messageConverter() {
-        JacksonJsonMessageConverter converter = new JacksonJsonMessageConverter();
+    public Jackson2JsonMessageConverter messageConverter() {
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
         converter.setAlwaysConvertToInferredType(true);
         return converter;
     }

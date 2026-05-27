@@ -1,5 +1,56 @@
 services:
   # ========================
+  # EUREKA SERVER (Service Discovery)
+  # ========================
+  eureka-server:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx384m -Xms128m -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_EUREKA:/app
+      - maven-repo:/root/.m2
+    ports:
+      - "8761:8761"
+    mem_limit: 896mb
+    environment:
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+  # ========================
+  # REDIS (Caching & Rate Limiting)
+  # ========================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  # ========================
+  # ZIPKIN (Distributed Tracing) - disabled by default
+  # ========================
+  # zipkin:
+  #   image: openzipkin/zipkin
+  #   container_name: zipkin
+  #   ports:
+  #     - "9411:9411"
+
+  # ========================
   # RABBITMQ
   # ========================
   rabbitmq:
@@ -29,12 +80,12 @@ services:
       - pgadmin_data:/var/lib/pgadmin
 
   # ========================
-  # AUTH DB + SERVICE (DEV HOT RELOAD)
+  # AUTH DB + SERVICE
   # ========================
   postgres-auth:
     image: postgres:15
     ports:
-      - "55421:5432"
+      - "56421:5432"
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
@@ -42,10 +93,21 @@ services:
     volumes:
       - auth_data:/var/lib/postgresql/data
 
+  postgres-user:
+    image: postgres:15
+    ports:
+      - "56422:5432"
+    environment:
+      POSTGRES_DB: hotel_user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - user_data:/var/lib/postgresql/data
+
   auth-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -57,18 +119,23 @@ services:
     depends_on:
       - postgres-auth
       - rabbitmq
+      - eureka-server
+    mem_limit: 1024mb
     environment:
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      PAYMENT_SERVICE_URL: http://payment-service:8085
 
   user-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -78,21 +145,24 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      - postgres-auth
+      - postgres-user
+      - eureka-server
+    mem_limit: 1024mb
     environment:
-      DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
-
+      EUREKA_URL: http://eureka-server:8761/eureka/
 
   # ========================
-  # ROOM DB + SERVICE (DEV HOT RELOAD)
+  # ROOM DB + SERVICE
   # ========================
   postgres-room:
     image: postgres:15
     ports:
-      - "55423:5432"
+      - "56423:5432"
     environment:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
@@ -104,7 +174,7 @@ services:
   room-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -116,26 +186,29 @@ services:
     depends_on:
       - postgres-room
       - rabbitmq
+      - eureka-server
+      - redis
+    mem_limit: 1152mb
     environment:
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
-      SEED_ENABLED: "true"
+      ROOM_SEED_ENABLED: "true"
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local-access-key}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local-secret-key}
-      AWS_REGION: ap-southeast-2
-      AWS_S3_BUCKET: ktpmbtl-s3-bucket
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
   # ========================
-  # BOOKING DB + SERVICE (DEV HOT RELOAD)
+  # BOOKING DB + SERVICE
   # ========================
   postgres-booking:
     image: postgres:15
     ports:
-      - "55424:5432"
+      - "56424:5432"
     environment:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
@@ -146,7 +219,7 @@ services:
   booking-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -158,21 +231,27 @@ services:
     depends_on:
       - postgres-booking
       - rabbitmq
+      - eureka-server
+    mem_limit: 1024mb
     environment:
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=384m"
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      ROOM_SEED_ENABLED: "true"
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      PAYMENT_SERVICE_URL: http://payment-service:8085
 
   # ========================
-  # PAYMENT DB + SERVICE (DEV HOT RELOAD)
+  # PAYMENT DB + SERVICE
   # ========================
   postgres-payment:
     image: postgres:15
     ports:
-      - "55425:5432"
+      - "56425:5432"
     environment:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
@@ -183,7 +262,7 @@ services:
   payment-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -195,27 +274,34 @@ services:
     depends_on:
       - postgres-payment
       - rabbitmq
+      - eureka-server
+    mem_limit: 1536mb
     environment:
+      MAVEN_OPTS: "-Xmx768m -XX:MaxMetaspaceSize=384m"
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
-      # ── VNPAY Sandbox credentials (từ vnpay_nodejs/config/default.json) ──
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://192.168.1.8:3000}/payment/confirm
       VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
       VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
       VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
-      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
-      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
+      VNP_RETURN_URL: ${VNP_RETURN_URL:-http://127.0.0.1:8085/payments/vnpay-return}
+      VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
+      MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-http://127.0.0.1:8085/payments/momo-return}
+      MOMO_IPN_URL: ${MOMO_IPN_URL:-http://127.0.0.1:8085/payments/momo-ipn}
+      MOMO_FRONTEND_RETURN_URL: ${MOMO_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
 
   # ========================
-  # NOTIFICATION DB + SERVICE (DEV HOT RELOAD)
+  # NOTIFICATION DB + SERVICE
   # ========================
   postgres-notification:
     image: postgres:15
     ports:
-      - "55426:5432"
+      - "56426:5432"
     environment:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres
@@ -226,7 +312,7 @@ services:
   notification-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: mvn -DskipTests spring-boot:run
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -238,13 +324,65 @@ services:
     depends_on:
       - postgres-notification
       - rabbitmq
+      - eureka-server
+    mem_limit: 1024mb
     environment:
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
+      EUREKA_URL: http://eureka-server:8761/eureka/
+
+  # ========================
+  # AI CHATBOT SERVICE
+  # ========================
+  ai-service:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:TieredStopAtLevel=1 -Xmx256m -Xms128m -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_AI:/app
+      - maven-repo:/root/.m2
+    depends_on:
+      - eureka-server
+    mem_limit: 1200mb
+    env_file:
+      - ./HotelSystem/.env
+    environment:
+      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+
+  # ========================
+  # API GATEWAY
+  # ========================
+  api-gateway:
+    image: maven:3.9-eclipse-temurin-17
+    working_dir: /app
+    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./HotelSystem_Backend/HotelSystem_GATEWAY:/app
+      - maven-repo:/root/.m2
+    ports:
+      - "8080:8080"
+    depends_on:
+      - eureka-server
+      - redis
+      - ai-service
+    mem_limit: 1024mb
+    environment:
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
   # ========================
   # FRONTEND (VITE HOT RELOAD)
@@ -252,29 +390,29 @@ services:
   frontend:
     image: node:20-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000 --strictPort"
     volumes:
       - ./HotelSystem:/app
       - frontend-node-modules:/app/node_modules
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     depends_on:
-      - auth-service
-      - user-service
-      - room-service
-      - booking-service
-      - payment-service
-      - notification-service
+      - api-gateway
+      - ai-service
+    mem_limit: 768mb
     environment:
       CHOKIDAR_USEPOLLING: "true"
+      NODE_OPTIONS: "--max-old-space-size=512"
       VITE_DOCKER: "true"
 
 volumes:
   pgadmin_data:
   auth_data:
+  user_data:
   room_data:
   booking_data:
   payment_data:
   notification_data:
+  redis_data:
   maven-repo:
   frontend-node-modules:

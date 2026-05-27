@@ -1,31 +1,38 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
+import { getManagementHomeByRole, normalizeRole } from '../../lib/roleRoute';
 
 interface ProtectedRouteProps {
   allowedRoles?: string[];
 }
 
+/**
+ * ProtectedRoute:
+ * - loading=false guaranteed by AuthLoader in App.tsx before this renders
+ * - If not authenticated → redirect to /login with current path as redirect param
+ * - If authenticated but wrong role → redirect to their own dashboard
+ */
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   const { user, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center">
-          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-          <p className="mt-4 text-gray-500 font-medium animate-pulse">Đang tải dữ liệu...</p>
-        </div>
-      </div>
-    );
-  }
+  // AuthLoader at App level should prevent loading=true from reaching here,
+  // but guard defensively just in case.
+  if (loading) return null;
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const redirectTo = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirectTo)}`} replace />;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/" replace />;
+  if (allowedRoles && user) {
+    const normalizedRole = normalizeRole(user.role);
+    if (!allowedRoles.includes(normalizedRole)) {
+      // Redirect to the correct home for their role instead of always '/'
+      const correctHome = getManagementHomeByRole(user.role);
+      return <Navigate to={correctHome} replace />;
+    }
   }
 
   return <Outlet />;

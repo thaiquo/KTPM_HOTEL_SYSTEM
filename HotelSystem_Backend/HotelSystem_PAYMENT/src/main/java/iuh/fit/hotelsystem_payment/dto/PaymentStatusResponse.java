@@ -1,16 +1,15 @@
 package iuh.fit.hotelsystem_payment.dto;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class PaymentStatusResponse {
+    private Long bookingId;
     private String status;
+    private Double totalAmount;
     private Double paidAmount;
-    private Double remainingAmount;
-
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-
-    public Double getPaidAmount() { return paidAmount; }
-    public void setPaidAmount(Double paidAmount) { this.paidAmount = paidAmount; }
-
-    public Double getRemainingAmount() { return remainingAmount; }
-    public void setRemainingAmount(Double remainingAmount) { this.remainingAmount = remainingAmount; }
 }

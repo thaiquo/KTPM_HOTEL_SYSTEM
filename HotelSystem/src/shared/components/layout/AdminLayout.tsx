@@ -1,6 +1,7 @@
 import React from 'react';
 import { HiOutlineUserGroup, HiOutlineOfficeBuilding, HiOutlineClock } from 'react-icons/hi';
 import DashboardLayout from './DashboardLayout';
+import StaffChatbot from '../../../features/ai-chatbot/components/StaffChatbot';
 
 const AdminLayout: React.FC = () => {
   const menuItems = [
@@ -32,6 +33,7 @@ const AdminLayout: React.FC = () => {
   ];
 
   return (
+    <>
     <DashboardLayout
       portalLabel="ADMIN PANEL"
       portalSubtitle="Quản trị hệ thống"
@@ -39,6 +41,8 @@ const AdminLayout: React.FC = () => {
       accentColorClass="bg-indigo-600"
       hoverAccentClass="hover:bg-indigo-600"
     />
+    <StaffChatbot variant="admin" />
+    </>
   );
 };
 

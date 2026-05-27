@@ -14,12 +14,12 @@ class CheckInOutServiceTest {
     private final CheckInOutService checkInOutService = new CheckInOutService();
 
     @Test
-    void earlyCheckinBefore7ChargesOneNight() {
+    void earlyCheckinBefore12ChargesHalfNight() {
         Booking booking = booking();
 
         double fee = checkInOutService.calculateEarlyCheckInFee(booking, checkinAt(6, 59));
 
-        assertEquals(1000000.0, fee);
+        assertEquals(500000.0, fee);
     }
 
     @Test
@@ -41,6 +41,27 @@ class CheckInOutServiceTest {
     }
 
     @Test
+    void checkoutBefore12IsFree() {
+        double fee = checkInOutService.calculateLateCheckOutFee(booking(), checkoutAt(11, 45));
+
+        assertEquals(0.0, fee);
+    }
+
+    @Test
+    void lateCheckoutAt12Charges20Percent() {
+        double fee = checkInOutService.calculateLateCheckOutFee(booking(), checkoutAt(12, 0));
+
+        assertEquals(200000.0, fee);
+    }
+
+    @Test
+    void lateCheckoutWithinFirst30MinutesAfter12Charges20Percent() {
+        double fee = checkInOutService.calculateLateCheckOutFee(booking(), checkoutAt(12, 15));
+
+        assertEquals(200000.0, fee);
+    }
+
+    @Test
     void lateCheckoutAfter12Before14Charges20Percent() {
         double fee = checkInOutService.calculateLateCheckOutFee(booking(), checkoutAt(13, 0));
 
@@ -55,10 +76,10 @@ class CheckInOutServiceTest {
     }
 
     @Test
-    void lateCheckoutAt18StillCharges50Percent() {
+    void lateCheckoutAt18ChargesOneNight() {
         double fee = checkInOutService.calculateLateCheckOutFee(booking(), checkoutAt(18, 0));
 
-        assertEquals(500000.0, fee);
+        assertEquals(1000000.0, fee);
     }
 
     @Test
