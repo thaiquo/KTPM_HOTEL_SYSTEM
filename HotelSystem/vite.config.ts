@@ -105,7 +105,7 @@ export default defineConfig(({ mode }) => {
     },
 
     server: {
-      host: isDocker ? '0.0.0.0' : '127.0.0.1',
+      host: '0.0.0.0',
       port: Number(process.env.VITE_PORT) || 3000,
       strictPort: true,
 
@@ -116,12 +116,14 @@ export default defineConfig(({ mode }) => {
       hmr: isDocker
         ? {
             protocol: isHttps ? 'wss' : 'ws',
-            host: publicAppUrl.hostname,
+            host: publicAppUrl.hostname || '127.0.0.1',
+            port: publicAppUrl.port ? Number(publicAppUrl.port) : 3000,
             clientPort: publicAppUrl.port ? Number(publicAppUrl.port) : 3000,
           }
         : {
             protocol: 'ws',
             host: '127.0.0.1',
+            port: 3000,
             clientPort: 3000,
           },
 

@@ -3,6 +3,8 @@ package iuh.fit.hotelsystem_booking.service;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.EarlyCheckoutRefundResult;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingItem;
+import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStay;
 import iuh.fit.hotelsystem_booking.entity.RatePlan;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 public class RefundCalculationService {
@@ -61,9 +64,9 @@ public class RefundCalculationService {
             return result;
         }
 
-        BigDecimal pricePerNight = nightlyReference;
+        BigDecimal pricePerNight = resolveRefundableUnusedRoomNightAmount(booking, stay, actualCheckoutAt, unusedNights);
         BigDecimal refundRate = BigDecimal.valueOf(BookingConstants.EARLY_CHECKOUT_REFUND_RATE);
-        BigDecimal refundAmount = BigDecimal.valueOf(unusedNights).multiply(pricePerNight).multiply(refundRate)
+        BigDecimal refundAmount = pricePerNight.multiply(refundRate)
                 .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal paidAmount = BigDecimal.valueOf(valueOrZero(booking.getPaidAmount()));
@@ -107,6 +110,13 @@ public class RefundCalculationService {
 
     private BigDecimal resolveEffectivePricePerNight(Booking booking, int totalNights) {
         double multiplier = booking.getPriceMultiplier() != null ? booking.getPriceMultiplier() : 1.0;
+        List<BookingItem> items = activeItems(booking);
+        if (!items.isEmpty()) {
+            return items.stream()
+                    .map(item -> BigDecimal.valueOf(item.getPriceSnapshot() != null ? item.getPriceSnapshot() : 0.0))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .multiply(BigDecimal.valueOf(multiplier));
+        }
         if (booking.getPricePerNight() != null) {
             return BigDecimal.valueOf(booking.getPricePerNight()).multiply(BigDecimal.valueOf(multiplier));
         }
@@ -114,6 +124,62 @@ public class RefundCalculationService {
             return BigDecimal.valueOf(booking.getFinalTotal() / totalNights);
         }
         return BigDecimal.ZERO;
+    }
+
+    private BigDecimal resolveRefundableUnusedRoomNightAmount(Booking booking, BookingStay stay,
+                                                             LocalDateTime actualCheckoutAt, int bookingUnusedNights) {
+        double multiplier = booking.getPriceMultiplier() != null ? booking.getPriceMultiplier() : 1.0;
+        List<BookingItem> items = activeItems(booking);
+        if (items.isEmpty()) {
+            return BigDecimal.valueOf(Math.max(0, bookingUnusedNights))
+                    .multiply(resolveEffectivePricePerNight(booking, resolveTotalNights(booking)));
+        }
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (BookingItem item : items) {
+            int itemTotalNights = resolveItemTotalNights(item, booking);
+            int itemUsedNights = Math.max(1, resolveItemUsedNights(item, booking, stay, actualCheckoutAt));
+            int itemUnusedNights = Math.max(0, itemTotalNights - Math.min(itemUsedNights, itemTotalNights));
+            BigDecimal nightly = BigDecimal.valueOf(item.getPriceSnapshot() != null ? item.getPriceSnapshot() : 0.0)
+                    .multiply(BigDecimal.valueOf(multiplier));
+            total = total.add(BigDecimal.valueOf(itemUnusedNights).multiply(nightly));
+        }
+        return total;
+    }
+
+    private List<BookingItem> activeItems(Booking booking) {
+        if (booking.getItems() == null) {
+            return List.of();
+        }
+        return booking.getItems().stream()
+                .filter(item -> item.getStatus() != BookingItemStatus.CANCELLED)
+                .toList();
+    }
+
+    private int resolveItemTotalNights(BookingItem item, Booking booking) {
+        if (item.getNights() != null && item.getNights() > 0) {
+            return item.getNights();
+        }
+        LocalDate in = item.getCheckIn() != null ? item.getCheckIn() : booking.getCheckIn();
+        LocalDate out = item.getCheckOut() != null ? item.getCheckOut() : booking.getCheckOut();
+        if (in != null && out != null) {
+            return (int) Math.max(ChronoUnit.DAYS.between(in, out), 0);
+        }
+        return resolveTotalNights(booking);
+    }
+
+    private int resolveItemUsedNights(BookingItem item, Booking booking, BookingStay stay, LocalDateTime actualCheckoutAt) {
+        LocalDate start = item.getCheckIn() != null ? item.getCheckIn() : booking.getCheckIn();
+        if (start == null && item.getActualCheckInAt() != null) {
+            start = item.getActualCheckInAt().toLocalDate();
+        }
+        if (start == null && stay != null && stay.getActualCheckInAt() != null) {
+            start = stay.getActualCheckInAt().toLocalDate();
+        }
+        if (start == null) {
+            return 1;
+        }
+        return (int) Math.max(ChronoUnit.DAYS.between(start, actualCheckoutAt.toLocalDate()), 0);
     }
 
     private double valueOrZero(Double value) {

@@ -12,6 +12,10 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     Optional<User> findByPhoneNumber(String phoneNumber);
+    List<User> findAllByEmailIgnoreCaseOrderByIdAsc(String email);
+    List<User> findAllByPhoneNumberOrderByIdAsc(String phoneNumber);
+    long countByEmailIgnoreCase(String email);
+    long countByPhoneNumber(String phoneNumber);
 
     @Query("""
             select count(u) > 0 from User u

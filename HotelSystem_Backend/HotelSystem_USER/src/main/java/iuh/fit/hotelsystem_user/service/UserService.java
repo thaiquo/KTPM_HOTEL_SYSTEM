@@ -69,11 +69,14 @@ public class UserService {
     public UserDto createEmployee(CreateEmployeeRequest request) {
         validateCreateRequest(request);
 
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase();
+        String normalizedPhone = request.getPhoneNumber().trim();
+
+        if (userRepository.countByEmailIgnoreCase(normalizedEmail) > 0) {
             throw new ResponseStatusException(CONFLICT, "Email đã tồn tại trong hệ thống");
         }
 
-        if (userRepository.findByPhoneNumber(request.getPhoneNumber()).isPresent()) {
+        if (userRepository.countByPhoneNumber(normalizedPhone) > 0) {
             throw new ResponseStatusException(CONFLICT, "Số điện thoại đã tồn tại trong hệ thống");
         }
 
@@ -82,9 +85,9 @@ public class UserService {
 
         User employee = new User();
         employee.setName(request.getName().trim());
-        employee.setEmail(request.getEmail().trim().toLowerCase());
+        employee.setEmail(normalizedEmail);
         employee.setPassword(passwordUtil.encode(request.getPassword()));
-        employee.setPhoneNumber(request.getPhoneNumber().trim());
+        employee.setPhoneNumber(normalizedPhone);
         employee.setDateOfBirth(request.getDateOfBirth());
         employee.setGender(request.getGender());
         employee.setAddress(request.getAddress());

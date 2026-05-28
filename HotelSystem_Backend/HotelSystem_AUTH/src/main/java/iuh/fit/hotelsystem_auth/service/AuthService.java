@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -162,7 +163,11 @@ public class AuthService {
 
         String accessToken = jwtUtil.generateToken(userId, email, role);
 
-        RefreshToken refreshToken = refreshTokenRepo.findByUserId(userId).orElse(null);
+        List<RefreshToken> refreshTokens = refreshTokenRepo.findAllByUserIdOrderByExpiryDateDescIdDesc(userId);
+        RefreshToken refreshToken = refreshTokens.isEmpty() ? null : refreshTokens.get(0);
+        if (refreshTokens.size() > 1) {
+            refreshTokens.stream().skip(1).forEach(refreshTokenRepo::delete);
+        }
 
         if (refreshToken != null && refreshToken.getExpiryDate().isBefore(Instant.now())) {
             refreshTokenRepo.delete(refreshToken);

@@ -405,6 +405,7 @@ public class CheckoutService {
             try {
                 BigDecimal roomTotal = money(booking.getFinalTotal() != null ? booking.getFinalTotal() : booking.getTotalPrice());
                 BigDecimal actualRoomCharge = calculateActualRoomCharge(roomTotal, rawRefund);
+                BigDecimal actualRevenue = actualRoomCharge.add(fee).add(serviceTotal);
                 java.util.Map<String, Object> payload = new java.util.HashMap<>();
                 payload.put("roomTotal", roomTotal);
                 payload.put("actualRoomCharge", actualRoomCharge);
@@ -415,6 +416,12 @@ public class CheckoutService {
                 payload.put("earlyCheckoutAdjustment", rawRefund);
                 payload.put("refundSettlementAmount", refundSettlementAmount);
                 payload.put("grandTotal", invoiceTotal);
+                payload.put("totalOriginalAmount", roomTotal);
+                payload.put("totalActualRevenue", actualRevenue);
+                payload.put("totalEarlyCheckoutRefund", rawRefund);
+                payload.put("alreadyRefundedAmount", BigDecimal.ZERO);
+                payload.put("additionalRefundAmount", refundSettlementAmount);
+                payload.put("additionalChargeAmount", amountDue);
                 payload.put("remainingBalance", amountDue);
                 if (serviceLineRepository != null) {
                     payload.put("serviceLines", toInvoiceServiceLines(serviceLineRepository.findByBookingId(bookingId)));
@@ -541,6 +548,12 @@ public class CheckoutService {
                 payload.put("earlyCheckoutAdjustment", refundAmount);
                 payload.put("refundSettlementAmount", refundSettlementAmount);
                 payload.put("grandTotal", amount);
+                payload.put("totalOriginalAmount", roomTotal);
+                payload.put("totalActualRevenue", amount);
+                payload.put("totalEarlyCheckoutRefund", refundAmount);
+                payload.put("alreadyRefundedAmount", BigDecimal.ZERO);
+                payload.put("additionalRefundAmount", refundSettlementAmount);
+                payload.put("additionalChargeAmount", amountDue);
                 payload.put("remainingBalance", amountDue);
                 payload.put("serviceLines", toInvoiceServiceLines(lines));
                 if (bookingInvoiceService != null) {

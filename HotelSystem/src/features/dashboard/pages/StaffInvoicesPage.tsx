@@ -50,6 +50,19 @@ const itemTypeLabel = (type?: string) => {
 const normalizeInvoiceLines = (lines: any): NormalizedInvoiceLine[] => {
   if (!lines || typeof lines !== 'object') return [];
   const result: NormalizedInvoiceLine[] = [];
+  const push = (key: string, label: string, amount: number) => {
+    if (amount !== 0) result.push({ key, roomKey: 'summary', roomName: 'Tong ket', label, amount });
+  };
+  const appendSettlementLines = () => {
+    const originalAmount = Number(lines.totalOriginalAmount ?? lines.roomTotal ?? 0);
+    const actualRevenue = Number(lines.totalActualRevenue ?? lines.actualRoomCharge ?? lines.grandTotal ?? 0);
+    const earlyRefund = Number(lines.totalEarlyCheckoutRefund ?? lines.earlyCheckoutAdjustment ?? 0);
+    const paidAmount = Number(lines.totalPaidAmount ?? lines.paidAmount ?? 0);
+    if (!Array.isArray(lines.invoiceItems)) push('roomTotal', 'Tien phong goc', originalAmount);
+    push('earlyCheckoutRefund', 'Hoan tra checkout som', earlyRefund > 0 ? -earlyRefund : 0);
+    push('actualRevenue', 'Doanh thu thuc thu', actualRevenue);
+    push('paidAmount', 'Da thanh toan/coc', paidAmount > 0 ? -paidAmount : 0);
+  };
   if (Array.isArray(lines.invoiceItems)) {
     lines.invoiceItems.forEach((line: any, index: number) => {
       const amount = Number(line.amount || line.lineTotal || 0);
@@ -63,10 +76,11 @@ const normalizeInvoiceLines = (lines: any): NormalizedInvoiceLine[] => {
         amount,
       });
     });
+    appendSettlementLines();
     if (result.length > 0) return result;
   }
 
-  const push = (key: string, label: string, amount: number) => {
+  const pushDetail = (key: string, label: string, amount: number) => {
     if (amount !== 0) result.push({ key, roomKey: 'unknown', roomName: 'Chi tiết', label, amount });
   };
 
@@ -707,14 +721,15 @@ const StaffInvoicesPage: React.FC = () => {
 
                         <div className="flex items-center justify-between border-t border-slate-200 pt-3">
                           <div className="text-sm font-black text-slate-950">Tổng hóa đơn</div>
-                          <div className="text-xl font-black text-slate-950">{formatCurrency(selectedInvoice.amount || 0)}</div>
+                          <div className="text-xl font-black text-slate-950">{formatCurrency(Number((selectedInvoice.lines as any)?.totalActualRevenue ?? (selectedInvoice.lines as any)?.grandTotal ?? selectedInvoice.amount ?? 0))}</div>
                         </div>
 
                         {/* Settlement box */}
                         {(() => {
                           const lines = selectedInvoice.lines as any;
-                          const finalAmt = Number(lines?.remainingBalance ?? lines?.grandTotal ?? 0);
-                          const refundAmt = Number(lines?.refundSettlementAmount ?? 0);
+                          const finalAmt = Number(lines?.additionalChargeAmount ?? lines?.remainingBalance ?? 0);
+                          const refundAmt = Number(lines?.additionalRefundAmount ?? lines?.refundSettlementAmount ?? 0);
+                          const totalEarlyRefund = Number(lines?.totalEarlyCheckoutRefund ?? lines?.earlyCheckoutAdjustment ?? 0);
                           if (refundAmt > 0) {
                             return (
                               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 flex items-center justify-between">
@@ -728,6 +743,14 @@ const StaffInvoicesPage: React.FC = () => {
                               <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 flex items-center justify-between">
                                 <span>Còn phải thanh toán</span>
                                 <span className="text-lg font-black text-rose-700">{formatCurrency(finalAmt)}</span>
+                              </div>
+                            );
+                          }
+                          if (totalEarlyRefund > 0) {
+                            return (
+                              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 flex items-center justify-between">
+                                <span>Hoan checkout som da ghi nhan</span>
+                                <span className="text-lg font-black text-emerald-700">{formatCurrency(totalEarlyRefund)}</span>
                               </div>
                             );
                           }

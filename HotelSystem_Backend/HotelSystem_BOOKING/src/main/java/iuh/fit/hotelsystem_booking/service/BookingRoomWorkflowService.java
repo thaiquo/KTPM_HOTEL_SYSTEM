@@ -9,6 +9,7 @@ import iuh.fit.hotelsystem_booking.dto.BookingRoomBatchRequest;
 import iuh.fit.hotelsystem_booking.dto.BookingRoomCheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.BookingRoomExtraFeeRequest;
 import iuh.fit.hotelsystem_booking.dto.CheckInRequest;
+import iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto;
 import iuh.fit.hotelsystem_booking.dto.Room;
 import iuh.fit.hotelsystem_booking.dto.RoomStatusUpdateDto;
 import iuh.fit.hotelsystem_booking.entity.Booking;
@@ -20,6 +21,7 @@ import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingGuestRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingItemRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,8 @@ public class BookingRoomWorkflowService {
     private final BookingRepository bookingRepository;
     private final BookingGuestRepository bookingGuestRepository;
     private final BookingInvoiceService bookingInvoiceService;
+    private final RefundCalculationService refundCalculationService;
+    private final RefundTransactionRepository refundTransactionRepository;
     private final RabbitTemplate rabbitTemplate;
     private final RoomServiceClient roomServiceClient;
 
@@ -49,12 +53,16 @@ public class BookingRoomWorkflowService {
                                       BookingRepository bookingRepository,
                                       BookingGuestRepository bookingGuestRepository,
                                       BookingInvoiceService bookingInvoiceService,
+                                      RefundCalculationService refundCalculationService,
+                                      RefundTransactionRepository refundTransactionRepository,
                                       RabbitTemplate rabbitTemplate,
                                       RoomServiceClient roomServiceClient) {
         this.bookingItemRepository = bookingItemRepository;
         this.bookingRepository = bookingRepository;
         this.bookingGuestRepository = bookingGuestRepository;
         this.bookingInvoiceService = bookingInvoiceService;
+        this.refundCalculationService = refundCalculationService;
+        this.refundTransactionRepository = refundTransactionRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.roomServiceClient = roomServiceClient;
     }
@@ -159,7 +167,16 @@ public class BookingRoomWorkflowService {
         BigDecimal totalAmount = allCheckedOutRooms.stream().map(BookingItem::getFinalAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
         
         BigDecimal paidAmount = BigDecimal.valueOf(booking != null && booking.getPaidAmount() != null ? booking.getPaidAmount() : 0.0);
-        BigDecimal amountToPay = totalAmount.subtract(paidAmount);
+        BigDecimal originalRoomAmount = booking != null
+                ? BigDecimal.valueOf(booking.getFinalTotal() != null ? booking.getFinalTotal() : booking.getTotalPrice() != null ? booking.getTotalPrice() : 0.0)
+                : totalRoomCharge;
+        BigDecimal totalEarlyCheckoutRefund = calculateTotalEarlyCheckoutRefund(booking);
+        BigDecimal alreadyRefundedAmount = resolveAlreadyRecordedEarlyCheckoutRefund(bookingId);
+        BigDecimal additionalRefundAmount = totalEarlyCheckoutRefund.subtract(alreadyRefundedAmount).max(BigDecimal.ZERO);
+        BigDecimal actualRoomRevenue = originalRoomAmount.subtract(totalEarlyCheckoutRefund).max(BigDecimal.ZERO);
+        BigDecimal totalActualRevenue = actualRoomRevenue.add(totalServiceCharge).add(totalDamageFee).add(totalSurcharge);
+        BigDecimal amountToPay = totalActualRevenue.subtract(paidAmount).max(BigDecimal.ZERO);
+        BigDecimal refundToCustomer = paidAmount.subtract(totalActualRevenue).max(BigDecimal.ZERO);
         
         Map<Long, Room> roomSnapshot = loadRoomSnapshot(allCheckedOutRooms);
         List<Map<String, Object>> items = allCheckedOutRooms.stream().flatMap(room -> invoiceItems(room, roomSnapshot.get(room.getRoomId())).stream()).toList();
@@ -170,8 +187,20 @@ public class BookingRoomWorkflowService {
         lines.put("totalServiceCharge", totalServiceCharge);
         lines.put("totalDamageFee", totalDamageFee);
         lines.put("totalSurcharge", totalSurcharge);
-        lines.put("totalAmount", totalAmount);
+        lines.put("totalAmount", totalActualRevenue);
+        lines.put("roomTotal", originalRoomAmount);
+        lines.put("actualRoomCharge", actualRoomRevenue);
+        lines.put("grandTotal", totalActualRevenue);
         lines.put("paidAmount", paidAmount);
+        lines.put("totalOriginalAmount", originalRoomAmount);
+        lines.put("totalActualRevenue", totalActualRevenue);
+        lines.put("totalEarlyCheckoutRefund", totalEarlyCheckoutRefund);
+        lines.put("earlyCheckoutAdjustment", totalEarlyCheckoutRefund);
+        lines.put("alreadyRefundedAmount", alreadyRefundedAmount);
+        lines.put("additionalRefundAmount", additionalRefundAmount);
+        lines.put("refundSettlementAmount", refundToCustomer);
+        lines.put("additionalChargeAmount", amountToPay);
+        lines.put("remainingBalance", amountToPay);
         lines.put("amountToPay", amountToPay);
         lines.put("paymentMethod", request != null ? request.getPaymentMethod() : null);
         lines.put("paymentStatus", amountToPay.compareTo(BigDecimal.ZERO) <= 0 ? "PAID" : "PARTIAL");
@@ -180,9 +209,58 @@ public class BookingRoomWorkflowService {
         lines.put("createdByStaffId", request != null ? request.getStaffId() : null);
         lines.put("roomCount", allCheckedOutRooms.size());
         
-        var invoice = bookingInvoiceService.saveCheckoutInvoice(bookingId, totalAmount, booking != null ? booking.getCurrency() : "VND", lines);
+        var invoice = bookingInvoiceService.saveCheckoutInvoice(bookingId, totalActualRevenue, booking != null ? booking.getCurrency() : "VND", lines);
         result.setInvoiceId(invoice.getId());
         result.setInvoiceCode("INV-" + invoice.getId());
+    }
+
+    private BigDecimal calculateTotalEarlyCheckoutRefund(Booking booking) {
+        if (booking == null || booking.getCheckOut() == null || booking.getItems() == null) {
+            return BigDecimal.ZERO;
+        }
+        LocalDateTime firstActualCheckout = booking.getItems().stream()
+                .map(BookingItem::getActualCheckOutAt)
+                .filter(Objects::nonNull)
+                .min(LocalDateTime::compareTo)
+                .orElse(null);
+        if (firstActualCheckout == null || !firstActualCheckout.toLocalDate().isBefore(booking.getCheckOut())) {
+            return BigDecimal.ZERO;
+        }
+        return refundCalculationService.calculateEarlyCheckoutRefund(booking, null, firstActualCheckout).getRefundAmount();
+    }
+
+    private BigDecimal resolveAlreadyRecordedEarlyCheckoutRefund(Long bookingId) {
+        BigDecimal fromRefundTransaction = refundTransactionRepository
+                .findFirstByBookingIdAndReasonOrderByCreatedAtDesc(bookingId, "EARLY_CHECKOUT_REFUND")
+                .map(refund -> BigDecimal.valueOf(refund.getRefundAmount() != null ? refund.getRefundAmount() : 0.0))
+                .orElse(BigDecimal.ZERO);
+        if (fromRefundTransaction.compareTo(BigDecimal.ZERO) > 0) {
+            return fromRefundTransaction;
+        }
+        try {
+            BookingInvoiceDto previous = bookingInvoiceService.getLatestInvoice(bookingId);
+            if (previous.getLines() instanceof Map<?, ?> lines) {
+                return decimal(lines.get("totalEarlyCheckoutRefund"), lines.get("earlyCheckoutAdjustment"));
+            }
+        } catch (RuntimeException ignored) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal decimal(Object primary, Object fallback) {
+        Object value = primary != null ? primary : fallback;
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return new BigDecimal(text);
+            } catch (NumberFormatException ignored) {
+                return BigDecimal.ZERO;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     private BigDecimal extraSurcharge(BookingRoomBatchRequest request, Long bookingRoomId) {

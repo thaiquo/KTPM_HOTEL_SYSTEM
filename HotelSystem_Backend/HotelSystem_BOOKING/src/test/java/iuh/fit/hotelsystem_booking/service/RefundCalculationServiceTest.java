@@ -3,6 +3,7 @@ package iuh.fit.hotelsystem_booking.service;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.EarlyCheckoutRefundResult;
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingItem;
 import iuh.fit.hotelsystem_booking.entity.BookingStay;
 import iuh.fit.hotelsystem_booking.entity.RatePlan;
 import org.junit.jupiter.api.Test;
@@ -67,6 +68,23 @@ class RefundCalculationServiceTest {
     }
 
     @Test
+    void twoRoomsTwoNightsOneUsed_refundsAllUnusedRoomNights() {
+        Booking b = baseBooking(LocalDate.of(2026, 5, 27), LocalDate.of(2026, 5, 29), 2, 800_000.0);
+        b.setRatePlan(RatePlan.FLEXIBLE);
+        b.setPaidAmount(3_200_000.0);
+        b.addItem(item(202L, LocalDate.of(2026, 5, 27), LocalDate.of(2026, 5, 29), 2, 800_000.0));
+        b.addItem(item(301L, LocalDate.of(2026, 5, 27), LocalDate.of(2026, 5, 29), 2, 800_000.0));
+        BookingStay stay = new BookingStay();
+        stay.setActualCheckInAt(LocalDateTime.of(2026, 5, 27, 14, 0));
+
+        EarlyCheckoutRefundResult r = service.calculateEarlyCheckoutRefund(b, stay, LocalDateTime.of(2026, 5, 28, 10, 0));
+
+        assertTrue(r.isEarlyCheckout());
+        assertEquals(1, r.getUnusedNights());
+        assertEquals(0, r.getRefundAmount().compareTo(new BigDecimal("1280000.00")));
+    }
+
+    @Test
     void nonRefundable_alwaysZeroRefund() {
         Booking b = baseBooking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 15), 14, 1_000_000.0);
         b.setRatePlan(RatePlan.NON_REFUNDABLE);
@@ -89,5 +107,15 @@ class RefundCalculationServiceTest {
         booking.setPriceMultiplier(1.0);
         booking.setFinalTotal(ppn * nights);
         return booking;
+    }
+
+    private static BookingItem item(Long roomId, LocalDate in, LocalDate out, int nights, double price) {
+        BookingItem item = new BookingItem();
+        item.setRoomId(roomId);
+        item.setCheckIn(in);
+        item.setCheckOut(out);
+        item.setNights(nights);
+        item.setPriceSnapshot(price);
+        return item;
     }
 }

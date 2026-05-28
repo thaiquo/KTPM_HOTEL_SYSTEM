@@ -375,23 +375,30 @@ function FeaturedRooms() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Chỉ fetch nhẹ 3 item đầu để tránh timeout từ backend
+  // Đợi 3 giây sau khi mount mới bắt đầu fetch,
+  // tránh block các request tải JS/CSS của Vite ngay lúc page load
   useEffect(() => {
     let active = true;
     const fetchMinimal = async () => {
       try {
         const fullList = await roomApi.getAll();
         if (!active) return;
-        const top3 = fullList.slice(0, 3);
-        setRooms(top3);
-      } catch (e) {
-        console.error(e);
+        setRooms(fullList.slice(0, 3));
+      } catch {
+        // Silent fail: nếu room-service chưa ready thì bỏ qua, không block UI
       } finally {
-        if(active) setLoading(false);
+        if (active) setLoading(false);
       }
     };
-    fetchMinimal();
-    return () => { active = false };
+
+    const delay = window.setTimeout(() => {
+      if (active) fetchMinimal();
+    }, 3000);
+
+    return () => {
+      active = false;
+      window.clearTimeout(delay);
+    };
   }, []);
 
   if (loading) {

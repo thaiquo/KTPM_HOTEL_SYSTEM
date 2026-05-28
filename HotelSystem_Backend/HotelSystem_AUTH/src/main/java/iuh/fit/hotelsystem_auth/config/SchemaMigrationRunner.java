@@ -43,6 +43,20 @@ public class SchemaMigrationRunner implements CommandLineRunner {
                 """);
         }
 
+        if (tableExists("refresh_tokens")) {
+            jdbcTemplate.execute("""
+                    delete from refresh_tokens r
+                    using refresh_tokens d
+                    where r.id < d.id
+                      and r.user_id = d.user_id
+                    """);
+
+            jdbcTemplate.execute("""
+                    create unique index if not exists ux_refresh_tokens_user_id
+                    on refresh_tokens (user_id)
+                    """);
+        }
+
         jdbcTemplate.execute("""
                 DO $$
                 BEGIN

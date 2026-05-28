@@ -234,14 +234,17 @@ export default function RoomsPage() {
   const [activeFilters,  setActiveFilters]  = useState<string[]>([]);
   const [sort,           setSort]           = useState('price_asc');
 
-  // ── On mount: load room types + restore cache ──────────
+  // ── On mount: load room types (delayed 2s) + restore cache ──────────
   useEffect(() => {
-    roomApi.getRoomTypes().then(setRoomTypes).catch(console.error);
+    // Delay nhẹ để tránh block Vite khi room-service chưa ready
+    const typeTimer = window.setTimeout(() => {
+      roomApi.getRoomTypes().then(setRoomTypes).catch(() => undefined);
+    }, 2000);
 
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
-        const { rooms: r, ci, co, g, t, activeF, sPattern, pg, tPages, tElems } = JSON.parse(cached);
+        const { rooms: r, ci, co, g, t: typeId, activeF, sPattern, pg, tPages, tElems } = JSON.parse(cached);
         if (ci && co && r) {
           setRooms(r);
           setRoomLookup(Object.fromEntries((r as Room[]).map((rm) => [rm.id, rm.roomNumber])));
@@ -249,7 +252,7 @@ export default function RoomsPage() {
           setCheckIn(ci);
           setCheckOut(co);
           setGuests(g || 2);
-          setTypeFilter(t || '');
+          setTypeFilter(typeId || '');
           setActiveFilters(activeF || []);
           setSort(sPattern || 'price_asc');
           setPage(pg || 1);
@@ -258,6 +261,8 @@ export default function RoomsPage() {
         }
       } catch { /* ignore bad cache */ }
     }
+
+    return () => window.clearTimeout(typeTimer);
   }, []);
 
   // ── Core search function — called on button press or page change ──
@@ -334,8 +339,9 @@ export default function RoomsPage() {
 
     } catch (err) {
       console.error(err);
+      // Giữ searched=true để không làm mất dữ liệu cũ trên UI khi timeout/lỗi
+      // Chỉ hiển thị thông báo lỗi, không xóa danh sách phòng đang hiển thị
       setError('Không thể tải danh sách phòng. Vui lòng thử lại.');
-      setSearched(false);
     } finally {
       setLoading(false);
     }
@@ -479,7 +485,7 @@ export default function RoomsPage() {
             className="py-24 text-center">
             <div className="text-6xl mb-4">🏨</div>
             <h2 className="text-2xl font-black text-[#141414]">Tìm phòng phù hợp với bạn</h2>
-            <p className="mt-2 text-[#888]">Chọn ngày nhận, trả phòng và nhấn Tìm để xem danh sách phòng trống.</p>
+            <p className="mt-2 text-[#888]">Vui lòng nhập điều kiện tìm kiếm để xem danh sách phòng.</p>
           </motion.div>
         )}
 

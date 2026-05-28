@@ -27,7 +27,8 @@ public class DataSeeder {
             Role customerRole = roleRepo.findByName(RoleName.CUSTOMER)
                     .orElseGet(() -> roleRepo.save(new Role(RoleName.CUSTOMER)));
 
-            if (userRepo.findByEmail("tanthinh@gmail.com").isEmpty()) {
+            if (userRepo.countByEmailIgnoreCase("tanthinh@gmail.com") == 0
+                    && userRepo.countByPhoneNumber("0901234567") == 0) {
                 User admin = new User();
                 admin.setEmail("tanthinh@gmail.com");
                 admin.setPassword(passwordUtil.encode("123456"));
@@ -38,7 +39,8 @@ public class DataSeeder {
                 userRepo.save(admin);
             }
 
-            if (userRepo.findByEmail("quocthai@gmail.com").isEmpty()) {
+            if (userRepo.countByEmailIgnoreCase("quocthai@gmail.com") == 0
+                    && userRepo.countByPhoneNumber("0902345678") == 0) {
                 User staff1 = new User();
                 staff1.setEmail("quocthai@gmail.com");
                 staff1.setPassword(passwordUtil.encode("123456"));
@@ -49,7 +51,8 @@ public class DataSeeder {
                 userRepo.save(staff1);
             }
 
-            if (userRepo.findByEmail("vansang@gmail.com").isEmpty()) {
+            if (userRepo.countByEmailIgnoreCase("vansang@gmail.com") == 0
+                    && userRepo.countByPhoneNumber("0903456789") == 0) {
                 User staff2 = new User();
                 staff2.setEmail("vansang@gmail.com");
                 staff2.setPassword(passwordUtil.encode("123456"));
@@ -74,7 +77,8 @@ public class DataSeeder {
             );
 
             for (CustomerSeed customer : customers) {
-                if (userRepo.findByEmail(customer.email()).isEmpty()) {
+                if (userRepo.countByEmailIgnoreCase(customer.email()) == 0
+                        && userRepo.countByPhoneNumber(customer.phoneNumber()) == 0) {
                     User user = new User();
                     user.setEmail(customer.email());
                     user.setPassword(passwordUtil.encode("123456"));
