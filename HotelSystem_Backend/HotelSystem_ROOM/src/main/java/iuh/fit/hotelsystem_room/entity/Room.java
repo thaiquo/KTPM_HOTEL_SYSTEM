@@ -33,6 +33,9 @@ public class Room {
     @Column(nullable = false)
     private RoomStatus status;
 
+    @Column(name = "actual_capacity", nullable = false)
+    private Integer actualCapacity;
+
     @Column(name = "area_m2")
     private Double areaM2;
 
@@ -74,9 +77,7 @@ public class Room {
     @Column(name = "maintenance_status")
     private MaintenanceStatus maintenanceStatus;
 
-    // 👉 cấu hình giường (QUAN TRỌNG)
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    private List<Bed> beds;
+    // giường được cấu hình qua bedOverrides (dùng BedType)
 
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @org.hibernate.annotations.BatchSize(size = 10)

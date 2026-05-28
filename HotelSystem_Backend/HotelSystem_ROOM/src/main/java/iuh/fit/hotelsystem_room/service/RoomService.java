@@ -89,6 +89,7 @@ public class RoomService {
             room.setRoomNumber(roomDetails.getRoomNumber());
             room.setRoomType(roomDetails.getRoomType());
             room.setStatus(roomDetails.getStatus());
+            room.setActualCapacity(roomDetails.getActualCapacity());
             room.setFloorNumber(roomDetails.getFloorNumber());
             room.setAreaM2(roomDetails.getAreaM2());
             room.setViewType(roomDetails.getViewType());
