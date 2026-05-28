@@ -38,6 +38,39 @@ export interface UpdateEmployeePayload {
   active?: boolean;
 }
 
+export interface CustomerBackend {
+  id: number;
+  email: string;
+  phoneNumber: string;
+  name: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  role?: string;
+  active?: boolean;
+}
+
+export interface CreateCustomerPayload {
+  name: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
+export interface UpdateCustomerPayload {
+  name: string;
+  email: string;
+  phoneNumber: string;
+  dateOfBirth?: string;
+  gender?: boolean;
+  address?: string;
+  active?: boolean;
+}
+
 type RoomAmenityBackend = {
   id: number;
   amenity: {
@@ -539,7 +572,19 @@ const mapRoom = (room: RoomBackend): Room => {
     id: String(room.id),
     name: `Phòng ${room.roomNumber}`,
     roomNumber: room.roomNumber,
+    type: room.roomType.type,
+    price: room.roomType.basePrice,
+    maxGuests: capacity,
     maxCapacity: capacity,
+    images: images.map(img => img.imageUrl) || [],
+    amenities: amenities,
+    description: room.roomType.description,
+    available: room.status === 'AVAILABLE',
+    floor: floorNumber,
+    floorNumber: floorNumber,
+    floorLevel: floorLevel,
+    bedType: beds?.map(b => `${b.quantity} ${b.type}`).join(', ') || 'Chưa cấu hình',
+    beds: beds,
     viewType: room.viewType || 'City View',
     areaM2: room.areaM2 || 0,
     hasBalcony: !!room.hasBalcony,
@@ -548,9 +593,7 @@ const mapRoom = (room: RoomBackend): Room => {
     isAccessible: !!room.isAccessible,
     isConnecting: !!room.isConnecting,
     connectedRoomId: room.connectedRoomId,
-    floorNumber,
-    floorLevel,
-    status: room.status,
+    status: room.status as Room['status'],
     maintenanceStatus: room.maintenanceStatus || 'OK',
     roomType: {
       id: String(room.roomType.id),
@@ -559,11 +602,10 @@ const mapRoom = (room: RoomBackend): Room => {
       maxCapacity: room.roomType.maxCapacity,
       defaultCapacity: room.roomType.defaultCapacity,
       description: room.roomType.description,
-      images,
+      images: images,
       bedConfigs: bedConfigs as any,
     },
-    beds,
-    amenities,
+    note: room.note,
   };
 };
 
@@ -1803,6 +1845,50 @@ export const employeeApi = {
     }),
 
   remove: (employeeId: number) => userHttp.delete(`/api/users/employees/${employeeId}`),
+};
+
+export const customerApi = {
+  getAll: (params?: { keyword?: string; active?: boolean }) =>
+    userHttp.get<CustomerBackend[]>('/api/users/customers', { params }),
+
+  create: (payload: CreateCustomerPayload) =>
+    userHttp.post<CustomerBackend>('/api/users/customers', payload),
+
+  update: (customerId: number, payload: UpdateCustomerPayload) =>
+    userHttp.put<CustomerBackend>(`/api/users/customers/${customerId}`, payload),
+
+  updateStatus: (customerId: number, active: boolean) =>
+    userHttp.patch<CustomerBackend>(`/api/users/customers/${customerId}/status`, null, {
+      params: { active },
+    }),
+};
+
+export const shiftApi = {
+  getAll: () => userHttp.get<any[]>('/api/shifts'),
+
+  getScheduleByWeek: (weekStart: string) =>
+    userHttp.get<any[]>('/api/shifts/schedule', { params: { weekStart } }),
+
+  saveSchedule: (data: any) =>
+    userHttp.post<any>('/api/shifts/schedule/save', data),
+
+  copyWeek: (data: any) =>
+    userHttp.post<any>('/api/shifts/schedule/copy-week', data),
+
+  replaceShift: (scheduleId: number, data: any) =>
+    userHttp.patch<any>(`/api/shifts/schedule/${scheduleId}/replace`, data),
+
+  checkin: (data: any) =>
+    userHttp.post<any>('/api/shifts/checkin', data),
+
+  checkout: (data: any) =>
+    userHttp.post<any>('/api/shifts/checkout', data),
+
+  getDashboard: (date: string) =>
+    userHttp.get<any>('/api/shifts/dashboard', { params: { date } }),
+
+  getCheckinHistory: () =>
+    userHttp.get<any[]>('/api/shifts/checkin-history'),
 };
 
 export default api;

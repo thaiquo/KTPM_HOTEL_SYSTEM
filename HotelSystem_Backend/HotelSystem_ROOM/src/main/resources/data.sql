@@ -127,6 +127,12 @@ INSERT INTO amenities (id, code, name, category, is_chargeable, icon) VALUES
 -- 5. ROOMS (42 phòng | tầng 2-9 | 5-6 phòng/tầng)
 -- ============================================================
 
+ALTER TABLE rooms ALTER COLUMN actual_capacity DROP NOT NULL;
+ALTER TABLE rooms ALTER COLUMN floor DROP NOT NULL;
+ALTER TABLE rooms DROP CONSTRAINT IF EXISTS rooms_status_check;
+ALTER TABLE rooms ADD CONSTRAINT rooms_status_check
+CHECK (status IN ('AVAILABLE', 'OCCUPIED', 'RESERVED', 'CLEANING', 'MAINTENANCE', 'OUT_OF_SERVICE', 'BLOCKED'));
+
 INSERT INTO rooms (
   id, room_number, room_type_id,
   status, area_m2, view_type,
@@ -193,6 +199,18 @@ INSERT INTO rooms (
 -- TẦNG 9 | SUITE (2 phòng - Penthouse) | floor_level = TOP
 (38, '901', 5, 'AVAILABLE',    95, 'River View',  TRUE,  TRUE,  'NON_SMOKING', FALSE, FALSE, NULL, 9, 'TOP',  NOW() - INTERVAL '5 hours',  NOW() - INTERVAL '4 days',  'OK'),
 (39, '902', 5, 'OCCUPIED',    110, 'City View',   TRUE,  TRUE,  'NON_SMOKING', FALSE, FALSE, NULL, 9, 'TOP',  NOW() - INTERVAL '3 days',   NOW() - INTERVAL '6 days',  'OK');
+
+UPDATE rooms r
+SET actual_capacity = rt.max_capacity
+FROM room_types rt
+WHERE r.room_type_id = rt.id
+  AND r.actual_capacity IS NULL;
+
+UPDATE rooms
+SET floor = floor_number
+WHERE floor IS NULL;
+
+ALTER TABLE rooms ALTER COLUMN actual_capacity SET NOT NULL;
 
 
 -- ============================================================

@@ -1,6 +1,8 @@
 package iuh.fit.hotelsystem_user.service;
 
+import iuh.fit.hotelsystem_user.dto.request.CreateCustomerRequest;
 import iuh.fit.hotelsystem_user.dto.request.CreateEmployeeRequest;
+import iuh.fit.hotelsystem_user.dto.request.UpdateCustomerRequest;
 import iuh.fit.hotelsystem_user.dto.request.UpdateEmployeeRequest;
 import iuh.fit.hotelsystem_user.dto.response.UserDto;
 import iuh.fit.hotelsystem_user.entity.Role;
@@ -27,8 +29,7 @@ public class UserService {
     public UserService(
             UserRepository userRepository,
             RoleRepository roleRepository,
-            PasswordUtil passwordUtil
-    ) {
+            PasswordUtil passwordUtil) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordUtil = passwordUtil;
@@ -60,6 +61,13 @@ public class UserService {
 
     public List<UserDto> getEmployees(String keyword, Boolean active) {
         return userRepository.searchEmployees(RoleName.STAFF, keyword, active)
+                .stream()
+                .map(UserDto::new)
+                .toList();
+    }
+
+    public List<UserDto> getCustomers(String keyword, Boolean active) {
+        return userRepository.searchEmployees(RoleName.CUSTOMER, keyword, active)
                 .stream()
                 .map(UserDto::new)
                 .toList();
@@ -98,6 +106,35 @@ public class UserService {
     }
 
     @Transactional
+    public UserDto createCustomer(CreateCustomerRequest request) {
+        validateCreateCustomerRequest(request);
+
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new ResponseStatusException(CONFLICT, "Email đã tồn tại trong hệ thống");
+        }
+
+        if (userRepository.findByPhoneNumber(request.getPhoneNumber()).isPresent()) {
+            throw new ResponseStatusException(CONFLICT, "Số điện thoại đã tồn tại trong hệ thống");
+        }
+
+        Role customerRole = roleRepository.findByName(RoleName.CUSTOMER)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Không tìm thấy role CUSTOMER"));
+
+        User customer = new User();
+        customer.setName(request.getName().trim());
+        customer.setEmail(request.getEmail().trim().toLowerCase());
+        customer.setPassword(passwordUtil.encode(request.getPassword()));
+        customer.setPhoneNumber(request.getPhoneNumber().trim());
+        customer.setDateOfBirth(request.getDateOfBirth());
+        customer.setGender(request.getGender());
+        customer.setAddress(request.getAddress());
+        customer.setActive(request.getActive() == null || request.getActive());
+        customer.setRole(customerRole);
+
+        return new UserDto(userRepository.save(customer));
+    }
+
+    @Transactional
     public UserDto updateEmployee(Long employeeId, UpdateEmployeeRequest request) {
         User employee = getStaffById(employeeId);
 
@@ -132,10 +169,51 @@ public class UserService {
     }
 
     @Transactional
+    public UserDto updateCustomer(Long customerId, UpdateCustomerRequest request) {
+        User customer = getCustomerById(customerId);
+
+        validateUpdateCustomerRequest(request);
+
+        String normalizedEmail = request.getEmail().trim().toLowerCase();
+        String normalizedPhone = request.getPhoneNumber().trim();
+
+        userRepository.findByEmail(normalizedEmail)
+                .filter(user -> !user.getId().equals(customerId))
+                .ifPresent(user -> {
+                    throw new ResponseStatusException(CONFLICT, "Email đã tồn tại trong hệ thống");
+                });
+
+        userRepository.findByPhoneNumber(normalizedPhone)
+                .filter(user -> !user.getId().equals(customerId))
+                .ifPresent(user -> {
+                    throw new ResponseStatusException(CONFLICT, "Số điện thoại đã tồn tại trong hệ thống");
+                });
+
+        customer.setName(request.getName().trim());
+        customer.setEmail(normalizedEmail);
+        customer.setPhoneNumber(normalizedPhone);
+        customer.setDateOfBirth(request.getDateOfBirth());
+        customer.setGender(request.getGender());
+        customer.setAddress(request.getAddress());
+        if (request.getActive() != null) {
+            customer.setActive(request.getActive());
+        }
+
+        return new UserDto(userRepository.save(customer));
+    }
+
+    @Transactional
     public UserDto updateEmployeeStatus(Long employeeId, boolean active) {
         User employee = getStaffById(employeeId);
         employee.setActive(active);
         return new UserDto(userRepository.save(employee));
+    }
+
+    @Transactional
+    public UserDto updateCustomerStatus(Long customerId, boolean active) {
+        User customer = getCustomerById(customerId);
+        customer.setActive(active);
+        return new UserDto(userRepository.save(customer));
     }
 
     @Transactional
@@ -155,6 +233,17 @@ public class UserService {
         return user;
     }
 
+    private User getCustomerById(Long customerId) {
+        User user = userRepository.findById(customerId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Không tìm thấy khách hàng"));
+
+        if (user.getRole() == null || user.getRole().getName() != RoleName.CUSTOMER) {
+            throw new ResponseStatusException(BAD_REQUEST, "Người dùng không thuộc nhóm khách hàng");
+        }
+
+        return user;
+    }
+
     private void validateCreateRequest(CreateEmployeeRequest request) {
         if (request.getName() == null || request.getName().isBlank()
                 || request.getEmail() == null || request.getEmail().isBlank()
@@ -169,6 +258,23 @@ public class UserService {
                 || request.getEmail() == null || request.getEmail().isBlank()
                 || request.getPhoneNumber() == null || request.getPhoneNumber().isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "Thiếu thông tin bắt buộc khi cập nhật nhân viên");
+        }
+    }
+
+    private void validateCreateCustomerRequest(CreateCustomerRequest request) {
+        if (request.getName() == null || request.getName().isBlank()
+                || request.getEmail() == null || request.getEmail().isBlank()
+                || request.getPhoneNumber() == null || request.getPhoneNumber().isBlank()
+                || request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new ResponseStatusException(BAD_REQUEST, "Thiếu thông tin bắt buộc khi tạo khách hàng");
+        }
+    }
+
+    private void validateUpdateCustomerRequest(UpdateCustomerRequest request) {
+        if (request.getName() == null || request.getName().isBlank()
+                || request.getEmail() == null || request.getEmail().isBlank()
+                || request.getPhoneNumber() == null || request.getPhoneNumber().isBlank()) {
+            throw new ResponseStatusException(BAD_REQUEST, "Thiếu thông tin bắt buộc khi cập nhật khách hàng");
         }
     }
 }

@@ -34,9 +34,8 @@ public class RoomType {
     private String description;
 
     // 👉 ảnh theo loại phòng (UI dùng cái này)
-    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @org.hibernate.annotations.BatchSize(size = 10)
-    private java.util.Set<RoomTypeImage> images;
+    @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    private List<RoomTypeImage> images;
 
     @OneToMany(mappedBy = "roomType", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @org.hibernate.annotations.BatchSize(size = 10)

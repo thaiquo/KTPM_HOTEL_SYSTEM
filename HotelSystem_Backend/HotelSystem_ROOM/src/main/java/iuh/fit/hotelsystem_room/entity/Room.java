@@ -25,13 +25,16 @@ public class Room {
     @Column(nullable = false, unique = true)
     private String roomNumber;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "room_type_id", nullable = false)
     private RoomType roomType;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RoomStatus status;
+
+    @Column(name = "actual_capacity", nullable = false)
+    private Integer actualCapacity;
 
     @Column(name = "area_m2")
     private Double areaM2;
@@ -73,6 +76,8 @@ public class Room {
     @Enumerated(EnumType.STRING)
     @Column(name = "maintenance_status")
     private MaintenanceStatus maintenanceStatus;
+
+    // giường được cấu hình qua bedOverrides (dùng BedType)
 
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @org.hibernate.annotations.BatchSize(size = 10)

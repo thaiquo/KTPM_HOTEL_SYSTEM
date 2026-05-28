@@ -24,13 +24,14 @@ import HotelPolicyPage from './features/hotel-policy/pages/HotelPolicyPage';
 import ProtectedRoute from './shared/components/auth/ProtectedRoute';
 import RoomManagementPage from './features/dashboard/pages/RoomManagementPage';
 import EmployeeManagementPage from './features/dashboard/pages/EmployeeManagementPage';
+import CustomerManagementPage from './features/dashboard/pages/CustomerManagementPage';
 import RoomTypeManagementPage from './features/dashboard/pages/RoomTypeManagementPage';
 import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
+import ShiftSchedulePage from './features/shift/pages/ShiftSchedulePage';
 import StaffInvoicesPage from './features/dashboard/pages/StaffInvoicesPage';
 import StaffRoomChangePage from './features/dashboard/pages/StaffRoomChangePage';
-
 
 
 function ScrollToTop() {
@@ -89,6 +90,8 @@ function App() {
             <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
               <Route element={<AdminLayout />}>
                 <Route path="/admin/nhan-vien" element={<EmployeeManagementPage />} />
+                <Route path="/admin/ca-truc" element={<ShiftSchedulePage />} />
+                <Route path="/admin/khach-hang" element={<CustomerManagementPage />} />
                 <Route path="/admin/room-types" element={<RoomTypeManagementPage />} />
                 <Route path="/admin/rooms" element={<RoomManagementPage />} />
                 <Route path="/admin/invoices" element={<Navigate to="/admin/nhan-vien" replace />} />
@@ -109,7 +112,7 @@ function App() {
                 <Route path="/staff" element={<Navigate to="/staff/rooms" replace />} />
               </Route>
             </Route>
-          </Routes>
+            </Routes>
           </AuthLoader>
         </BrowserRouter>
       </CartProvider>

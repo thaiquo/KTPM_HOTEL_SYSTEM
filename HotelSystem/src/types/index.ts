@@ -51,23 +51,31 @@ export interface Room {
   id: string;
   name: string;
   roomNumber: string;
-  maxCapacity: number;
+  type?: string;
   price?: number;
-  viewType: string;
-  areaM2: number;
-  hasBalcony: boolean;
-  hasBathtub: boolean;
-  smokingPolicy: 'NON_SMOKING' | 'SMOKING';
-  isAccessible: boolean;
-  isConnecting: boolean;
-  connectedRoomId?: number;
-  floorNumber: number;
-  floorLevel: string;
-  status: string;
-  maintenanceStatus: string;
-  roomType: RoomType;
-  beds: Bed[];
+  maxGuests?: number;
+  maxCapacity: number;
+  images: string[];
   amenities: RoomAmenity[];
+  description: string;
+  available?: boolean;
+  floor?: number;
+  floorNumber?: number;
+  floorLevel?: string;
+  bedType?: string;
+  beds?: Bed[];
+  viewType?: string;
+  areaM2?: number;
+  hasBalcony?: boolean;
+  hasBathtub?: boolean;
+  smokingPolicy?: 'NON_SMOKING' | 'SMOKING';
+  isAccessible?: boolean;
+  isConnecting?: boolean;
+  connectedRoomId?: number;
+  status?: 'AVAILABLE' | 'BOOKED' | 'MAINTENANCE' | 'OCCUPIED' | 'HOLD' | string;
+  maintenanceStatus?: string;
+  roomType?: RoomType;
+  note?: string;
 }
 
 export interface BookingItem {

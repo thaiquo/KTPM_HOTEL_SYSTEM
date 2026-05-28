@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  HiOutlinePlus, 
-  HiOutlinePencilAlt, 
+import {
+  HiOutlinePlus,
+  HiOutlinePencilAlt,
   HiOutlineTrash,
   HiOutlineSearch,
   HiOutlineX,
-  HiOutlineCloudUpload,
   HiOutlinePhotograph
 } from 'react-icons/hi';
 import { roomApi } from '../../../services/roomApi';
@@ -27,7 +26,6 @@ const RoomTypeManagementPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingType, setEditingType] = useState<RoomType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [uploading, setUploading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -127,7 +125,7 @@ const RoomTypeManagementPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Quản lý Loại phòng</h1>
           <p className="text-sm text-gray-500 mt-1">Định nghĩa cấu hình gốc và giá cho từng hạng phòng.</p>
         </div>
-        <button 
+        <button
           onClick={() => handleOpenModal()}
           className="flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
         >
@@ -140,9 +138,9 @@ const RoomTypeManagementPage: React.FC = () => {
         <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
           <div className="relative w-full md:w-96">
             <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input 
-              type="text" 
-              placeholder="Tìm tên loại phòng..." 
+            <input
+              type="text"
+              placeholder="Tìm tên loại phòng..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
@@ -209,37 +207,37 @@ const RoomTypeManagementPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-6">
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Tên loại phòng</label>
-                  <input required type="text" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value.toUpperCase()})} placeholder="VD: DELUXE, VIP..." className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  <input required type="text" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value.toUpperCase() })} placeholder="VD: DELUXE, VIP..." className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Giá cơ bản (VNĐ)</label>
-                  <input required type="number" value={formData.basePrice} onChange={e => setFormData({...formData, basePrice: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  <input required type="number" value={formData.basePrice} onChange={e => setFormData({ ...formData, basePrice: parseInt(e.target.value) })} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                 </div>
                 <div className="md:col-span-1"></div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sức chứa tiêu chuẩn</label>
-                  <input required type="number" value={formData.defaultCapacity} onChange={e => setFormData({...formData, defaultCapacity: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  <input required type="number" value={formData.defaultCapacity} onChange={e => setFormData({ ...formData, defaultCapacity: parseInt(e.target.value) })} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sức chứa tối đa</label>
-                  <input required type="number" value={formData.maxCapacity} onChange={e => setFormData({...formData, maxCapacity: parseInt(e.target.value)})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
+                  <input required type="number" value={formData.maxCapacity} onChange={e => setFormData({ ...formData, maxCapacity: parseInt(e.target.value) })} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mô tả</label>
-                  <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
+                  <textarea rows={3} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Hình ảnh (Đường dẫn URL)</label>
                   <div className="flex gap-2 mb-4">
-                    <input 
-                      type="text" 
-                      value={imageUrlInput} 
-                      onChange={e => setImageUrlInput(e.target.value)} 
-                      placeholder="Nhập link ảnh (ví dụ: https://images.unsplash.com/...)" 
-                      className="flex-1 px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                    <input
+                      type="text"
+                      value={imageUrlInput}
+                      onChange={e => setImageUrlInput(e.target.value)}
+                      placeholder="Nhập link ảnh (ví dụ: https://images.unsplash.com/...)"
+                      className="flex-1 px-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     />
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={handleAddImageUrl}
                       className="px-6 py-3 bg-indigo-50 text-indigo-600 font-bold rounded-2xl hover:bg-indigo-100 transition-all whitespace-nowrap"
                     >
@@ -250,7 +248,7 @@ const RoomTypeManagementPage: React.FC = () => {
                     {formData.images.map((img, idx) => (
                       <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-gray-100 group">
                         <img src={img.imageUrl} alt="" className="w-full h-full object-cover" />
-                        <button type="button" onClick={() => setFormData({...formData, images: formData.images.filter((_, i) => i !== idx)})} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><HiOutlineX className="w-3 h-3" /></button>
+                        <button type="button" onClick={() => setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) })} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><HiOutlineX className="w-3 h-3" /></button>
                         {img.isThumbnail && <span className="absolute bottom-0 inset-x-0 bg-indigo-600/80 text-white text-[10px] text-center py-0.5 font-bold">Thumbnail</span>}
                       </div>
                     ))}

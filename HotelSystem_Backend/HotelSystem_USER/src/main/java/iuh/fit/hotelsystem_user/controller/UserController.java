@@ -1,6 +1,8 @@
 package iuh.fit.hotelsystem_user.controller;
 
+import iuh.fit.hotelsystem_user.dto.request.CreateCustomerRequest;
 import iuh.fit.hotelsystem_user.dto.request.CreateEmployeeRequest;
+import iuh.fit.hotelsystem_user.dto.request.UpdateCustomerRequest;
 import iuh.fit.hotelsystem_user.dto.request.UpdateEmployeeRequest;
 import iuh.fit.hotelsystem_user.dto.response.UserDto;
 import iuh.fit.hotelsystem_user.service.UserService;
@@ -60,9 +62,15 @@ public class UserController {
     @GetMapping("/employees")
     public ResponseEntity<List<UserDto>> getEmployees(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Boolean active
-    ) {
+            @RequestParam(required = false) Boolean active) {
         return ResponseEntity.ok(userService.getEmployees(keyword, active));
+    }
+
+    @GetMapping("/customers")
+    public ResponseEntity<List<UserDto>> getCustomers(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean active) {
+        return ResponseEntity.ok(userService.getCustomers(keyword, active));
     }
 
     @PostMapping("/employees")
@@ -70,20 +78,37 @@ public class UserController {
         return ResponseEntity.ok(userService.createEmployee(request));
     }
 
+    @PostMapping("/customers")
+    public ResponseEntity<UserDto> createCustomer(@RequestBody CreateCustomerRequest request) {
+        return ResponseEntity.ok(userService.createCustomer(request));
+    }
+
     @PutMapping("/employees/{employeeId}")
     public ResponseEntity<UserDto> updateEmployee(
             @PathVariable Long employeeId,
-            @RequestBody UpdateEmployeeRequest request
-    ) {
+            @RequestBody UpdateEmployeeRequest request) {
         return ResponseEntity.ok(userService.updateEmployee(employeeId, request));
+    }
+
+    @PutMapping("/customers/{customerId}")
+    public ResponseEntity<UserDto> updateCustomer(
+            @PathVariable Long customerId,
+            @RequestBody UpdateCustomerRequest request) {
+        return ResponseEntity.ok(userService.updateCustomer(customerId, request));
     }
 
     @PatchMapping("/employees/{employeeId}/status")
     public ResponseEntity<UserDto> updateEmployeeStatus(
             @PathVariable Long employeeId,
-            @RequestParam boolean active
-    ) {
+            @RequestParam boolean active) {
         return ResponseEntity.ok(userService.updateEmployeeStatus(employeeId, active));
+    }
+
+    @PatchMapping("/customers/{customerId}/status")
+    public ResponseEntity<UserDto> updateCustomerStatus(
+            @PathVariable Long customerId,
+            @RequestParam boolean active) {
+        return ResponseEntity.ok(userService.updateCustomerStatus(customerId, active));
     }
 
     @DeleteMapping("/employees/{employeeId}")

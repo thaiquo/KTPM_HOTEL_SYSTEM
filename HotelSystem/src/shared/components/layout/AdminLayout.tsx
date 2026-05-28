@@ -1,5 +1,5 @@
 import React from 'react';
-import { HiOutlineUserGroup, HiOutlineOfficeBuilding } from 'react-icons/hi';
+import { HiOutlineUserGroup, HiOutlineOfficeBuilding, HiOutlineClock } from 'react-icons/hi';
 import DashboardLayout from './DashboardLayout';
 import StaffChatbot from '../../../features/ai-chatbot/components/StaffChatbot';
 
@@ -8,6 +8,16 @@ const AdminLayout: React.FC = () => {
     {
       title: 'Quản lý Nhân viên',
       path: '/admin/nhan-vien',
+      icon: <HiOutlineUserGroup className="w-6 h-6" />,
+    },
+    {
+      title: 'Quản lý Ca Trực',
+      path: '/admin/ca-truc',
+      icon: <HiOutlineClock className="w-6 h-6" />,
+    },
+    {
+      title: 'Quản lý Khách hàng',
+      path: '/admin/khach-hang',
       icon: <HiOutlineUserGroup className="w-6 h-6" />,
     },
     {

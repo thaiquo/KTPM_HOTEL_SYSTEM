@@ -17,86 +17,82 @@ public class SchemaMigrationRunner implements CommandLineRunner {
         Boolean exists = jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?)",
                 Boolean.class,
-                tableName
-        );
+                tableName);
         return Boolean.TRUE.equals(exists);
     }
 
     @Override
     public void run(String... args) {
-        if (tableExists("users")) {
-            jdbcTemplate.execute("""
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
-                    """);
+        jdbcTemplate.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
+                """);
 
-            jdbcTemplate.execute("""
+        jdbcTemplate.execute("""
                 ALTER TABLE users
                 ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
                 """);
-        }
 
-        if (tableExists("registration_sessions")) {
-            jdbcTemplate.execute("""
+        jdbcTemplate.execute("""
                 ALTER TABLE registration_sessions
                 ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
                 """);
-        }
 
-        if (tableExists("refresh_tokens")) {
-            jdbcTemplate.execute("""
-                    delete from refresh_tokens r
-                    using refresh_tokens d
-                    where r.id < d.id
-                      and r.user_id = d.user_id
-                    """);
+if (tableExists("refresh_tokens")) {
+    jdbcTemplate.execute("""
+            delete from refresh_tokens r
+            using refresh_tokens d
+            where r.id < d.id
+              and r.user_id = d.user_id
+            """);
 
-            jdbcTemplate.execute("""
-                    create unique index if not exists ux_refresh_tokens_user_id
-                    on refresh_tokens (user_id)
-                    """);
-        }
+    jdbcTemplate.execute("""
+            create unique index if not exists ux_refresh_tokens_user_id
+            on refresh_tokens (user_id)
+            """);
+}
 
-        jdbcTemplate.execute("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1
-                        FROM information_schema.columns
-                        WHERE table_name = 'users'
-                          AND column_name = 'gender'
-                          AND data_type <> 'boolean'
-                    ) THEN
-                        ALTER TABLE users
-                        ALTER COLUMN gender TYPE BOOLEAN
-                        USING CASE
-                            WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
-                            WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
-                            ELSE NULL
-                        END;
-                    END IF;
-                END $$;
-                """);
+jdbcTemplate.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'users'
+                  AND column_name = 'gender'
+                  AND data_type <> 'boolean'
+            ) THEN
+                ALTER TABLE users
+                ALTER COLUMN gender TYPE BOOLEAN
+                USING CASE
+                    WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
+                    WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
+                    ELSE NULL
+                END;
+            END IF;
+        END $$;
+        """);
 
-        jdbcTemplate.execute("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1
-                        FROM information_schema.columns
-                        WHERE table_name = 'registration_sessions'
-                          AND column_name = 'gender'
-                          AND data_type <> 'boolean'
-                    ) THEN
-                        ALTER TABLE registration_sessions
-                        ALTER COLUMN gender TYPE BOOLEAN
-                        USING CASE
-                            WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
-                            WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
-                            ELSE NULL
-                        END;
-                    END IF;
-                END $$;
-                """);
+        jdbcTemplate.execute(
+                """
+                        DO $$
+                        BEGIN
+                            IF EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_name = 'registration_sessions'
+                                  AND column_name = 'gender'
+                                  AND data_type <> 'boolean'
+                            ) THEN
+                                ALTER TABLE registration_sessions
+                                ALTER COLUMN gender TYPE BOOLEAN
+                                USING CASE
+                                    WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
+                                    WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
+                                    ELSE NULL
+                                END;
+                            END IF;
+                        END $$;
+                        """);
     }
 }
