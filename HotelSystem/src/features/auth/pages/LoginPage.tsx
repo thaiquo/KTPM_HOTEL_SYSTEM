@@ -54,11 +54,22 @@ const LoginPage = () => {
       }
       navigate(redirectTarget, { replace: true });
     } catch (err: unknown) {
-      const message = isAxiosError<{ message?: string }>(err)
-        ? err.response?.data?.message
-        : undefined;
+      if (isAxiosError<{ message?: string }>(err)) {
+        const status = err.response?.status;
+        const message = err.response?.data?.message;
 
-      setError(message || 'Đăng nhập thất bại');
+        if (status === 401) {
+          setError('Email hoặc mật khẩu không đúng');
+        } else if (status === 429) {
+          setError('Bạn đăng nhập quá nhiều lần. Vui lòng thử lại sau.');
+        } else if (status === 503) {
+          setError('Dịch vụ đăng nhập đang tạm thời gián đoạn. Vui lòng thử lại sau.');
+        } else {
+          setError(message || 'Đăng nhập thất bại');
+        }
+      } else {
+        setError('Đăng nhập thất bại');
+      }
     } finally {
       setLoading(false);
     }

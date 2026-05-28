@@ -10,117 +10,168 @@ spring:
       port: ${REDIS_PORT:6379}
   cloud:
     gateway:
-      filter:
-        request-rate-limiter:
-          # Tránh 403 khi KeyResolver không lấy được key (môi trường proxy / IPv6).
-          deny-empty-key: false
-      # ── Global CORS (WebFlux Standard) ───────────────────────────────────────
-      globalcors:
-        add-to-simple-url-handler-mapping: true
-        cors-configurations:
-          '[/**]':
-            allowedOrigins:
-              - "http://localhost:3000"
-              - "http://127.0.0.1:3000"
-              - "http://frontend:3000"
-              - "http://192.168.1.8:3000"
-            allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
-            allowedHeaders: ["*"]
-            allowCredentials: true
+      server:
+        webflux:
+          filter:
+            request-rate-limiter:
+              # Avoid 403 when a key cannot be resolved behind proxy/IPv6 setups.
+              deny-empty-key: false
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:3000"
+                  - "http://127.0.0.1:3000"
+                  - "http://frontend:3000"
+                  - "http://192.168.1.8:3000"
+                allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+                allowedHeaders: ["*"]
+                allowCredentials: true
 
-      # ── Routes ───────────────────────────────────────────────────────────────
-      routes:
-        # AUTH – public endpoints không cần JWT, không rate-limit ketat
-        - id: auth-service
-          uri: lb://auth-service
-          predicates:
-            - Path=/auth-api/**
-          filters:
-            - RewritePath=/auth-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 20
-            #     redis-rate-limiter.burstCapacity: 40
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+          routes:
+            - id: auth-login-service
+              uri: lb://auth-service
+              order: -20
+              predicates:
+                - Path=/auth-api/auth/login
+              filters:
+                - RewritePath=/auth-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 3
+                    redis-rate-limiter.burstCapacity: 6
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@authIdentityKeyResolver}"
 
-        # USER
-        - id: user-service
-          uri: lb://user-service
-          predicates:
-            - Path=/user-api/**
-          filters:
-            - RewritePath=/user-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 30
-            #     redis-rate-limiter.burstCapacity: 60
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+            - id: auth-register-service
+              uri: lb://auth-service
+              order: -20
+              predicates:
+                - Path=/auth-api/auth/register
+              filters:
+                - RewritePath=/auth-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 2
+                    redis-rate-limiter.burstCapacity: 4
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@authIdentityKeyResolver}"
 
-        # ROOM – đọc nhiều, cache Redis ở service
-        - id: room-service
-          uri: lb://room-service
-          predicates:
-            - Path=/room-api/**
-          filters:
-            - RewritePath=/room-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 50
-            #     redis-rate-limiter.burstCapacity: 100
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+            - id: auth-otp-service
+              uri: lb://auth-service
+              order: -20
+              predicates:
+                - Path=/auth-api/auth/send-otp,/auth-api/auth/verify-otp
+              filters:
+                - RewritePath=/auth-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 3
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@otpIdentityKeyResolver}"
 
-        # BOOKING
-        - id: booking-service
-          uri: lb://booking-service
-          predicates:
-            - Path=/booking-api/**
-          filters:
-            - RewritePath=/booking-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 20
-            #     redis-rate-limiter.burstCapacity: 40
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/auth-api/**
+              filters:
+                - RewritePath=/auth-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@ipKeyResolver}"
 
-        # PAYMENT – rate limit chặt nhất (tài chính)
-        - id: payment-service
-          uri: lb://payment-service
-          predicates:
-            - Path=/payment-api/**
-          filters:
-            - RewritePath=/payment-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 10
-            #     redis-rate-limiter.burstCapacity: 20
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+            - id: user-service
+              uri: lb://user-service
+              predicates:
+                - Path=/user-api/**
+              filters:
+                - RewritePath=/user-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 20
+                    redis-rate-limiter.burstCapacity: 40
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userOrIpKeyResolver}"
 
-        # NOTIFICATION
-        - id: notification-service
-          uri: lb://notification-service
-          predicates:
-            - Path=/notification-api/**
-          filters:
-            - RewritePath=/notification-api(?<segment>/?.*), ${segment}
-            # - name: RequestRateLimiter
-            #   args:
-            #     redis-rate-limiter.replenishRate: 15
-            #     redis-rate-limiter.burstCapacity: 30
-            #     redis-rate-limiter.requestedTokens: 1
-            #     key-resolver: "#{@ipKeyResolver}"
+            - id: room-service
+              uri: lb://room-service
+              predicates:
+                - Path=/room-api/**
+              filters:
+                - RewritePath=/room-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 50
+                    redis-rate-limiter.burstCapacity: 100
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@ipKeyResolver}"
 
-        # AI CHATBOT
-        - id: ai-service
-          uri: lb://ai-service
-          predicates:
-            - Path=/ai-api/**
-          filters:
-            - RewritePath=/ai-api(?<segment>/?.*), ${segment}
+            - id: booking-service
+              uri: lb://booking-service
+              predicates:
+                - Path=/booking-api/**
+              filters:
+                - RewritePath=/booking-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 10
+                    redis-rate-limiter.burstCapacity: 20
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userOrIpKeyResolver}"
+
+            # Payment provider returns/IPNs are separate from user-facing payment
+            # APIs so the user payment rate limit cannot drop provider callbacks.
+            - id: payment-callback-service
+              uri: lb://payment-service
+              order: -10
+              predicates:
+                - Path=/payment-api/payments/vnpay-return,/payment-api/payments/vnpay-ipn,/payment-api/payments/momo-return,/payment-api/payments/momo-ipn
+              filters:
+                - RewritePath=/payment-api(?<segment>/?.*), ${segment}
+
+            - id: payment-service
+              uri: lb://payment-service
+              predicates:
+                - Path=/payment-api/**
+              filters:
+                - RewritePath=/payment-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userOrIpKeyResolver}"
+
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/notification-api/**
+              filters:
+                - RewritePath=/notification-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 10
+                    redis-rate-limiter.burstCapacity: 20
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userOrIpKeyResolver}"
+
+            - id: ai-service
+              uri: lb://ai-service
+              predicates:
+                - Path=/ai-api/**
+              filters:
+                - RewritePath=/ai-api(?<segment>/?.*), ${segment}
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 3
+                    redis-rate-limiter.burstCapacity: 6
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userOrIpKeyResolver}"
 
 eureka:
   client:
@@ -143,3 +194,10 @@ management:
 
 jwt:
   secret: iJXVUFK+5ccfmPvUHI8lY5CcSql77pZUS4gnf887kbM=
+
+payment:
+  callback:
+    # Comma-separated exact IPs or CIDR ranges allowed to call provider IPN
+    # endpoints. Empty means allow all for local/sandbox development; the
+    # payment service still validates provider signatures/hashes.
+    allowed-ips: ${PAYMENT_CALLBACK_ALLOWED_IPS:}

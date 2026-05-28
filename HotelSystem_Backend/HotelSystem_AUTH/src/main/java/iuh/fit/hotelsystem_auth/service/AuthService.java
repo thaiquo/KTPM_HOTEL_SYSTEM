@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_auth.service;
 
+import feign.FeignException;
 import iuh.fit.hotelsystem_auth.client.UserServiceClient;
 import iuh.fit.hotelsystem_auth.dto.request.LoginRequest;
 import iuh.fit.hotelsystem_auth.dto.request.RegisterRequest;
@@ -149,7 +150,7 @@ public class AuthService {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Authentication service error: " + e.getMessage());
+            throw mapLoginException(e);
         }
 
         if (userData == null || !userData.containsKey("id")) {
@@ -184,6 +185,26 @@ public class AuthService {
         }
 
         return new AuthResponse(accessToken, refreshToken.getToken());
+    }
+
+    private ResponseStatusException mapLoginException(Exception e) {
+        if (e instanceof FeignException feignException) {
+            HttpStatus status = HttpStatus.resolve(feignException.status());
+            if (status != null && status.is4xxClientError()) {
+                return new ResponseStatusException(status, loginClientErrorMessage(status));
+            }
+        }
+
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Authentication service error: " + e.getMessage());
+    }
+
+    private String loginClientErrorMessage(HttpStatus status) {
+        return switch (status) {
+            case UNAUTHORIZED -> "Invalid email or password";
+            case FORBIDDEN -> "User account is not allowed to login";
+            default -> "Invalid login request";
+        };
     }
 
     public AuthResponse refresh(String token) {

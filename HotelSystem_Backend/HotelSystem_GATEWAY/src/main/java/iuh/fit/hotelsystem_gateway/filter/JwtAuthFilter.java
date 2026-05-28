@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import iuh.fit.hotelsystem_gateway.config.RateLimiterConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -35,6 +36,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/auth-api/auth/send-otp",
             "/auth-api/auth/refresh",
             "/payment-api/payments/vnpay-return",
+            "/payment-api/payments/vnpay-ipn",
             "/payment-api/payments/momo-return",
             "/payment-api/payments/momo-ipn",
             "/payment-api/payments/checkin-qr",
@@ -105,6 +107,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             Claims claims = validateToken(token);
             String userIdHeader = resolveUserIdClaim(claims);
             String role = claims.get("role", String.class);
+            if (userIdHeader != null) {
+                exchange.getAttributes().put(RateLimiterConfig.RATE_LIMIT_USER_ID_ATTR, userIdHeader);
+            }
             // Optionally add user info to headers for downstream services
             ServerHttpRequest.Builder mutate = request.mutate()
                     .header("X-User-Email", claims.getSubject());

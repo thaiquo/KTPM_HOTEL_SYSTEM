@@ -231,10 +231,17 @@ public class BookingGuestService {
 
     private GuestRequest copyPrimary(GuestRequest input) {
         GuestRequest primary = new GuestRequest();
+        primary.setRoomId(input.getRoomId());
         primary.setFullName(input.getFullName());
         primary.setDateOfBirth(input.getDateOfBirth());
         primary.setPhone(input.getPhone());
         primary.setEmail(input.getEmail());
+        primary.setCccd(input.getCccd());
+        primary.setCitizenId(input.getCitizenId());
+        primary.setPassport(input.getPassport());
+        primary.setGender(input.getGender());
+        primary.setRole(input.getRole());
+        primary.setNote(input.getNote());
         primary.setPrimary(true);
         primary.setCheckInPerson(true);
         return primary;
