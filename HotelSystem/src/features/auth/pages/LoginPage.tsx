@@ -8,6 +8,7 @@ import Card from '../../../shared/components/ui/Card';
 import Alert from '../../../shared/components/ui/Alert';
 import Button from '../../../shared/components/ui/Button';
 import { getManagementHomeByRole } from '../../../shared/lib/roleRoute';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -42,6 +43,12 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
+      const limit = consumeClientRateLimit(`auth-login:${formData.email}`, 3000);
+      if (!limit.allowed) {
+        setError(`Bạn thao tác quá nhanh. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+        return;
+      }
+
       const loggedInUser = await login(formData.email, formData.password);
       const roleHome = getManagementHomeByRole(loggedInUser?.role);
       const redirect = searchParams.get('redirect');

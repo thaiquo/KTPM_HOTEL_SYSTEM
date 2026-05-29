@@ -325,7 +325,7 @@ public class CheckoutService {
                     lateReq.setBookingId(bookingId);
                     lateReq.setUserId(booking.getUserId());
                     lateReq.setAmount(amountDue.doubleValue());
-                    paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateReq);
+                    paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateCheckoutFeeIdempotencyKey(bookingId, amountDue.doubleValue()), lateReq);
                 } catch (Exception e) {
                     throw new IllegalStateException("KhÃƒÂ´ng thÃ¡Â»Æ’ tÃ¡ÂºÂ¡o yÃƒÂªu cÃ¡ÂºÂ§u thanh toÃƒÂ¡n checkout trÃ¡Â»â€¦ do Payment Service khÃƒÂ´ng phÃ¡ÂºÂ£n hÃ¡Â»â€œi. Vui lÃƒÂ²ng thÃ¡Â»Â­ lÃ¡ÂºÂ¡i sau.", e);
                 }
@@ -449,7 +449,7 @@ public class CheckoutService {
                 lateReq.setBookingId(bookingId);
                 lateReq.setUserId(booking.getUserId());
                 lateReq.setAmount(amountDue.doubleValue());
-                paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateReq);
+                paymentServiceClient.requestLateCheckoutFeePayment(bookingId, lateCheckoutFeeIdempotencyKey(bookingId, amountDue.doubleValue()), lateReq);
             } catch (Exception e) {
                 throw new IllegalStateException("KhÃ´ng thá»ƒ táº¡o yÃªu cáº§u thanh toÃ¡n checkout trá»… do Payment Service khÃ´ng pháº£n há»“i. Vui lÃ²ng thá»­ láº¡i sau.", e);
             }
@@ -477,6 +477,10 @@ public class CheckoutService {
             return stay.getActualCheckOutAt();
         }
         return booking != null ? booking.getActualCheckOutAt() : null;
+    }
+
+    private String lateCheckoutFeeIdempotencyKey(Long bookingId, Double amount) {
+        return "booking:" + bookingId + ":late-checkout-fee:" + Math.round(amount != null ? amount : 0.0);
     }
 
     @Transactional

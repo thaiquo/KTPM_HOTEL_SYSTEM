@@ -380,7 +380,7 @@ public class RefundService {
             paymentRequest.put("userId", refund.getUserId());
             paymentRequest.put("amount", refund.getRefundAmount());
             paymentRequest.put("paymentTransactionId", refund.getPaymentTransactionId());
-            paymentServiceClient.processRefund(refundId, paymentRequest);
+            paymentServiceClient.processRefund(refundId, "refund-request:" + refundId, paymentRequest);
 
             LocalDateTime completedAt = nowVi();
             refund.setStatus(RefundStatus.REFUNDED);

@@ -42,11 +42,11 @@ public class UserServiceFallbackFactory implements FallbackFactory<UserServiceCl
         if (cause instanceof FeignException feignException) {
             HttpStatus status = HttpStatus.resolve(feignException.status());
             if (status != null && status.is4xxClientError()) {
-                return new ResponseStatusException(status, clientErrorMessage(status));
+                return new ResponseStatusException(status, clientErrorMessage(status), cause);
             }
         }
 
-        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, unavailableMessage);
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, unavailableMessage, cause);
     }
 
     private String clientErrorMessage(HttpStatus status) {

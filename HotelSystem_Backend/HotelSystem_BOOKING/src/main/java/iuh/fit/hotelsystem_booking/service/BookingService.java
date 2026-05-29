@@ -493,11 +493,20 @@ public class BookingService {
         if (request == null || request.getAmount() == null || request.getAmount() <= 0) {
             throw new IllegalArgumentException("Remaining payment amount must be greater than zero");
         }
+        if (request.getTransactionId() != null
+                && !request.getTransactionId().isBlank()
+                && request.getTransactionId().equals(booking.getPaymentTransactionId())) {
+            return booking;
+        }
+        if ("PAID".equalsIgnoreCase(booking.getPaymentStatus())
+                && valueOrZero(booking.getPaidAmount()) + 0.01 >= valueOrZero(booking.getFinalTotal())) {
+            return booking;
+        }
 
         if (request.getUserId() == null) {
             request.setUserId(booking.getUserId());
         }
-        paymentServiceClient.collectRemainingPayment(bookingId, request);
+        paymentServiceClient.collectRemainingPayment(bookingId, remainingPaymentIdempotencyKey(bookingId, request), request);
         double paid = valueOrZero(booking.getPaidAmount()) + request.getAmount();
         booking.setPaidAmount(paid);
         if (paid + 0.01 >= valueOrZero(booking.getFinalTotal())) {
@@ -508,6 +517,18 @@ public class BookingService {
             booking.setPaymentTransactionId(request.getTransactionId());
         }
         return bookingRepository.save(booking);
+    }
+
+    private String remainingPaymentIdempotencyKey(Long bookingId, RemainingPaymentRequest request) {
+        String transaction = request.getTransactionId();
+        if (transaction != null && !transaction.isBlank()) {
+            return "booking:" + bookingId + ":remaining:" + transaction.trim();
+        }
+        long amount = Math.round(valueOrZero(request.getAmount()));
+        String method = request.getMethod() != null && !request.getMethod().isBlank()
+                ? request.getMethod().trim().toUpperCase()
+                : "CASH";
+        return "booking:" + bookingId + ":remaining:" + amount + ":" + method;
     }
 
     @Transactional

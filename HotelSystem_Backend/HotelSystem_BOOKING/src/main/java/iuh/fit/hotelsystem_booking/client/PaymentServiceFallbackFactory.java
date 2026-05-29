@@ -29,9 +29,9 @@ public class PaymentServiceFallbackFactory implements FallbackFactory<PaymentSer
             }
 
             @Override
-            public Object collectRemainingPayment(Long bookingId, RemainingPaymentRequest request) {
+            public Object collectRemainingPayment(Long bookingId, String idempotencyKey, RemainingPaymentRequest request) {
                 log.error("payment-service unavailable for collectRemainingPayment. bookingId={}, error={}", bookingId, cause.getMessage());
-                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.", cause);
             }
 
             @Override
@@ -43,21 +43,21 @@ public class PaymentServiceFallbackFactory implements FallbackFactory<PaymentSer
             }
 
             @Override
-            public Object createEarlyCheckinFee(Long bookingId, LateCheckoutPaymentRequest request) {
+            public Object createEarlyCheckinFee(Long bookingId, String idempotencyKey, LateCheckoutPaymentRequest request) {
                 log.error("payment-service unavailable for createEarlyCheckinFee. bookingId={}, error={}", bookingId, cause.getMessage());
-                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.", cause);
             }
 
             @Override
-            public Object processRefund(Long refundId, Map<String, Object> request) {
+            public Object processRefund(Long refundId, String idempotencyKey, Map<String, Object> request) {
                 log.error("payment-service unavailable for processRefund. refundId={}, error={}", refundId, cause.getMessage());
-                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.", cause);
             }
 
             @Override
-            public void requestLateCheckoutFeePayment(Long bookingId, LateCheckoutPaymentRequest request) {
+            public void requestLateCheckoutFeePayment(Long bookingId, String idempotencyKey, LateCheckoutPaymentRequest request) {
                 log.error("payment-service unavailable for requestLateCheckoutFeePayment. bookingId={}, error={}", bookingId, cause.getMessage());
-                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.", cause);
             }
 
             @Override

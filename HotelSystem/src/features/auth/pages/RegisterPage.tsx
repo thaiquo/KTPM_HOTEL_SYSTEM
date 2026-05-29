@@ -7,6 +7,7 @@ import Card from '../../../shared/components/ui/Card';
 import Alert from '../../../shared/components/ui/Alert';
 import Button from '../../../shared/components/ui/Button';
 import { authApi } from '../../../services/api';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -44,6 +45,12 @@ const RegisterPage = () => {
     setLoading(true);
 
     try {
+      const limit = consumeClientRateLimit(`auth-register:${formData.email || formData.phoneNumber}`, 5000);
+      if (!limit.allowed) {
+        setError(`Bạn thao tác quá nhanh. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+        return;
+      }
+
       await authApi.register({
         name: formData.name,
         email: formData.email,
@@ -69,6 +76,12 @@ const RegisterPage = () => {
     setError('');
     setLoading(true);
     try {
+      const limit = consumeClientRateLimit(`auth-send-otp:${method}:${formData.email || formData.phoneNumber}`, 60000);
+      if (!limit.allowed) {
+        setError(`Bạn vừa yêu cầu OTP. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+        return;
+      }
+
       await authApi.sendOtp(method);
       setOtpSentVia(method);
       setStep('otp-verify');
@@ -87,6 +100,12 @@ const RegisterPage = () => {
     setError('');
     setLoading(true);
     try {
+      const limit = consumeClientRateLimit(`auth-verify-otp:${formData.email || formData.phoneNumber}`, 3000);
+      if (!limit.allowed) {
+        setError(`Bạn nhập OTP quá nhanh. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+        return;
+      }
+
       await authApi.verifyOtp(otp);
       navigate('/login?registered=true', { replace: true });
     } catch (err: unknown) {

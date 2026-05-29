@@ -179,6 +179,7 @@ public class BookingController {
     @PostMapping("/{id}/confirm-checkin-payment")
     public ResponseEntity<Booking> confirmCheckinPayment(
             @PathVariable Long id,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest request) {
         return ResponseEntity.ok(bookingService.confirmCheckinPayment(id, request));
     }
