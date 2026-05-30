@@ -21,6 +21,22 @@ public class PricingResult {
     private boolean refundable;
     private String paymentType;
     private boolean allowModification;
+    private java.util.List<DailyPrice> dailyPrices = new java.util.ArrayList<>();
+
+    public static class DailyPrice {
+        private String date;
+        private double price;
+
+        public DailyPrice(String date, double price) {
+            this.date = date;
+            this.price = price;
+        }
+        
+        public String getDate() { return date; }
+        public void setDate(String date) { this.date = date; }
+        public double getPrice() { return price; }
+        public void setPrice(double price) { this.price = price; }
+    }
 
     // ════════════════════════════════════════════════════════════
     // Getters / Setters
@@ -73,4 +89,7 @@ public class PricingResult {
 
     public boolean isAllowModification() { return allowModification; }
     public void setAllowModification(boolean allowModification) { this.allowModification = allowModification; }
+
+    public java.util.List<DailyPrice> getDailyPrices() { return dailyPrices; }
+    public void setDailyPrices(java.util.List<DailyPrice> dailyPrices) { this.dailyPrices = dailyPrices; }
 }

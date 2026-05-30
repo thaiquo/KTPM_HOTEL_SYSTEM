@@ -34,4 +34,16 @@ public class RoomStatusHistory {
 
     @Column(name = "changed_at", nullable = false)
     private LocalDateTime changedAt;
+
+    /** Lý do chuyển trạng thái — bắt buộc khi chuyển sang MAINTENANCE / OUT_OF_SERVICE */
+    @Column(name = "reason", columnDefinition = "TEXT")
+    private String reason;
+
+    /** Ghi chú tự do của nhân viên (vd: "đã dọn xong", "đã sửa xong") */
+    @Column(name = "note", columnDefinition = "TEXT")
+    private String note;
+
+    /** ID nhân viên thực hiện thay đổi */
+    @Column(name = "changed_by")
+    private String changedBy;
 }

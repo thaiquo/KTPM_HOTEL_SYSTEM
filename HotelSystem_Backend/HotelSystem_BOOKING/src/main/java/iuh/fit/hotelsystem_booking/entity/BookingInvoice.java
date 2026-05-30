@@ -21,8 +21,17 @@ public class BookingInvoice {
 
     private String currency;
 
-    @Column(length = 2000)
+    @Lob
     private String linesJson;
+
+    // Denormalized aggregates for fast search/statistics (kept in sync when merging invoices)
+    private BigDecimal totalOriginalAmount;
+    private BigDecimal totalAllocatedPaidAmount;
+    private BigDecimal totalActualRevenue;
+    private BigDecimal totalEarlyCheckoutRefund;
+    private BigDecimal totalAdditionalCharge;
+    private BigDecimal totalRefundToCustomer;
+    private BigDecimal remainingBalance;
 
     private LocalDateTime createdAt;
 
@@ -40,6 +49,27 @@ public class BookingInvoice {
 
     public String getLinesJson() { return linesJson; }
     public void setLinesJson(String linesJson) { this.linesJson = linesJson; }
+
+    public BigDecimal getTotalOriginalAmount() { return totalOriginalAmount; }
+    public void setTotalOriginalAmount(BigDecimal totalOriginalAmount) { this.totalOriginalAmount = totalOriginalAmount; }
+
+    public BigDecimal getTotalAllocatedPaidAmount() { return totalAllocatedPaidAmount; }
+    public void setTotalAllocatedPaidAmount(BigDecimal totalAllocatedPaidAmount) { this.totalAllocatedPaidAmount = totalAllocatedPaidAmount; }
+
+    public BigDecimal getTotalActualRevenue() { return totalActualRevenue; }
+    public void setTotalActualRevenue(BigDecimal totalActualRevenue) { this.totalActualRevenue = totalActualRevenue; }
+
+    public BigDecimal getTotalEarlyCheckoutRefund() { return totalEarlyCheckoutRefund; }
+    public void setTotalEarlyCheckoutRefund(BigDecimal totalEarlyCheckoutRefund) { this.totalEarlyCheckoutRefund = totalEarlyCheckoutRefund; }
+
+    public BigDecimal getTotalAdditionalCharge() { return totalAdditionalCharge; }
+    public void setTotalAdditionalCharge(BigDecimal totalAdditionalCharge) { this.totalAdditionalCharge = totalAdditionalCharge; }
+
+    public BigDecimal getTotalRefundToCustomer() { return totalRefundToCustomer; }
+    public void setTotalRefundToCustomer(BigDecimal totalRefundToCustomer) { this.totalRefundToCustomer = totalRefundToCustomer; }
+
+    public BigDecimal getRemainingBalance() { return remainingBalance; }
+    public void setRemainingBalance(BigDecimal remainingBalance) { this.remainingBalance = remainingBalance; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -236,14 +236,19 @@ public class CheckoutService {
         if (early.getRefundAmount() == null || early.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
+        response.setRefundAllocations(safeGetRefundAllocationPreview(bookingId, early.getRefundAmount()));
+    }
+
+    private List<RefundAllocationLineDto> safeGetRefundAllocationPreview(Long bookingId, BigDecimal amount) {
         try {
             Map<String, Object> req = new HashMap<>();
-            req.put("amount", early.getRefundAmount());
+            req.put("amount", amount);
             List<RefundAllocationLineDto> lines = paymentServiceClient.previewRefundAllocation(bookingId, req);
-            response.setRefundAllocations(lines != null ? lines : Collections.emptyList());
+            log.debug("Loaded refund allocation preview for booking {}. lineCount={}", bookingId, lines != null ? lines.size() : 0);
+            return lines != null ? lines : Collections.emptyList();
         } catch (Exception ex) {
-            log.warn("Could not load refund allocation preview for booking {}: {}", bookingId, ex.getMessage());
-            response.setRefundAllocations(Collections.emptyList());
+            log.warn("Could not load refund allocation preview for booking {}. Fallback to local checkout calculation.", bookingId, ex);
+            return Collections.emptyList();
         }
     }
 
@@ -438,7 +443,8 @@ public class CheckoutService {
                     invoiceRepository.save(inv);
                 }
             } catch (Exception ex) {
-                log.warn("Could not persist invoice for booking {}: {}", bookingId, ex.getMessage());
+                log.error("Could not persist invoice for booking {}. Root cause: {}", bookingId, ex.getMessage(), ex);
+                throw new IllegalStateException("Không thể tạo hoặc cập nhật hóa đơn checkout", ex);
             }
         }
 
@@ -446,7 +452,8 @@ public class CheckoutService {
             try {
                 refundService.createAssignedEarlyCheckoutRefundTransaction(saved, refundSettlementAmount, request.getStaffId());
             } catch (Exception ex) {
-                log.warn("Could not create automatic early checkout refund for booking {}: {}", bookingId, ex.getMessage());
+                log.error("Could not create automatic early checkout refund for booking {}. Root cause: {}", bookingId, ex.getMessage(), ex);
+                throw new IllegalStateException("Không thể tạo giao dịch hoàn tiền checkout sớm", ex);
             }
         }
 
@@ -568,7 +575,8 @@ public class CheckoutService {
                     invoiceRepository.save(inv);
                 }
             } catch (Exception ex) {
-                log.warn("Could not persist invoice on completeCheckout for {}: {}", bookingId, ex.getMessage());
+                log.error("Could not persist invoice on completeCheckout for {}. Root cause: {}", bookingId, ex.getMessage(), ex);
+                throw new IllegalStateException("Không thể tạo hoặc cập nhật hóa đơn checkout", ex);
             }
         }
         return saved;

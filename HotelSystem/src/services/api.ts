@@ -309,6 +309,23 @@ export type BookingInvoiceRecord = {
   refundTransactionId?: string;
   refundStatus?: string;
   refundSettlementAmount?: number;
+  totalOriginalAmount?: number;
+  totalUsedRoomAmount?: number;
+  totalUnusedRoomAmount?: number;
+  totalHotelKeepAmount?: number;
+  totalAllocatedPaidAmount?: number;
+  totalActualRevenue?: number;
+  totalRefundToCustomer?: number;
+  totalAdditionalCharge?: number;
+  roomServiceFeeTotal?: number;
+  bookingServiceTotal?: number;
+  draftServiceLinesTotal?: number;
+  damageFeeTotal?: number;
+  manualSurchargeTotal?: number;
+  lateCheckoutFeeTotal?: number;
+  earlyCheckinFeeTotal?: number;
+  totalAmount?: number;
+  paidAmount?: number;
   amount: number;
   currency?: string;
   lines?: any;
@@ -842,8 +859,61 @@ export const roomApi = {
     return roomHttp.post<{ url: string }>('/rooms/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
-  }
+  },
+
+  // ─── Staff-only APIs ──────────────────────────────────────────────────────
+
+  /**
+   * Tìm kiếm phòng cho Staff Panel với đầy đủ filter.
+   * Gọi GET /staff/rooms/search
+   */
+  staffSearch: async (params: {
+    keyword?: string;
+    floor?: number;
+    roomType?: string;
+    status?: string;
+    viewType?: string;
+    minCapacity?: number;
+    minPrice?: number;
+    maxPrice?: number;
+    checkInDate?: string;
+    checkOutDate?: string;
+    sortBy?: string;
+  }): Promise<Room[]> => {
+    // Loại bỏ undefined trước khi gửi
+    const cleanParams: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') {
+        cleanParams[k] = v as string | number;
+      }
+    }
+    const response = await roomHttp.get<unknown>('/staff/rooms/search', { params: cleanParams });
+    return extractRoomList(response.data);
+  },
+
+  /**
+   * Cập nhật trạng thái phòng bởi Staff — có validate transition và ghi lịch sử.
+   * Gọi PATCH /staff/rooms/{id}/status
+   */
+  staffUpdateStatus: async (
+    id: string,
+    status: string,
+    options?: { reason?: string; note?: string; changedBy?: string }
+  ): Promise<{ message: string; oldStatus: string; newStatus: string }> => {
+    const response = await roomHttp.patch<{ message: string; oldStatus: string; newStatus: string }>(
+      `/staff/rooms/${id}/status`,
+      {
+        status,
+        reason: options?.reason,
+        note: options?.note,
+        changedBy: options?.changedBy,
+      }
+    );
+    clearRoomCache(id);
+    return response.data;
+  },
 };
+
 
 // Booking APIs
 export const bookingApi = {
@@ -1073,6 +1143,14 @@ export type CheckoutResponse = {
   finalAmount?: number;
   roomCharge?: number;
   actualRoomCharge?: number;
+  totalOriginalAmount?: number;
+  totalUsedRoomAmount?: number;
+  totalUnusedRoomAmount?: number;
+  totalHotelKeepAmount?: number;
+  totalAllocatedPaidAmount?: number;
+  totalActualRevenue?: number;
+  totalRefundToCustomer?: number;
+  totalAdditionalCharge?: number;
   taxAmount?: number;
   discountAmount?: number;
   grandTotal?: number;
@@ -1093,6 +1171,7 @@ export type CheckoutResponse = {
   message?: string;
   refundAllocations?: RefundAllocationLine[];
   serviceTotal?: number;
+  roomServiceFeeTotal?: number;
   serviceLines?: {
     id?: string;
     bookingId?: string;
@@ -1101,6 +1180,92 @@ export type CheckoutResponse = {
     unitPrice?: number;
     lineTotal?: number;
   }[];
+};
+
+export type CheckoutInvoiceLine = {
+  bookingRoomId?: string;
+  roomId?: string;
+  roomNumber?: string;
+  roomTypeName?: string;
+  itemType?: string;
+  description?: string;
+  quantity?: number;
+  unitPrice?: number;
+  amount?: number;
+};
+
+export type CheckoutRoomSummary = {
+  bookingRoomId?: string;
+  roomId?: string;
+  roomNumber?: string;
+  roomTypeName?: string;
+  roomOriginalAmount?: number;
+  roomCharge?: number;
+  usedRoomAmount?: number;
+  unusedRoomAmount?: number;
+  hotelKeepAmount?: number;
+  allocatedPaidAmount?: number;
+  actualRoomRevenue?: number;
+  serviceCharge?: number;
+  damageFee?: number;
+  manualSurcharge?: number;
+  lateCheckoutFee?: number;
+  totalAmount?: number;
+  actualCheckOutAt?: string;
+  usedNightAmount?: number;
+  unusedNightAmount?: number;
+  hotelPenaltyAmount?: number;
+  earlyCheckinFee?: number;
+  earlyCheckoutRefund?: number;
+  refundToCustomer?: number;
+  additionalCharge?: number;
+  extraCharges?: number;
+  paidAllocated?: number;
+  netRefundForRoom?: number;
+  additionalChargeForRoom?: number;
+};
+
+export type BookingCheckoutPreview = {
+  bookingId: string;
+  bookingCode?: string;
+  bookingStatus?: string;
+  currency?: string;
+  actualCheckOutAt?: string;
+  selectedRoomCount?: number;
+  selectedRoomIds?: string[];
+  roomSummaries?: CheckoutRoomSummary[];
+  invoiceLines?: CheckoutInvoiceLine[];
+  totalOriginalAmount?: number;
+  totalUsedRoomAmount?: number;
+  totalUnusedRoomAmount?: number;
+  totalHotelKeepAmount?: number;
+  totalAllocatedPaidAmount?: number;
+  totalActualRevenue?: number;
+  totalRefundToCustomer?: number;
+  totalAdditionalCharge?: number;
+  roomCharge?: number;
+  serviceTotal?: number;
+  bookingServiceTotal?: number;
+  draftServiceLinesTotal?: number;
+  roomServiceFeeTotal?: number;
+  manualServiceTotal?: number;
+  damageFeeTotal?: number;
+  manualSurchargeTotal?: number;
+  lateCheckoutFeeTotal?: number;
+  earlyCheckinFeeTotal?: number;
+  earlyCheckoutRefund?: number;
+  actualRoomCharge?: number;
+  grandTotal?: number;
+  amountPaid?: number;
+  remainingBalance?: number;
+  refundSettlementAmount?: number;
+  paymentRequired?: boolean;
+  refundRequired?: boolean;
+  checkoutType?: string;
+  usedNights?: number;
+  unusedNights?: number;
+  refundRate?: number;
+  message?: string;
 };
 
 export type CheckInOutStats = {
@@ -1356,6 +1521,14 @@ function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): 
     remainingBalance: data?.remainingBalance != null ? Number(data.remainingBalance) : undefined,
     refundSettlementAmount:
       data?.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+    totalOriginalAmount: data?.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : undefined,
+    totalUsedRoomAmount: data?.totalUsedRoomAmount != null ? Number(data.totalUsedRoomAmount) : undefined,
+    totalUnusedRoomAmount: data?.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
+    totalHotelKeepAmount: data?.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
+    totalAllocatedPaidAmount: data?.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
+    totalActualRevenue: data?.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
+    totalRefundToCustomer: data?.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
+    totalAdditionalCharge: data?.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
     paymentStatus: data?.paymentStatus != null ? String(data.paymentStatus) : undefined,
     usedNights: data?.usedNights != null ? Number(data.usedNights) : undefined,
     chargeNights: data?.chargeNights != null ? Number(data.chargeNights) : undefined,
@@ -1373,6 +1546,7 @@ function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): 
     message: data?.message != null ? String(data.message) : undefined,
     refundAllocations,
     serviceTotal: data?.serviceTotal != null ? Number(data.serviceTotal) : undefined,
+    roomServiceFeeTotal: data?.roomServiceFeeTotal != null ? Number(data.roomServiceFeeTotal) : undefined,
     serviceLines: Array.isArray(data?.serviceLines)
       ? data.serviceLines.map((l: any) => ({
           id: l.id != null ? String(l.id) : undefined,
@@ -1407,6 +1581,23 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     refundTransactionId: data?.refundTransactionId != null ? String(data.refundTransactionId) : undefined,
     refundStatus: data?.refundStatus != null ? String(data.refundStatus) : undefined,
     refundSettlementAmount: data?.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+    totalOriginalAmount: data?.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : undefined,
+    totalUsedRoomAmount: data?.totalUsedRoomAmount != null ? Number(data.totalUsedRoomAmount) : undefined,
+    totalUnusedRoomAmount: data?.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
+    totalHotelKeepAmount: data?.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
+    totalAllocatedPaidAmount: data?.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
+    totalActualRevenue: data?.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
+    totalRefundToCustomer: data?.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
+    totalAdditionalCharge: data?.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
+    roomServiceFeeTotal: data?.roomServiceFeeTotal != null ? Number(data.roomServiceFeeTotal) : undefined,
+    bookingServiceTotal: data?.bookingServiceTotal != null ? Number(data.bookingServiceTotal) : undefined,
+    draftServiceLinesTotal: data?.draftServiceLinesTotal != null ? Number(data.draftServiceLinesTotal) : undefined,
+    damageFeeTotal: data?.damageFeeTotal != null ? Number(data.damageFeeTotal) : undefined,
+    manualSurchargeTotal: data?.manualSurchargeTotal != null ? Number(data.manualSurchargeTotal) : undefined,
+    lateCheckoutFeeTotal: data?.lateCheckoutFeeTotal != null ? Number(data.lateCheckoutFeeTotal) : undefined,
+    earlyCheckinFeeTotal: data?.earlyCheckinFeeTotal != null ? Number(data.earlyCheckinFeeTotal) : undefined,
+    totalAmount: data?.totalAmount != null ? Number(data.totalAmount) : undefined,
+    paidAmount: data?.paidAmount != null ? Number(data.paidAmount) : undefined,
     amount: Number(data?.amount || 0),
     currency: data?.currency != null ? String(data.currency) : undefined,
     lines: data?.lines,
@@ -1620,8 +1811,164 @@ export const staffBookingApi = {
   },
 
   calculateCheckout: async (bookingId: string): Promise<CheckoutResponse> => {
-    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout/calculate`);
-    return mapCheckoutResponse(response.data, bookingId);
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout-preview`);
+    const data = response.data ?? {};
+    return {
+      bookingId: String(data.bookingId ?? bookingId),
+      lateMinutes: Number(data.lateMinutes ?? 0),
+      lateCheckoutFee: Number(data.lateCheckoutFeeTotal ?? data.lateCheckoutFee ?? 0),
+      paymentRequired: Boolean(data.paymentRequired),
+      refundRequired: Boolean(data.refundRequired),
+      bookingStatus: data.bookingStatus != null ? String(data.bookingStatus) : '',
+      actualCheckoutAt: data.actualCheckOutAt != null ? String(data.actualCheckOutAt) : undefined,
+      checkoutType: data.checkoutType != null ? String(data.checkoutType) : undefined,
+      totalNights: data.usedNights != null ? Number(data.usedNights) : undefined,
+      refundAmount: data.earlyCheckoutRefund != null ? Number(data.earlyCheckoutRefund) : undefined,
+      refundRate: data.refundRate != null ? Number(data.refundRate) : undefined,
+      effectivePricePerNight: undefined,
+      finalAmount: data.grandTotal != null ? Number(data.grandTotal) : undefined,
+      roomCharge: data.roomCharge != null ? Number(data.roomCharge) : undefined,
+      actualRoomCharge: data.actualRoomCharge != null ? Number(data.actualRoomCharge) : undefined,
+      taxAmount: undefined,
+      discountAmount: undefined,
+      grandTotal: data.grandTotal != null ? Number(data.grandTotal) : undefined,
+      amountPaid: data.amountPaid != null ? Number(data.amountPaid) : undefined,
+      remainingRoomAmount: undefined,
+      remainingBalance: data.remainingBalance != null ? Number(data.remainingBalance) : undefined,
+      refundSettlementAmount: data.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+      totalOriginalAmount: data.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : undefined,
+      totalUsedRoomAmount: data.totalUsedRoomAmount != null ? Number(data.totalUsedRoomAmount) : undefined,
+      totalUnusedRoomAmount: data.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
+      totalHotelKeepAmount: data.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
+      totalAllocatedPaidAmount: data.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
+      totalActualRevenue: data.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
+      totalRefundToCustomer: data.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
+      totalAdditionalCharge: data.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
+      paymentStatus: data.refundRequired ? 'REFUND_REQUIRED' : data.paymentRequired ? 'PENDING_PAYMENT' : 'PAID',
+      usedNights: data.usedNights != null ? Number(data.usedNights) : undefined,
+      chargeNights: undefined,
+      unusedNights: data.unusedNights != null ? Number(data.unusedNights) : undefined,
+      representativeGuestId: undefined,
+      representativeFullName: undefined,
+      representativePhone: undefined,
+      representativeCccd: undefined,
+      checkedInByStaffId: undefined,
+      checkedOutByStaffId: undefined,
+      message: data.message != null ? String(data.message) : undefined,
+      refundAllocations: undefined,
+      serviceTotal: data.serviceTotal != null ? Number(data.serviceTotal) : undefined,
+      roomServiceFeeTotal: data.roomServiceFeeTotal != null ? Number(data.roomServiceFeeTotal) : undefined,
+      bookingServiceTotal: data.bookingServiceTotal != null ? Number(data.bookingServiceTotal) : undefined,
+      serviceLines: Array.isArray(data.invoiceLines)
+        ? data.invoiceLines
+            .filter((item: any) => item?.itemType === 'BOOKING_SERVICE')
+            .map((item: any) => ({
+              id: item?.bookingRoomId != null ? String(item.bookingRoomId) : undefined,
+              bookingId: bookingId,
+              name: item?.description != null ? String(item.description) : undefined,
+              quantity: item?.quantity != null ? Number(item.quantity) : undefined,
+              unitPrice: item?.unitPrice != null ? Number(item.unitPrice) : undefined,
+              lineTotal: item?.amount != null ? Number(item.amount) : undefined,
+            }))
+        : undefined,
+    };
+  },
+
+  previewCheckout: async (
+    bookingId: string,
+    payload?: {
+      bookingRoomIds?: string[];
+      extraFees?: Array<{ bookingRoomId: string; serviceCharge?: number; surcharge?: number; damageFee?: number; note?: string }>;
+      serviceLines?: Array<{ name: string; quantity?: number; unitPrice?: number; lineTotal?: number }>;
+      paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+      receivedAmount?: number;
+      changeAmount?: number;
+    }
+  ): Promise<BookingCheckoutPreview> => {
+    const response = await api.post<any>(`/api/staff/bookings/${bookingId}/checkout-preview`, payload ?? {});
+    const data = response.data ?? {};
+    return {
+      bookingId: String(data.bookingId ?? bookingId),
+      bookingCode: data.bookingCode != null ? String(data.bookingCode) : undefined,
+      bookingStatus: data.bookingStatus != null ? String(data.bookingStatus) : undefined,
+      currency: data.currency != null ? String(data.currency) : undefined,
+      actualCheckOutAt: data.actualCheckOutAt != null ? String(data.actualCheckOutAt) : undefined,
+      selectedRoomCount: data.selectedRoomCount != null ? Number(data.selectedRoomCount) : undefined,
+      selectedRoomIds: Array.isArray(data.selectedRoomIds) ? data.selectedRoomIds.map((value: any) => String(value)) : undefined,
+      roomSummaries: Array.isArray(data.roomSummaries)
+        ? data.roomSummaries.map((item: any) => ({
+            bookingRoomId: item?.bookingRoomId != null ? String(item.bookingRoomId) : undefined,
+            roomId: item?.roomId != null ? String(item.roomId) : undefined,
+            roomNumber: item?.roomNumber != null ? String(item.roomNumber) : undefined,
+            roomTypeName: item?.roomTypeName != null ? String(item.roomTypeName) : undefined,
+            roomOriginalAmount: item?.roomOriginalAmount != null ? Number(item.roomOriginalAmount) : undefined,
+            roomCharge: item?.roomCharge != null ? Number(item.roomCharge) : undefined,
+            usedRoomAmount: item?.usedRoomAmount != null ? Number(item.usedRoomAmount) : undefined,
+            unusedRoomAmount: item?.unusedRoomAmount != null ? Number(item.unusedRoomAmount) : undefined,
+            hotelKeepAmount: item?.hotelKeepAmount != null ? Number(item.hotelKeepAmount) : undefined,
+            allocatedPaidAmount: item?.allocatedPaidAmount != null ? Number(item.allocatedPaidAmount) : undefined,
+            actualRoomRevenue: item?.actualRoomRevenue != null ? Number(item.actualRoomRevenue) : undefined,
+            serviceCharge: item?.serviceCharge != null ? Number(item.serviceCharge) : undefined,
+            damageFee: item?.damageFee != null ? Number(item.damageFee) : undefined,
+            manualSurcharge: item?.manualSurcharge != null ? Number(item.manualSurcharge) : undefined,
+            lateCheckoutFee: item?.lateCheckoutFee != null ? Number(item.lateCheckoutFee) : undefined,
+            totalAmount: item?.totalAmount != null ? Number(item.totalAmount) : undefined,
+            actualCheckOutAt: item?.actualCheckOutAt != null ? String(item.actualCheckOutAt) : undefined,
+            earlyCheckinFee: item?.earlyCheckinFee != null ? Number(item.earlyCheckinFee) : undefined,
+            earlyCheckoutRefund: item?.earlyCheckoutRefund != null ? Number(item.earlyCheckoutRefund) : undefined,
+            refundToCustomer: item?.refundToCustomer != null ? Number(item.refundToCustomer) : undefined,
+            additionalCharge: item?.additionalCharge != null ? Number(item.additionalCharge) : undefined,
+            extraCharges: item?.extraCharges != null ? Number(item.extraCharges) : undefined,
+            paidAllocated: item?.paidAllocated != null ? Number(item.paidAllocated) : undefined,
+            netRefundForRoom: item?.netRefundForRoom != null ? Number(item.netRefundForRoom) : undefined,
+            additionalChargeForRoom: item?.additionalChargeForRoom != null ? Number(item.additionalChargeForRoom) : undefined,
+          }))
+        : undefined,
+      invoiceLines: Array.isArray(data.invoiceLines)
+        ? data.invoiceLines.map((item: any) => ({
+            bookingRoomId: item?.bookingRoomId != null ? String(item.bookingRoomId) : undefined,
+            roomId: item?.roomId != null ? String(item.roomId) : undefined,
+            roomNumber: item?.roomNumber != null ? String(item.roomNumber) : undefined,
+            roomTypeName: item?.roomTypeName != null ? String(item.roomTypeName) : undefined,
+            itemType: item?.itemType != null ? String(item.itemType) : undefined,
+            description: item?.description != null ? String(item.description) : undefined,
+            quantity: item?.quantity != null ? Number(item.quantity) : undefined,
+            unitPrice: item?.unitPrice != null ? Number(item.unitPrice) : undefined,
+            amount: item?.amount != null ? Number(item.amount) : undefined,
+          }))
+        : undefined,
+      roomCharge: data.roomCharge != null ? Number(data.roomCharge) : undefined,
+      serviceTotal: data.serviceTotal != null ? Number(data.serviceTotal) : undefined,
+      roomServiceFeeTotal: data.roomServiceFeeTotal != null ? Number(data.roomServiceFeeTotal) : undefined,
+      bookingServiceTotal: data.bookingServiceTotal != null ? Number(data.bookingServiceTotal) : undefined,
+      draftServiceLinesTotal: data.draftServiceLinesTotal != null ? Number(data.draftServiceLinesTotal) : undefined,
+      manualServiceTotal: data.manualServiceTotal != null ? Number(data.manualServiceTotal) : undefined,
+      damageFeeTotal: data.damageFeeTotal != null ? Number(data.damageFeeTotal) : undefined,
+      manualSurchargeTotal: data.manualSurchargeTotal != null ? Number(data.manualSurchargeTotal) : undefined,
+      lateCheckoutFeeTotal: data.lateCheckoutFeeTotal != null ? Number(data.lateCheckoutFeeTotal) : undefined,
+      earlyCheckinFeeTotal: data.earlyCheckinFeeTotal != null ? Number(data.earlyCheckinFeeTotal) : undefined,
+      earlyCheckoutRefund: data.earlyCheckoutRefund != null ? Number(data.earlyCheckoutRefund) : undefined,
+      actualRoomCharge: data.actualRoomCharge != null ? Number(data.actualRoomCharge) : undefined,
+      grandTotal: data.grandTotal != null ? Number(data.grandTotal) : undefined,
+      amountPaid: data.amountPaid != null ? Number(data.amountPaid) : undefined,
+      remainingBalance: data.remainingBalance != null ? Number(data.remainingBalance) : undefined,
+      refundSettlementAmount: data.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
+      totalOriginalAmount: data.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : undefined,
+      totalUsedRoomAmount: data.totalUsedRoomAmount != null ? Number(data.totalUsedRoomAmount) : undefined,
+      totalUnusedRoomAmount: data.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
+      totalHotelKeepAmount: data.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
+      totalAllocatedPaidAmount: data.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
+      totalActualRevenue: data.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
+      totalRefundToCustomer: data.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
+      totalAdditionalCharge: data.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
+      paymentRequired: Boolean(data.paymentRequired),
+      refundRequired: Boolean(data.refundRequired),
+      checkoutType: data.checkoutType != null ? String(data.checkoutType) : undefined,
+      usedNights: data.usedNights != null ? Number(data.usedNights) : undefined,
+      unusedNights: data.unusedNights != null ? Number(data.unusedNights) : undefined,
+      refundRate: data.refundRate != null ? Number(data.refundRate) : undefined,
+      message: data.message != null ? String(data.message) : undefined,
+    };
   },
 
   confirmCheckout: async (
@@ -1783,6 +2130,184 @@ export const staffInvoiceApi = {
   },
 };
 
+// ─── New Invoice Management API (v2) ────────────────────────────────────────
+export interface InvoiceListItem {
+  id: number;
+  invoiceCode: string;
+  bookingId: number;
+  bookingCode: string;
+  customerName: string;
+  customerPhone: string;
+  roomNumbers: string;
+  createdAt: string;
+  grossInvoiceAmount: number;
+  totalRefundAmount: number;
+  netRevenue: number;
+  paidAmount: number;
+  remainingAmount: number;
+  status: string;
+  invoiceStatus: string;
+  paymentStatus: string; // UNPAID | PARTIALLY_PAID | PAID | REFUNDED
+}
+
+export interface InvoiceSummaryV2 {
+  totalInvoices: number;
+  grossInvoiceAmount: number;
+  totalRefundAmount: number;
+  netRevenue: number;
+  totalPaidAmount: number;
+  totalRemainingAmount: number;
+  refundedInvoiceCount: number;
+  todayInvoiceCount: number;
+  totalActualRevenue: number;
+  totalRefundedAmount: number;
+  totalPendingRefundAmount: number;
+  totalAdditionalCharge: number;
+  totalRemainingToPay: number;
+  paidInvoiceCount: number;
+  unpaidInvoiceCount: number;
+  partiallyPaidInvoiceCount: number;
+}
+
+export interface InvoiceSearchResponse {
+  content: InvoiceListItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  summary: InvoiceSummaryV2;
+}
+
+export interface InvoiceDetailResponse {
+  id: number;
+  invoiceCode: string;
+  bookingId: number;
+  bookingCode: string;
+  createdAt: string;
+  checkoutStaff: string;
+  status?: string;
+  paymentStatus?: string;
+  customer: { fullName: string; phone: string; cccd: string } | null;
+  rooms: Array<{
+    roomName: string;
+    roomType: string;
+    originalAmount: number;
+    usedAmount: number;
+    unusedAmount: number;
+    earlyCheckoutRefund: number;
+    hotelKeepAmount: number;
+    netRevenue: number;
+    allocatedPaidAmount: number;
+  }>;
+  serviceCharges: Array<{ category: string; itemName: string; amount: number; quantity: number }>;
+  damageCharges: Array<{ itemName: string; amount: number; note: string }>;
+  paymentHistory: { records: Array<{ time: string; amount: number; method: string; status: string }> };
+  refundHistory: { records: Array<{ time: string; amount: number; reason: string; staff: string }> };
+  revenueSummary: {
+    totalRoomAmount: number;
+    totalServiceAmount: number;
+    totalDamageAmount: number;
+    grossInvoiceAmount: number;
+    totalEarlyCheckoutRefundAmount: number;
+    netRevenue: number;
+    totalPaidAmount: number;
+    totalAllocatedPaidAmount?: number;
+    totalActualRevenue?: number;
+    remainingAmount: number;
+    refundToCustomer: number;
+    alreadyRefundedAmount?: number;
+    pendingRefundAmount?: number;
+    additionalRefundAmount?: number;
+    additionalChargeAmount?: number;
+    remainingToPay?: number;
+  };
+}
+
+export interface InvoiceSearchParams {
+  invoiceCode?: string;
+  bookingCode?: string;
+  customerName?: string;
+  customerPhone?: string;
+  specificDate?: string;
+  date?: string;
+  fromDate?: string;
+  toDate?: string;
+  invoiceStatus?: string[];
+  paymentStatus?: string;
+  page?: number;
+  size?: number;
+}
+
+export const newInvoiceApi = {
+  search: async (params: InvoiceSearchParams): Promise<InvoiceSearchResponse> => {
+    const p: Record<string, any> = { page: params.page ?? 0, size: params.size ?? 10 };
+    if (params.invoiceCode) p.invoiceCode = params.invoiceCode;
+    if (params.bookingCode) p.bookingCode = params.bookingCode;
+    if (params.customerName) p.customerName = params.customerName;
+    if (params.customerPhone) p.customerPhone = params.customerPhone;
+    if (params.specificDate) p.specificDate = params.specificDate;
+    if (params.date) p.date = params.date;
+    if (params.fromDate) p.fromDate = params.fromDate;
+    if (params.toDate) p.toDate = params.toDate;
+    if (params.invoiceStatus && params.invoiceStatus.length > 0) p.invoiceStatus = params.invoiceStatus.join(',');
+    if (params.paymentStatus && params.paymentStatus !== 'ALL') p.paymentStatus = params.paymentStatus;
+    const response = await api.get<InvoiceSearchResponse>('/api/staff/invoices/search', { params: p });
+    // Normalize numbers from backend BigDecimal strings
+    const data = response.data;
+    const norm = (v: any) => Number(v ?? 0);
+    if (data.summary) {
+      data.summary.grossInvoiceAmount = norm(data.summary.grossInvoiceAmount);
+      data.summary.totalRefundAmount = norm(data.summary.totalRefundAmount);
+      data.summary.netRevenue = norm(data.summary.netRevenue);
+      data.summary.totalPaidAmount = norm(data.summary.totalPaidAmount);
+      data.summary.totalRemainingAmount = norm(data.summary.totalRemainingAmount);
+      data.summary.totalActualRevenue = norm(data.summary.totalActualRevenue);
+      data.summary.totalRefundedAmount = norm(data.summary.totalRefundedAmount);
+      data.summary.totalPendingRefundAmount = norm(data.summary.totalPendingRefundAmount);
+      data.summary.totalAdditionalCharge = norm(data.summary.totalAdditionalCharge);
+      data.summary.totalRemainingToPay = norm(data.summary.totalRemainingToPay);
+    }
+    if (data.content) {
+      data.content = data.content.map(inv => ({
+        ...inv,
+        grossInvoiceAmount: norm(inv.grossInvoiceAmount),
+        totalRefundAmount: norm(inv.totalRefundAmount),
+        netRevenue: norm(inv.netRevenue),
+        paidAmount: norm(inv.paidAmount),
+        remainingAmount: norm(inv.remainingAmount),
+      }));
+    }
+    return data;
+  },
+
+  getDetail: async (invoiceId: number): Promise<InvoiceDetailResponse> => {
+    const response = await api.get<InvoiceDetailResponse>(`/api/staff/invoices/${invoiceId}`);
+    const d = response.data;
+    const norm = (v: any) => Number(v ?? 0);
+    if (d.revenueSummary) {
+      const rs = d.revenueSummary;
+      rs.totalRoomAmount = norm(rs.totalRoomAmount);
+      rs.totalServiceAmount = norm(rs.totalServiceAmount);
+      rs.totalDamageAmount = norm(rs.totalDamageAmount);
+      rs.grossInvoiceAmount = norm(rs.grossInvoiceAmount);
+      rs.totalEarlyCheckoutRefundAmount = norm(rs.totalEarlyCheckoutRefundAmount);
+      rs.netRevenue = norm(rs.netRevenue);
+      rs.totalPaidAmount = norm(rs.totalPaidAmount);
+      rs.totalAllocatedPaidAmount = norm(rs.totalAllocatedPaidAmount);
+      rs.totalActualRevenue = norm(rs.totalActualRevenue);
+      rs.remainingAmount = norm(rs.remainingAmount);
+      rs.refundToCustomer = norm(rs.refundToCustomer);
+      rs.alreadyRefundedAmount = norm(rs.alreadyRefundedAmount);
+      rs.pendingRefundAmount = norm(rs.pendingRefundAmount);
+      rs.additionalRefundAmount = norm(rs.additionalRefundAmount);
+      rs.additionalChargeAmount = norm(rs.additionalChargeAmount);
+      rs.remainingToPay = norm(rs.remainingToPay);
+    }
+    if (d.rooms) d.rooms = d.rooms.map(r => ({ ...r, originalAmount: norm(r.originalAmount), usedAmount: norm(r.usedAmount), unusedAmount: norm(r.unusedAmount), earlyCheckoutRefund: norm(r.earlyCheckoutRefund), hotelKeepAmount: norm(r.hotelKeepAmount), netRevenue: norm(r.netRevenue), allocatedPaidAmount: norm(r.allocatedPaidAmount) }));
+    return d;
+  },
+};
+
 // Auth APIs
 export const authApi = {
   login: (email: string, password: string) =>
@@ -1890,5 +2415,12 @@ export const shiftApi = {
   getCheckinHistory: () =>
     userHttp.get<any[]>('/api/shifts/checkin-history'),
 };
+
+attachAuthInterceptors(api);
+attachAuthInterceptors(userHttp);
+attachAuthInterceptors(roomHttp);
+attachAuthInterceptors(paymentHttp);
+attachAuthInterceptors(notificationHttp);
+attachAuthInterceptors(authResourceHttp);
 
 export default api;

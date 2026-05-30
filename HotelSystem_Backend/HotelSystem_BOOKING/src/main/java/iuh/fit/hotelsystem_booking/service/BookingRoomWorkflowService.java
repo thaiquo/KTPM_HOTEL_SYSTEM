@@ -16,12 +16,16 @@ import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingItem;
 import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
+import iuh.fit.hotelsystem_booking.entity.BookingServiceLine;
 import iuh.fit.hotelsystem_booking.entity.BookingRoomGuestRole;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.repository.BookingGuestRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingItemRepository;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.BookingServiceLineRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +36,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.NoSuchElementException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,10 +45,14 @@ import java.util.stream.Collectors;
 @Service
 public class BookingRoomWorkflowService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingRoomWorkflowService.class);
+
     private final BookingItemRepository bookingItemRepository;
     private final BookingRepository bookingRepository;
     private final BookingGuestRepository bookingGuestRepository;
     private final BookingInvoiceService bookingInvoiceService;
+    private final BookingCheckoutBillingService bookingCheckoutBillingService;
+    private final BookingServiceLineRepository bookingServiceLineRepository;
     private final RefundCalculationService refundCalculationService;
     private final RefundTransactionRepository refundTransactionRepository;
     private final RabbitTemplate rabbitTemplate;
@@ -53,6 +62,8 @@ public class BookingRoomWorkflowService {
                                       BookingRepository bookingRepository,
                                       BookingGuestRepository bookingGuestRepository,
                                       BookingInvoiceService bookingInvoiceService,
+                                      BookingCheckoutBillingService bookingCheckoutBillingService,
+                                      BookingServiceLineRepository bookingServiceLineRepository,
                                       RefundCalculationService refundCalculationService,
                                       RefundTransactionRepository refundTransactionRepository,
                                       RabbitTemplate rabbitTemplate,
@@ -61,6 +72,8 @@ public class BookingRoomWorkflowService {
         this.bookingRepository = bookingRepository;
         this.bookingGuestRepository = bookingGuestRepository;
         this.bookingInvoiceService = bookingInvoiceService;
+        this.bookingCheckoutBillingService = bookingCheckoutBillingService;
+        this.bookingServiceLineRepository = bookingServiceLineRepository;
         this.refundCalculationService = refundCalculationService;
         this.refundTransactionRepository = refundTransactionRepository;
         this.rabbitTemplate = rabbitTemplate;
@@ -133,85 +146,140 @@ public class BookingRoomWorkflowService {
         room.setCheckedOutByStaffId(staffId);
         room.setStatus(BookingItemStatus.CHECKED_OUT);
 
-        BookingItem savedRoom = bookingItemRepository.save(room);
+        BookingItem savedRoom = bookingItemRepository.saveAndFlush(room);
         updateBookingStatus(room.getBooking());
-        setRoomStatus(room.getRoomId(), "AVAILABLE");
+        log.info("CHECKOUT_MULTIPLE_CHECKPOINT before update room status bookingRoomId={}, roomId={}, targetStatus=CLEANING", room.getId(), room.getRoomId());
+        setRoomStatus(room.getRoomId(), "CLEANING");
+        log.info("CHECKOUT_MULTIPLE_CHECKPOINT after update room status bookingRoomId={}, roomId={}, targetStatus=CLEANING", room.getId(), room.getRoomId());
         return attachGuests(savedRoom);
     }
 
     @Transactional
     public BookingRoomActionResult checkOutRooms(Long bookingId, BookingRoomBatchRequest request, Long fallbackStaffId) {
         Long staffId = request != null && request.getStaffId() != null ? request.getStaffId() : fallbackStaffId;
-        Map<Long, BookingRoomExtraFeeRequest> fees = request != null && request.getExtraFees() != null
+        List<Long> selectedRoomIds = request != null && request.getBookingRoomIds() != null
+            ? request.getBookingRoomIds()
+            : List.of();
+        log.info("CHECKOUT_MULTIPLE_CHECKPOINT START checkout bookingId={}, request={}", bookingId, request);
+        try {
+            Booking booking = bookingRepository.findByIdWithItems(bookingId)
+                .orElseThrow(() -> new NoSuchElementException("Booking not found: " + bookingId));
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT loaded booking bookingId={}, status={}, paidAmount={}, itemCount={}",
+                bookingId, booking.getStatus(), booking.getPaidAmount(), booking.getItems() != null ? booking.getItems().size() : 0);
+
+            List<BookingItem> selectedRooms = selectedRoomIds.stream().map(this::requireRoom).toList();
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT loaded selected bookingItems bookingId={}, selectedCount={}, selectedRoomIds={}",
+                    bookingId, selectedRooms.size(), selectedRoomIds);
+            validateSelectedRooms(bookingId, selectedRooms);
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT validated selected rooms bookingId={}, selectedCount={}", bookingId, selectedRooms.size());
+
+            Map<Long, BookingRoomExtraFeeRequest> fees = request != null && request.getExtraFees() != null
                 ? request.getExtraFees().stream()
-                    .filter(fee -> fee != null && fee.getBookingRoomId() != null)
-                    .collect(Collectors.toMap(BookingRoomExtraFeeRequest::getBookingRoomId, fee -> fee, (left, right) -> right))
+                .filter(fee -> fee != null && fee.getBookingRoomId() != null)
+                .collect(Collectors.toMap(BookingRoomExtraFeeRequest::getBookingRoomId, fee -> fee, (left, right) -> right))
                 : Map.of();
-        BookingRoomActionResult result = runBatch(bookingId, request, id -> checkOutRoom(id, staffId, fees.get(id)));
-        if (result.isSuccess()) {
-            attachInvoice(result, bookingId, request);
+
+            BookingRoomActionResult result = runBatchStrict(bookingId, request, id -> checkOutRoom(id, staffId, fees.get(id)));
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT rooms checked out bookingId={}, checkedOutRooms={}, errors={}",
+                bookingId, result.getRooms().size(), result.getErrors().size());
+
+            attachInvoice(result, booking, request);
+
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT before save refund/payment transaction bookingId={}, action=SKIPPED_IN_WORKFLOW", bookingId);
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT after save refund/payment transaction bookingId={}, action=SKIPPED_IN_WORKFLOW", bookingId);
+
+            result.setSuccess(true);
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT END checkout success bookingId={}, invoiceId={}, invoiceCode={}, success={}",
+                bookingId, result.getInvoiceId(), result.getInvoiceCode(), result.isSuccess());
+            return result;
+        } catch (RuntimeException e) {
+            log.error("CHECKOUT_MULTIPLE_FAILED bookingId={}, request={}", bookingId, request, e);
+            throw e;
+        }
+    }
+
+        private void attachInvoice(BookingRoomActionResult result, Booking booking, BookingRoomBatchRequest request) {
+        if (booking == null) {
+            throw new NoSuchElementException("Booking not found: " + (request != null ? request.getBookingRoomIds() : null));
+        }
+        Map<String, Object> lines = bookingCheckoutBillingService.buildInvoicePayload(booking.getId(), request);
+        BigDecimal invoiceAmount = lines.get("grandTotal") instanceof BigDecimal bd ? bd
+                : lines.get("grandTotal") instanceof Number n ? BigDecimal.valueOf(n.doubleValue())
+                : BigDecimal.ZERO;
+        log.info("CHECKOUT_MULTIPLE_CHECKPOINT before merge invoice bookingId={}, invoiceAmount={}, currency={}",
+                booking.getId(), invoiceAmount, booking.getCurrency() != null ? booking.getCurrency() : "VND");
+        // Dùng merge (cumulative) thay vì save (overwrite) để tránh mất dữ liệu phòng đã checkout trước
+        var invoice = bookingInvoiceService.mergeCheckoutInvoice(
+                booking.getId(), invoiceAmount,
+                booking.getCurrency() != null ? booking.getCurrency() : "VND",
+                lines);
+        result.setInvoiceId(invoice.getId());
+        result.setInvoiceCode("INV-" + invoice.getId());
+        log.info("CHECKOUT_MULTIPLE_CHECKPOINT after merge invoice bookingId={}, invoiceId={}, invoiceCode={}", booking.getId(), invoice.getId(), result.getInvoiceCode());
+    }
+
+    private void validateSelectedRooms(Long bookingId, List<BookingItem> selectedRooms) {
+        for (BookingItem room : selectedRooms) {
+            if (!Objects.equals(room.getBooking().getId(), bookingId)) {
+                throw new IllegalArgumentException("Room " + room.getId() + " does not belong to booking " + bookingId);
+            }
+            if (room.getStatus() == BookingItemStatus.CHECKED_OUT) {
+                throw new IllegalStateException("Room " + room.getId() + " is already checked out");
+            }
+            if (room.getStatus() != BookingItemStatus.CHECKED_IN) {
+                throw new IllegalStateException("Only CHECKED_IN rooms can be checked out");
+            }
+        }
+    }
+
+    private BigDecimal calculateServiceTotal(Long bookingId) {
+        if (bookingServiceLineRepository == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (BookingServiceLine line : bookingServiceLineRepository.findByBookingId(bookingId)) {
+            if (line.getLineTotal() != null) {
+                total = total.add(line.getLineTotal());
+            }
+        }
+        return total;
+    }
+
+    private List<Map<String, Object>> toInvoiceServiceLines(List<BookingServiceLine> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (BookingServiceLine line : lines) {
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("id", line.getId());
+            item.put("name", line.getName());
+            item.put("quantity", line.getQuantity());
+            item.put("unitPrice", line.getUnitPrice());
+            item.put("lineTotal", line.getLineTotal());
+            result.add(item);
         }
         return result;
     }
 
-    private void attachInvoice(BookingRoomActionResult result, Long bookingId, BookingRoomBatchRequest request) {
-        Booking booking = bookingRepository.findByIdWithItems(bookingId).orElse(null);
-        List<BookingItem> allCheckedOutRooms = booking != null ? booking.getItems().stream()
-                .filter(item -> item.getStatus() == BookingItemStatus.CHECKED_OUT)
-                .toList() : result.getRooms();
-        
-        BigDecimal totalRoomCharge = allCheckedOutRooms.stream().map(BookingItem::getRoomCharge).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalServiceCharge = allCheckedOutRooms.stream().map(BookingItem::getServiceCharge).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalDamageFee = allCheckedOutRooms.stream().map(BookingItem::getDamageFee).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalSurcharge = allCheckedOutRooms.stream().map(BookingItem::getSurcharge).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalAmount = allCheckedOutRooms.stream().map(BookingItem::getFinalAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-        
-        BigDecimal paidAmount = BigDecimal.valueOf(booking != null && booking.getPaidAmount() != null ? booking.getPaidAmount() : 0.0);
-        BigDecimal originalRoomAmount = booking != null
-                ? BigDecimal.valueOf(booking.getFinalTotal() != null ? booking.getFinalTotal() : booking.getTotalPrice() != null ? booking.getTotalPrice() : 0.0)
-                : totalRoomCharge;
-        BigDecimal totalEarlyCheckoutRefund = calculateTotalEarlyCheckoutRefund(booking);
-        BigDecimal alreadyRefundedAmount = resolveAlreadyRecordedEarlyCheckoutRefund(bookingId);
-        BigDecimal additionalRefundAmount = totalEarlyCheckoutRefund.subtract(alreadyRefundedAmount).max(BigDecimal.ZERO);
-        BigDecimal actualRoomRevenue = originalRoomAmount.subtract(totalEarlyCheckoutRefund).max(BigDecimal.ZERO);
-        BigDecimal totalActualRevenue = actualRoomRevenue.add(totalServiceCharge).add(totalDamageFee).add(totalSurcharge);
-        BigDecimal amountToPay = totalActualRevenue.subtract(paidAmount).max(BigDecimal.ZERO);
-        BigDecimal refundToCustomer = paidAmount.subtract(totalActualRevenue).max(BigDecimal.ZERO);
-        
-        Map<Long, Room> roomSnapshot = loadRoomSnapshot(allCheckedOutRooms);
-        List<Map<String, Object>> items = allCheckedOutRooms.stream().flatMap(room -> invoiceItems(room, roomSnapshot.get(room.getRoomId())).stream()).toList();
-        
-        Map<String, Object> lines = new java.util.LinkedHashMap<>();
-        lines.put("invoiceItems", items);
-        lines.put("totalRoomCharge", totalRoomCharge);
-        lines.put("totalServiceCharge", totalServiceCharge);
-        lines.put("totalDamageFee", totalDamageFee);
-        lines.put("totalSurcharge", totalSurcharge);
-        lines.put("totalAmount", totalActualRevenue);
-        lines.put("roomTotal", originalRoomAmount);
-        lines.put("actualRoomCharge", actualRoomRevenue);
-        lines.put("grandTotal", totalActualRevenue);
-        lines.put("paidAmount", paidAmount);
-        lines.put("totalOriginalAmount", originalRoomAmount);
-        lines.put("totalActualRevenue", totalActualRevenue);
-        lines.put("totalEarlyCheckoutRefund", totalEarlyCheckoutRefund);
-        lines.put("earlyCheckoutAdjustment", totalEarlyCheckoutRefund);
-        lines.put("alreadyRefundedAmount", alreadyRefundedAmount);
-        lines.put("additionalRefundAmount", additionalRefundAmount);
-        lines.put("refundSettlementAmount", refundToCustomer);
-        lines.put("additionalChargeAmount", amountToPay);
-        lines.put("remainingBalance", amountToPay);
-        lines.put("amountToPay", amountToPay);
-        lines.put("paymentMethod", request != null ? request.getPaymentMethod() : null);
-        lines.put("paymentStatus", amountToPay.compareTo(BigDecimal.ZERO) <= 0 ? "PAID" : "PARTIAL");
-        lines.put("receivedAmount", request != null ? request.getReceivedAmount() : null);
-        lines.put("changeAmount", request != null ? request.getChangeAmount() : null);
-        lines.put("createdByStaffId", request != null ? request.getStaffId() : null);
-        lines.put("roomCount", allCheckedOutRooms.size());
-        
-        var invoice = bookingInvoiceService.saveCheckoutInvoice(bookingId, totalActualRevenue, booking != null ? booking.getCurrency() : "VND", lines);
-        result.setInvoiceId(invoice.getId());
-        result.setInvoiceCode("INV-" + invoice.getId());
+    private BookingRoomActionResult runBatch(Long bookingId, BookingRoomBatchRequest request, RoomAction action) {
+        if (request == null || request.getBookingRoomIds() == null || request.getBookingRoomIds().isEmpty()) {
+            throw new IllegalArgumentException("bookingRoomIds is required");
+        }
+        BookingRoomActionResult result = new BookingRoomActionResult();
+        for (Long roomId : request.getBookingRoomIds()) {
+            try {
+                BookingItem room = requireRoom(roomId);
+                if (!Objects.equals(room.getBooking().getId(), bookingId)) {
+                    throw new IllegalArgumentException("Room " + roomId + " does not belong to booking " + bookingId);
+                }
+                result.getRooms().add(action.apply(roomId));
+            } catch (RuntimeException ex) {
+                result.getErrors().add("bookingRoomId=" + roomId + ": " + ex.getMessage());
+            }
+        }
+        result.setSuccess(result.getErrors().isEmpty());
+        return result;
     }
 
     private BigDecimal calculateTotalEarlyCheckoutRefund(Booking booking) {
@@ -237,13 +305,9 @@ public class BookingRoomWorkflowService {
         if (fromRefundTransaction.compareTo(BigDecimal.ZERO) > 0) {
             return fromRefundTransaction;
         }
-        try {
-            BookingInvoiceDto previous = bookingInvoiceService.getLatestInvoice(bookingId);
-            if (previous.getLines() instanceof Map<?, ?> lines) {
-                return decimal(lines.get("totalEarlyCheckoutRefund"), lines.get("earlyCheckoutAdjustment"));
-            }
-        } catch (RuntimeException ignored) {
-            return BigDecimal.ZERO;
+        BookingInvoiceDto previous = bookingInvoiceService.findLatestInvoice(bookingId).orElse(null);
+        if (previous != null && previous.getLines() instanceof Map<?, ?> lines) {
+            return decimal(lines.get("totalEarlyCheckoutRefund"), lines.get("earlyCheckoutAdjustment"));
         }
         return BigDecimal.ZERO;
     }
@@ -345,23 +409,19 @@ public class BookingRoomWorkflowService {
         lines.add(item);
     }
 
-    private BookingRoomActionResult runBatch(Long bookingId, BookingRoomBatchRequest request, RoomAction action) {
+    private BookingRoomActionResult runBatchStrict(Long bookingId, BookingRoomBatchRequest request, RoomAction action) {
         if (request == null || request.getBookingRoomIds() == null || request.getBookingRoomIds().isEmpty()) {
             throw new IllegalArgumentException("bookingRoomIds is required");
         }
         BookingRoomActionResult result = new BookingRoomActionResult();
         for (Long roomId : request.getBookingRoomIds()) {
-            try {
-                BookingItem room = requireRoom(roomId);
-                if (!Objects.equals(room.getBooking().getId(), bookingId)) {
-                    throw new IllegalArgumentException("Room " + roomId + " does not belong to booking " + bookingId);
-                }
-                result.getRooms().add(action.apply(roomId));
-            } catch (RuntimeException ex) {
-                result.getErrors().add("bookingRoomId=" + roomId + ": " + ex.getMessage());
+            BookingItem room = requireRoom(roomId);
+            if (!Objects.equals(room.getBooking().getId(), bookingId)) {
+                throw new IllegalArgumentException("Room " + roomId + " does not belong to booking " + bookingId);
             }
+            result.getRooms().add(action.apply(roomId));
         }
-        result.setSuccess(result.getErrors().isEmpty());
+        result.setSuccess(true);
         return result;
     }
 
@@ -482,12 +542,12 @@ public class BookingRoomWorkflowService {
         } else if (activeRooms.stream().allMatch(room -> room.getStatus() == BookingItemStatus.BOOKED || room.getStatus() == BookingItemStatus.ACTIVE)) {
             fresh.setStatus(BookingStatus.BOOKED);
         }
-        bookingRepository.save(fresh);
+        bookingRepository.saveAndFlush(fresh);
     }
 
     private BookingItem requireRoom(Long bookingRoomId) {
         return bookingItemRepository.findByIdWithBooking(bookingRoomId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking room not found: " + bookingRoomId));
+                .orElseThrow(() -> new NoSuchElementException("Booking room not found: " + bookingRoomId));
     }
 
     private BookingItem attachGuests(BookingItem room) {
@@ -508,7 +568,12 @@ public class BookingRoomWorkflowService {
 
     private BigDecimal calculateRoomCharge(BookingItem room) {
         BigDecimal nightly = BigDecimal.valueOf(room.getPriceSnapshot() != null ? room.getPriceSnapshot() : 0.0);
-        int nights = room.getNights() != null ? room.getNights() : (int) Math.max(1, ChronoUnit.DAYS.between(room.getCheckIn(), room.getCheckOut()));
+        int nights = 1;
+        if (room.getNights() != null) {
+            nights = room.getNights();
+        } else if (room.getCheckIn() != null && room.getCheckOut() != null) {
+            nights = (int) Math.max(1, ChronoUnit.DAYS.between(room.getCheckIn(), room.getCheckOut()));
+        }
         return nightly.multiply(BigDecimal.valueOf(Math.max(1, nights))).setScale(0, RoundingMode.HALF_UP);
     }
 
@@ -556,7 +621,12 @@ public class BookingRoomWorkflowService {
         RoomStatusUpdateDto dto = new RoomStatusUpdateDto();
         dto.setRoomId(roomId);
         dto.setStatus(status);
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.status", dto);
+        try {
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.status", dto);
+        } catch (RuntimeException ex) {
+            // Room status publish failure should not break checkout commit.
+            log.error("CHECKOUT_MULTIPLE_ROOM_STATUS_PUBLISH_FAILED roomId={}, status={}", roomId, status, ex);
+        }
     }
 
     @FunctionalInterface

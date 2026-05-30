@@ -19,7 +19,16 @@ class CheckInOutServiceTest {
 
         double fee = checkInOutService.calculateEarlyCheckInFee(booking, checkinAt(6, 59));
 
-        assertEquals(500000.0, fee);
+        assertEquals(1000000.0, fee);
+    }
+
+    @Test
+    void earlyCheckinBefore7ChargesFullNight() {
+        Booking booking = booking();
+
+        double fee = checkInOutService.calculateEarlyCheckInFee(booking, checkinAt(6, 0));
+
+        assertEquals(1000000.0, fee);
     }
 
     @Test

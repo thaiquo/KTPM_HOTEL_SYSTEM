@@ -1,128 +1,632 @@
+# services:
+#   # ========================
+#   # EUREKA SERVER (Service Discovery)
+#   # ========================
+#   eureka-server:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx384m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_EUREKA:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8761:8761"
+#     mem_limit: 896mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#     healthcheck:
+#       test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 10
+#       start_period: 120s
+
+#   # ========================
+#   # REDIS (Caching & Rate Limiting)
+#   # ========================
+#   redis:
+#     image: redis:7-alpine
+#     container_name: redis
+#     ports:
+#       - "6379:6379"
+#     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+#     healthcheck:
+#       test: [ "CMD", "redis-cli", "ping" ]
+#       interval: 10s
+#       timeout: 3s
+#       retries: 5
+#     volumes:
+#       - redis_data:/data
+
+#   # ========================
+#   # ZIPKIN (Distributed Tracing) - disabled by default
+#   # ========================
+#   # zipkin:
+#   #   image: openzipkin/zipkin
+#   #   container_name: zipkin
+#   #   ports:
+#   #     - "9411:9411"
+
+#   # ========================
+#   # RABBITMQ
+#   # ========================
+#   rabbitmq:
+#     image: rabbitmq:3-management
+#     container_name: rabbitmq
+#     ports:
+#       - "5672:5672"
+#       - "15672:15672"
+#     environment:
+#       RABBITMQ_DEFAULT_USER: thaiquoc
+#       RABBITMQ_DEFAULT_PASS: 123456
+
+#   # ========================
+#   # PGADMIN (UI quan ly DB)
+#   # ========================
+#   pgadmin:
+#     image: dpage/pgadmin4
+#     container_name: pgadmin
+#     ports:
+#       - "5050:80"
+#     environment:
+#       PGADMIN_DEFAULT_EMAIL: admin@gmail.com
+#       PGADMIN_DEFAULT_PASSWORD: 123456
+#     depends_on:
+#       - postgres-auth
+#     volumes:
+#       - pgadmin_data:/var/lib/pgadmin
+
+#   # ========================
+#   # AUTH DB + SERVICE
+#   # ========================
+#   postgres-auth:
+#     image: postgres:15
+#     ports:
+#       - "56421:5432"
+#     environment:
+#       POSTGRES_DB: hotel_auth
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       - auth_data:/var/lib/postgresql/data
+
+#   postgres-user:
+#     image: postgres:15
+#     ports:
+#       - "56422:5432"
+#     environment:
+#       POSTGRES_DB: hotel_user
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       - user_data:/var/lib/postgresql/data
+
+#   auth-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_AUTH:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8081:8081"
+#     depends_on:
+#       - postgres-auth
+#       - rabbitmq
+#       - eureka-server
+#     mem_limit: 1024mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       RABBIT_HOST: rabbitmq
+#       RABBIT_USERNAME: thaiquoc
+#       RABBIT_PASSWORD: 123456
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+#       PAYMENT_SERVICE_URL: http://payment-service:8085
+
+#   user-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_USER:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8082:8082"
+#     depends_on:
+#       - postgres-user
+#       - eureka-server
+#     mem_limit: 1024mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+
+#   # ========================
+#   # ROOM DB + SERVICE
+#   # ========================
+#   postgres-room:
+#     image: postgres:15
+#     ports:
+#       - "56423:5432"
+#     environment:
+#       POSTGRES_DB: hotel_room
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       # - ./HotelSystem_Backend/HotelSystem_ROOM/pg_hba.conf.dev:/var/lib/postgresql/data/pg_hba.conf
+#       - room_data:/var/lib/postgresql/data
+
+#   room-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_ROOM:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8083:8083"
+#     depends_on:
+#       - postgres-room
+#       - rabbitmq
+#       - eureka-server
+#       - redis
+#     mem_limit: 1152mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+#       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       ROOM_SEED_ENABLED: "true"
+#       RABBIT_HOST: rabbitmq
+#       RABBIT_USERNAME: thaiquoc
+#       RABBIT_PASSWORD: 123456
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+#       REDIS_HOST: redis
+#       REDIS_PORT: 6379
+
+#   # ========================
+#   # BOOKING DB + SERVICE
+#   # ========================
+#   postgres-booking:
+#     image: postgres:15
+#     ports:
+#       - "56424:5432"
+#     environment:
+#       POSTGRES_DB: hotel_booking
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       - booking_data:/var/lib/postgresql/data
+
+#   booking-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_BOOKING:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8084:8084"
+#     depends_on:
+#       - postgres-booking
+#       - rabbitmq
+#       - eureka-server
+#     mem_limit: 1024mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=384m"
+#       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       ROOM_SEED_ENABLED: "true"
+#       RABBIT_HOST: rabbitmq
+#       RABBIT_USERNAME: thaiquoc
+#       RABBIT_PASSWORD: 123456
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+#       PAYMENT_SERVICE_URL: http://payment-service:8085
+
+#   # ========================
+#   # PAYMENT DB + SERVICE
+#   # ========================
+#   postgres-payment:
+#     image: postgres:15
+#     ports:
+#       - "56425:5432"
+#     environment:
+#       POSTGRES_DB: hotel_payment
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       - payment_data:/var/lib/postgresql/data
+
+#   payment-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_PAYMENT:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8085:8085"
+#     depends_on:
+#       - postgres-payment
+#       - rabbitmq
+#       - eureka-server
+#     mem_limit: 768mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       RABBIT_HOST: rabbitmq
+#       RABBIT_USERNAME: thaiquoc
+#       RABBIT_PASSWORD: 123456
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+#       PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://192.168.1.8:3000}/payment/confirm
+#       VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
+#       VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
+#       VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+#       VNP_RETURN_URL: ${VNP_RETURN_URL:-http://127.0.0.1:8085/payments/vnpay-return}
+#       VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
+#       MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-http://127.0.0.1:8085/payments/momo-return}
+#       MOMO_IPN_URL: ${MOMO_IPN_URL:-http://127.0.0.1:8085/payments/momo-ipn}
+#       MOMO_FRONTEND_RETURN_URL: ${MOMO_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
+
+#   # ========================
+#   # NOTIFICATION DB + SERVICE
+#   # ========================
+#   postgres-notification:
+#     image: postgres:15
+#     ports:
+#       - "56426:5432"
+#     environment:
+#       POSTGRES_DB: hotel_notification
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: quocthai
+#     volumes:
+#       - notification_data:/var/lib/postgresql/data
+
+#   notification-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_NOTIFICATION:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8086:8086"
+#     depends_on:
+#       - postgres-notification
+#       - rabbitmq
+#       - eureka-server
+#     mem_limit: 1024mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
+#       DB_USERNAME: postgres
+#       DB_PASSWORD: quocthai
+#       RABBIT_HOST: rabbitmq
+#       RABBIT_USERNAME: thaiquoc
+#       RABBIT_PASSWORD: 123456
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+
+#   # ========================
+#   # AI CHATBOT SERVICE
+#   # ========================
+#   ai-service:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:TieredStopAtLevel=1 -Xmx256m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_AI:/app
+#       - maven-repo:/root/.m2
+#     depends_on:
+#       - eureka-server
+#     mem_limit: 1200mb
+#     env_file:
+#       - ./HotelSystem/.env
+#     environment:
+#       MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+
+#   # ========================
+#   # API GATEWAY
+#   # ========================
+#   api-gateway:
+#     image: maven:3.9-eclipse-temurin-17
+#     working_dir: /app
+#     command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
+#     dns:
+#       - 8.8.8.8
+#       - 1.1.1.1
+#     volumes:
+#       - ./HotelSystem_Backend/HotelSystem_GATEWAY:/app
+#       - maven-repo:/root/.m2
+#     ports:
+#       - "8080:8080"
+#     depends_on:
+#       - eureka-server
+#       - redis
+#       - ai-service
+#     mem_limit: 1024mb
+#     environment:
+#       MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+#       EUREKA_URL: http://eureka-server:8761/eureka/
+#       REDIS_HOST: redis
+#       REDIS_PORT: 6379
+
+#   # ========================
+#   # FRONTEND (VITE HOT RELOAD)
+#   # ========================
+#   frontend:
+#     image: node:20-alpine
+#     working_dir: /app
+#     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000 --strictPort"
+#     volumes:
+#       - ./HotelSystem:/app
+#       - frontend-node-modules:/app/node_modules
+#     ports:
+#       - "0.0.0.0:3000:3000"
+#     depends_on:
+#       - api-gateway
+#       - ai-service
+#     mem_limit: 768mb
+#     environment:
+#       CHOKIDAR_USEPOLLING: "true"
+#       NODE_OPTIONS: "--max-old-space-size=512"
+#       VITE_DOCKER: "true"
+
+# volumes:
+#   pgadmin_data:
+#   auth_data:
+#   user_data:
+#   room_data:
+#   booking_data:
+#   payment_data:
+#   notification_data:
+#   redis_data:
+#   maven-repo:
+#   frontend-node-modules:
 services:
   # ========================
-  # EUREKA SERVER (Service Discovery)
+  # EUREKA SERVER
   # ========================
   eureka-server:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx384m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: >
+      sh -c "mvn -q -Dmaven.test.skip=true -DskipTests -DskipITs -Dspring-boot.repackage.skip=false package
+      && JAR=$$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -n 1)
+      && echo Running $$JAR
+      && exec java $$JAVA_OPTS -jar $$JAR"
     volumes:
       - ./HotelSystem_Backend/HotelSystem_EUREKA:/app
       - maven-repo:/root/.m2
     ports:
       - "8761:8761"
-    mem_limit: 896mb
+    mem_limit: 512mb
     environment:
-      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx256m -XX:MaxMetaspaceSize=160m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -Xss512k"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8761/actuator/health" ]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8761/actuator/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 120s
+      retries: 15
+      start_period: 90s
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
 
   # ========================
-  # REDIS (Caching & Rate Limiting)
+  # INFRA
   # ========================
   redis:
     image: redis:7-alpine
-    container_name: redis
     ports:
       - "6379:6379"
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    mem_limit: 192mb
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
-    volumes:
-      - redis_data:/data
+    logging: *default-logging
 
-  # ========================
-  # ZIPKIN (Distributed Tracing) - disabled by default
-  # ========================
-  # zipkin:
-  #   image: openzipkin/zipkin
-  #   container_name: zipkin
-  #   ports:
-  #     - "9411:9411"
-
-  # ========================
-  # RABBITMQ
-  # ========================
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
+    hostname: rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
+    mem_limit: 768mb
     environment:
       RABBITMQ_DEFAULT_USER: thaiquoc
       RABBITMQ_DEFAULT_PASS: 123456
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    logging: *default-logging
 
-  # ========================
-  # PGADMIN (UI quan ly DB)
-  # ========================
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
+    profiles: ["tools"]
     ports:
       - "5050:80"
+    mem_limit: 384mb
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@gmail.com
       PGADMIN_DEFAULT_PASSWORD: 123456
     depends_on:
-      - postgres-auth
+      postgres-auth:
+        condition: service_healthy
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+    logging: *default-logging
 
   # ========================
-  # AUTH DB + SERVICE
+  # POSTGRES DATABASES
   # ========================
   postgres-auth:
-    image: postgres:15
+    image: postgres:15-alpine
     ports:
       - "56421:5432"
+    mem_limit: 256mb
+    command: postgres -c shared_buffers=64MB -c max_connections=40 -c work_mem=4MB -c maintenance_work_mem=32MB
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
     volumes:
       - auth_data:/var/lib/postgresql/data
+    healthcheck: &pg-health
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
 
   postgres-user:
-    image: postgres:15
+    image: postgres:15-alpine
     ports:
       - "56422:5432"
+    mem_limit: 256mb
+    command: postgres -c shared_buffers=64MB -c max_connections=40 -c work_mem=4MB -c maintenance_work_mem=32MB
     environment:
       POSTGRES_DB: hotel_user
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: quocthai
     volumes:
       - user_data:/var/lib/postgresql/data
+    healthcheck: *pg-health
+    logging: *default-logging
 
+  postgres-room:
+    image: postgres:15-alpine
+    ports:
+      - "56423:5432"
+    mem_limit: 256mb
+    command: postgres -c shared_buffers=64MB -c max_connections=50 -c work_mem=4MB -c maintenance_work_mem=32MB
+    environment:
+      POSTGRES_DB: hotel_room
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - room_data:/var/lib/postgresql/data
+    healthcheck: *pg-health
+    logging: *default-logging
+
+  postgres-booking:
+    image: postgres:15-alpine
+    ports:
+      - "56424:5432"
+    mem_limit: 320mb
+    command: postgres -c shared_buffers=96MB -c max_connections=60 -c work_mem=4MB -c maintenance_work_mem=32MB
+    environment:
+      POSTGRES_DB: hotel_booking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - booking_data:/var/lib/postgresql/data
+    healthcheck: *pg-health
+    logging: *default-logging
+
+  postgres-payment:
+    image: postgres:15-alpine
+    ports:
+      - "56425:5432"
+    mem_limit: 256mb
+    command: postgres -c shared_buffers=64MB -c max_connections=40 -c work_mem=4MB -c maintenance_work_mem=32MB
+    environment:
+      POSTGRES_DB: hotel_payment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - payment_data:/var/lib/postgresql/data
+    healthcheck: *pg-health
+    logging: *default-logging
+
+  postgres-notification:
+    image: postgres:15-alpine
+    ports:
+      - "56426:5432"
+    mem_limit: 256mb
+    command: postgres -c shared_buffers=64MB -c max_connections=30 -c work_mem=4MB -c maintenance_work_mem=32MB
+    environment:
+      POSTGRES_DB: hotel_notification
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: quocthai
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+    healthcheck: *pg-health
+    logging: *default-logging
+
+  # ========================
+  # SPRING SERVICES
+  # ========================
   auth-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: &maven-run >
+      sh -c "mvn -q -Dmaven.test.skip=true -DskipTests -DskipITs package
+      && JAR=$$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -n 1)
+      && echo Running $$JAR
+      && exec java $$JAVA_OPTS -jar $$JAR"
     volumes:
       - ./HotelSystem_Backend/HotelSystem_AUTH:/app
       - maven-repo:/root/.m2
     ports:
       - "8081:8081"
+    mem_limit: 640mb
     depends_on:
-      - postgres-auth
-      - rabbitmq
-      - eureka-server
-    mem_limit: 1024mb
+      postgres-auth:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx320m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -131,66 +635,57 @@ services:
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
       PAYMENT_SERVICE_URL: http://payment-service:8085
+    logging: *default-logging
 
   user-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_USER:/app
       - maven-repo:/root/.m2
     ports:
       - "8082:8082"
+    mem_limit: 640mb
     depends_on:
-      - postgres-user
-      - eureka-server
-    mem_limit: 1024mb
+      postgres-user:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx320m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       EUREKA_URL: http://eureka-server:8761/eureka/
-
-  # ========================
-  # ROOM DB + SERVICE
-  # ========================
-  postgres-room:
-    image: postgres:15
-    ports:
-      - "56423:5432"
-    environment:
-      POSTGRES_DB: hotel_room
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - ./HotelSystem_Backend/HotelSystem_ROOM/pg_hba.conf.dev:/var/lib/postgresql/data/pg_hba.conf
-      - room_data:/var/lib/postgresql/data
+    logging: *default-logging
 
   room-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_ROOM:/app
       - maven-repo:/root/.m2
     ports:
       - "8083:8083"
+    mem_limit: 704mb
     depends_on:
-      - postgres-room
-      - rabbitmq
-      - eureka-server
-      - redis
-    mem_limit: 1152mb
+      postgres-room:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=68 -XX:InitialRAMPercentage=20 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -201,40 +696,29 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       REDIS_HOST: redis
       REDIS_PORT: 6379
-
-  # ========================
-  # BOOKING DB + SERVICE
-  # ========================
-  postgres-booking:
-    image: postgres:15
-    ports:
-      - "56424:5432"
-    environment:
-      POSTGRES_DB: hotel_booking
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - booking_data:/var/lib/postgresql/data
+    logging: *default-logging
 
   booking-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_BOOKING:/app
       - maven-repo:/root/.m2
     ports:
       - "8084:8084"
+    mem_limit: 768mb
     depends_on:
-      - postgres-booking
-      - rabbitmq
-      - eureka-server
-    mem_limit: 1024mb
+      postgres-booking:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=384m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=224m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=70 -XX:InitialRAMPercentage=25 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -244,40 +728,29 @@ services:
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
       PAYMENT_SERVICE_URL: http://payment-service:8085
-
-  # ========================
-  # PAYMENT DB + SERVICE
-  # ========================
-  postgres-payment:
-    image: postgres:15
-    ports:
-      - "56425:5432"
-    environment:
-      POSTGRES_DB: hotel_payment
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - payment_data:/var/lib/postgresql/data
+    logging: *default-logging
 
   payment-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx640m -Xms256m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_PAYMENT:/app
       - maven-repo:/root/.m2
     ports:
       - "8085:8085"
+    mem_limit: 704mb
     depends_on:
-      - postgres-payment
-      - rabbitmq
-      - eureka-server
-    mem_limit: 1536mb
+      postgres-payment:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx768m -XX:MaxMetaspaceSize=384m"
+      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=68 -XX:InitialRAMPercentage=20 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -294,40 +767,29 @@ services:
       MOMO_REDIRECT_URL: ${MOMO_REDIRECT_URL:-http://127.0.0.1:8085/payments/momo-return}
       MOMO_IPN_URL: ${MOMO_IPN_URL:-http://127.0.0.1:8085/payments/momo-ipn}
       MOMO_FRONTEND_RETURN_URL: ${MOMO_FRONTEND_RETURN_URL:-http://127.0.0.1:3000/payment-result}
-
-  # ========================
-  # NOTIFICATION DB + SERVICE
-  # ========================
-  postgres-notification:
-    image: postgres:15
-    ports:
-      - "56426:5432"
-    environment:
-      POSTGRES_DB: hotel_notification
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
-    volumes:
-      - notification_data:/var/lib/postgresql/data
+    logging: *default-logging
 
   notification-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_NOTIFICATION:/app
       - maven-repo:/root/.m2
     ports:
       - "8086:8086"
+    mem_limit: 640mb
     depends_on:
-      - postgres-notification
-      - rabbitmq
-      - eureka-server
-    mem_limit: 1024mb
+      postgres-notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
     environment:
-      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx320m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -Xss512k"
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
@@ -335,75 +797,81 @@ services:
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
       EUREKA_URL: http://eureka-server:8761/eureka/
+    logging: *default-logging
 
-  # ========================
-  # AI CHATBOT SERVICE
-  # ========================
   ai-service:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:TieredStopAtLevel=1 -Xmx256m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_AI:/app
       - maven-repo:/root/.m2
+    ports:
+      - "8087:8087"
+    mem_limit: 512mb
     depends_on:
-      - eureka-server
-    mem_limit: 1200mb
+      eureka-server:
+        condition: service_healthy
     env_file:
       - ./HotelSystem/.env
     environment:
-      MAVEN_OPTS: "-Xmx512m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx256m -XX:MaxMetaspaceSize=160m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=20 -Xss512k"
       EUREKA_URL: http://eureka-server:8761/eureka/
+    logging: *default-logging
 
-  # ========================
-  # API GATEWAY
-  # ========================
   api-gateway:
     image: maven:3.9-eclipse-temurin-17
     working_dir: /app
-    command: sh -c "mvn -Dmaven.test.skip=true -DskipTests -DskipITs package && java -Xmx512m -Xms128m -jar target/*.jar"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    init: true
+    command: *maven-run
     volumes:
       - ./HotelSystem_Backend/HotelSystem_GATEWAY:/app
       - maven-repo:/root/.m2
     ports:
       - "8080:8080"
+    mem_limit: 640mb
     depends_on:
-      - eureka-server
-      - redis
-      - ai-service
-    mem_limit: 1024mb
+      eureka-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
     environment:
-      MAVEN_OPTS: "-Xmx384m -XX:MaxMetaspaceSize=256m"
+      MAVEN_OPTS: "-Xmx320m -XX:MaxMetaspaceSize=192m"
+      JAVA_OPTS: "-Dspring.devtools.restart.enabled=false -XX:ActiveProcessorCount=1 -XX:+UseSerialGC -XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -Xss512k"
       EUREKA_URL: http://eureka-server:8761/eureka/
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    logging: *default-logging
 
   # ========================
-  # FRONTEND (VITE HOT RELOAD)
+  # FRONTEND
   # ========================
   frontend:
     image: node:20-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000 --strictPort"
+    init: true
+    command: >
+      sh -c "if [ ! -d node_modules/.vite ]; then npm install; fi
+      && npm run dev -- --host 0.0.0.0 --port 3000 --strictPort"
     volumes:
       - ./HotelSystem:/app
       - frontend-node-modules:/app/node_modules
     ports:
       - "0.0.0.0:3000:3000"
+    mem_limit: 512mb
     depends_on:
-      - api-gateway
-      - ai-service
-    mem_limit: 768mb
+      api-gateway:
+        condition: service_started
     environment:
-      CHOKIDAR_USEPOLLING: "true"
-      NODE_OPTIONS: "--max-old-space-size=512"
+      CHOKIDAR_USEPOLLING: "false"
+      WATCHPACK_POLLING: "false"
+      NODE_OPTIONS: "--max-old-space-size=384"
       VITE_DOCKER: "true"
+    logging: *default-logging
 
 volumes:
   pgadmin_data:

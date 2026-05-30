@@ -163,6 +163,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
 
     List<Booking> findByCleaningStartAtIsNotNullAndCleaningEndAtIsNotNull();
 
+        // Add quick search by booking code
+        List<Booking> findByBookingCodeContainingIgnoreCase(String code);
+
     @Query("""
             SELECT b FROM Booking b
             WHERE b.checkIn = :checkIn

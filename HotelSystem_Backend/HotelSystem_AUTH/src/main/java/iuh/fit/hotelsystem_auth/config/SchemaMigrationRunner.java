@@ -23,76 +23,81 @@ public class SchemaMigrationRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        jdbcTemplate.execute("""
-                ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
-                """);
+        if (tableExists("users")) {
+            jdbcTemplate.execute("""
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE
+                    """);
 
-        jdbcTemplate.execute("""
-                ALTER TABLE users
-                ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
-                """);
+            jdbcTemplate.execute("""
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
+                    """);
 
-        jdbcTemplate.execute("""
-                ALTER TABLE registration_sessions
-                ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
-                """);
+            jdbcTemplate.execute("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'users'
+                              AND column_name = 'gender'
+                              AND data_type <> 'boolean'
+                        ) THEN
+                            ALTER TABLE users
+                            ALTER COLUMN gender TYPE BOOLEAN
+                            USING CASE
+                                WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
+                                WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
+                                ELSE NULL
+                            END;
+                        END IF;
+                    END $$;
+                    """);
+        }
 
-if (tableExists("refresh_tokens")) {
-    jdbcTemplate.execute("""
-            delete from refresh_tokens r
-            using refresh_tokens d
-            where r.id < d.id
-              and r.user_id = d.user_id
-            """);
+        if (tableExists("registration_sessions")) {
+            jdbcTemplate.execute("""
+                    ALTER TABLE registration_sessions
+                    ADD COLUMN IF NOT EXISTS gender VARCHAR(50)
+                    """);
 
-    jdbcTemplate.execute("""
-            create unique index if not exists ux_refresh_tokens_user_id
-            on refresh_tokens (user_id)
-            """);
-}
+            jdbcTemplate.execute("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'registration_sessions'
+                              AND column_name = 'gender'
+                              AND data_type <> 'boolean'
+                        ) THEN
+                            ALTER TABLE registration_sessions
+                            ALTER COLUMN gender TYPE BOOLEAN
+                            USING CASE
+                                WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
+                                WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
+                                ELSE NULL
+                            END;
+                        END IF;
+                    END $$;
+                    """);
+        }
 
-jdbcTemplate.execute("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_name = 'users'
-                  AND column_name = 'gender'
-                  AND data_type <> 'boolean'
-            ) THEN
-                ALTER TABLE users
-                ALTER COLUMN gender TYPE BOOLEAN
-                USING CASE
-                    WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
-                    WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
-                    ELSE NULL
-                END;
-            END IF;
-        END $$;
-        """);
+        if (tableExists("refresh_tokens")) {
+            jdbcTemplate.execute("""
+                    DELETE FROM refresh_tokens r
+                    USING refresh_tokens d
+                    WHERE r.id < d.id
+                      AND r.user_id = d.user_id
+                    """);
 
-        jdbcTemplate.execute(
-                """
-                        DO $$
-                        BEGIN
-                            IF EXISTS (
-                                SELECT 1
-                                FROM information_schema.columns
-                                WHERE table_name = 'registration_sessions'
-                                  AND column_name = 'gender'
-                                  AND data_type <> 'boolean'
-                            ) THEN
-                                ALTER TABLE registration_sessions
-                                ALTER COLUMN gender TYPE BOOLEAN
-                                USING CASE
-                                    WHEN lower(coalesce(gender::text, '')) IN ('male', 'm', 'nam', 'true', '1', 'yes') THEN TRUE
-                                    WHEN lower(coalesce(gender::text, '')) IN ('female', 'f', 'nu', 'false', '0', 'no') THEN FALSE
-                                    ELSE NULL
-                                END;
-                            END IF;
-                        END $$;
-                        """);
+            jdbcTemplate.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_refresh_tokens_user_id
+                    ON refresh_tokens (user_id)
+                    """);
+        }
     }
 }

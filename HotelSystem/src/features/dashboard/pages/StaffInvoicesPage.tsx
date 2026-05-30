@@ -31,20 +31,40 @@ const formatDateTime = (value?: string) => {
 
 type NormalizedInvoiceLine = { key: string; roomKey: string; roomName: string; label: string; amount: number };
 
+const resolveRoomKey = (line: any) => {
+  if (line.category === 'SERVICE' || line.itemType === 'DRAFT_SERVICE_LINE' || line.itemType === 'BOOKING_SERVICE') return 'SERVICE_GROUP';
+  if (line.category === 'ADJUSTMENT' || line.itemType === 'EARLY_CHECKOUT_REFUND') return 'ADJUSTMENT_GROUP';
+  if (line.category === 'FEE' || line.itemType === 'DAMAGE_FEE' || line.itemType === 'MANUAL_SURCHARGE' || line.itemType === 'LATE_CHECKOUT_FEE') return 'FEE_GROUP';
+  return String(line.bookingRoomId || line.roomNumber || line.roomName || 'UNKNOWN_ROOM');
+};
+
 const roomDisplayName = (line: any) => {
+  if (line.category === 'SERVICE' || line.itemType === 'DRAFT_SERVICE_LINE' || line.itemType === 'BOOKING_SERVICE') return 'Dịch vụ phát sinh';
+  if (line.category === 'ADJUSTMENT' || line.itemType === 'EARLY_CHECKOUT_REFUND') return 'Hoàn tiền / điều chỉnh';
+  if (line.category === 'FEE' || line.itemType === 'DAMAGE_FEE' || line.itemType === 'MANUAL_SURCHARGE' || line.itemType === 'LATE_CHECKOUT_FEE') return 'Phụ phí';
+  
   if (line?.roomName) return String(line.roomName);
   if (line?.roomNumber) return `Phòng ${line.roomNumber}`;
   return 'Phòng chưa xác định';
 };
 
-const itemTypeLabel = (type?: string) => {
-  switch (type) {
-    case 'ROOM_CHARGE': return 'Tiền phòng';
-    case 'SERVICE_CHARGE': return 'Phí dịch vụ';
-    case 'DAMAGE_FEE': return 'Phí hư hỏng';
-    case 'LATE_CHECKOUT_FEE': return 'Phụ thu checkout trễ';
-    default: return type || 'Khoản phí';
+const itemTypeLabel = (line: any) => {
+  // Ưu tiên description từ backend (đã định dạng tên dịch vụ thực tế)
+  let label = line.description || line.itemType || 'Khoản phí';
+  
+  // Dịch một số tên cóc cáy nếu backend lỡ trả raw
+  if (label === 'ROOM_CHARGE') label = 'Tiền phòng';
+  if (label === 'EARLY_CHECKOUT_REFUND') label = 'Hoàn checkout sớm';
+  if (label === 'LATE_CHECKOUT_FEE') label = 'Phụ thu checkout trễ';
+  if (label === 'DAMAGE_FEE') label = 'Phí hư hỏng';
+  if (label === 'SERVICE_CHARGE' || label === 'MANUAL_SURCHARGE') label = 'Phụ thu';
+  if (label === 'DRAFT_SERVICE_LINE' || label === 'BOOKING_SERVICE') label = 'Dịch vụ';
+  
+  // Nếu quantity > 1, nối thêm số lượng
+  if (line.quantity && line.quantity > 1 && !label.includes('×')) {
+    label += ` × ${line.quantity}`;
   }
+  return label;
 };
 
 const normalizeInvoiceLines = (lines: any): NormalizedInvoiceLine[] => {
@@ -68,11 +88,19 @@ const normalizeInvoiceLines = (lines: any): NormalizedInvoiceLine[] => {
       const amount = Number(line.amount || line.lineTotal || 0);
       if (amount === 0) return;
       const roomName = roomDisplayName(line);
+      const roomKey = resolveRoomKey(line);
+      
+      // Xóa tiền tố "Phòng X - " nếu description backend lỡ nhét dư thừa vô
+      let cleanLabel = itemTypeLabel(line);
+      if (line.roomNumber && String(cleanLabel).startsWith(`Phòng ${line.roomNumber} - `)) {
+         cleanLabel = String(cleanLabel).replace(`Phòng ${line.roomNumber} - `, '');
+      }
+
       result.push({
         key: String(line._id || `${line.bookingRoomId || 'room'}-${line.itemType || 'item'}-${line.serviceId || 'none'}-${index}`),
-        roomKey: String(line.bookingRoomId || line.roomNumber || line.roomName || `unknown-${index}`),
-        roomName,
-        label: itemTypeLabel(line.itemType) || String(line.description || 'Khoản phí').replace(`${roomName} - `, ''),
+        roomKey: roomKey,
+        roomName: roomName,
+        label: cleanLabel,
         amount,
       });
     });
@@ -719,44 +747,64 @@ const StaffInvoicesPage: React.FC = () => {
                           </div>
                         ))}
 
-                        <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                          <div className="text-sm font-black text-slate-950">Tổng hóa đơn</div>
-                          <div className="text-xl font-black text-slate-950">{formatCurrency(Number((selectedInvoice.lines as any)?.totalActualRevenue ?? (selectedInvoice.lines as any)?.grandTotal ?? selectedInvoice.amount ?? 0))}</div>
-                        </div>
-
-                        {/* Settlement box */}
                         {(() => {
                           const lines = selectedInvoice.lines as any;
+                          const originalRoom = Number(lines?.roomCharge ?? lines?.totalOriginalAmount ?? lines?.roomTotal ?? 0);
+                          const earlyRefund = Number(lines?.totalEarlyCheckoutRefund ?? lines?.earlyCheckoutAdjustment ?? 0);
+                          const serviceFeeTotal = Number(lines?.serviceTotal ?? 0);
+                          
+                          const actualRevenue = Number(lines?.totalActualRevenue ?? lines?.grandTotal ?? selectedInvoice.amount ?? 0);
                           const finalAmt = Number(lines?.additionalChargeAmount ?? lines?.remainingBalance ?? 0);
                           const refundAmt = Number(lines?.additionalRefundAmount ?? lines?.refundSettlementAmount ?? 0);
-                          const totalEarlyRefund = Number(lines?.totalEarlyCheckoutRefund ?? lines?.earlyCheckoutAdjustment ?? 0);
-                          if (refundAmt > 0) {
-                            return (
-                              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 flex items-center justify-between">
-                                <span>Khách được hoàn tiền</span>
-                                <span className="text-lg font-black text-emerald-700">{formatCurrency(refundAmt)}</span>
-                              </div>
-                            );
-                          }
-                          if (finalAmt > 0) {
-                            return (
-                              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 flex items-center justify-between">
-                                <span>Còn phải thanh toán</span>
-                                <span className="text-lg font-black text-rose-700">{formatCurrency(finalAmt)}</span>
-                              </div>
-                            );
-                          }
-                          if (totalEarlyRefund > 0) {
-                            return (
-                              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 flex items-center justify-between">
-                                <span>Hoan checkout som da ghi nhan</span>
-                                <span className="text-lg font-black text-emerald-700">{formatCurrency(totalEarlyRefund)}</span>
-                              </div>
-                            );
-                          }
+                          const amountPaid = Number(lines?.amountPaid ?? 0);
+
                           return (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800">
-                              Không thu thêm / Không hoàn tiền
+                            <div className="space-y-4">
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+                                <div className="flex justify-between text-sm font-bold text-slate-600">
+                                  <span>Tiền phòng gốc</span>
+                                  <span>{formatCurrency(originalRoom)}</span>
+                                </div>
+                                {earlyRefund > 0 && (
+                                  <div className="flex justify-between text-sm font-bold text-emerald-600">
+                                    <span>Hoàn checkout sớm</span>
+                                    <span>-{formatCurrency(earlyRefund)}</span>
+                                  </div>
+                                )}
+                                {serviceFeeTotal > 0 && (
+                                  <div className="flex justify-between text-sm font-bold text-slate-600">
+                                    <span>Tổng phí dịch vụ / phụ thu</span>
+                                    <span>{formatCurrency(serviceFeeTotal)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                                <div className="text-sm font-black text-slate-950">Doanh thu thực thu</div>
+                                <div className="text-xl font-black text-slate-950">{formatCurrency(actualRevenue)}</div>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-black text-slate-500">Đã thanh toán / cọc</div>
+                                <div className="text-sm font-black text-slate-500">{formatCurrency(amountPaid)}</div>
+                              </div>
+
+                              {refundAmt > 0 && (
+                                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-800 flex items-center justify-between">
+                                  <span>Khách được hoàn tiền</span>
+                                  <span className="text-lg font-black text-emerald-700">{formatCurrency(refundAmt)}</span>
+                                </div>
+                              )}
+                              {finalAmt > 0 && (
+                                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-800 flex items-center justify-between">
+                                  <span>Còn phải thanh toán</span>
+                                  <span className="text-lg font-black text-rose-700">{formatCurrency(finalAmt)}</span>
+                                </div>
+                              )}
+                              {refundAmt === 0 && finalAmt === 0 && (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-500 flex justify-center">
+                                  Đã thanh toán đủ
+                                </div>
+                              )}
                             </div>
                           );
                         })()}

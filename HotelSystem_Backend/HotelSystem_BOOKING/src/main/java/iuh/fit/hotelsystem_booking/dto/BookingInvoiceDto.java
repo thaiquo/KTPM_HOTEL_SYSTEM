@@ -24,6 +24,8 @@ public class BookingInvoiceDto {
     private String refundStatus;
     private BigDecimal refundSettlementAmount;
     private BigDecimal amount;
+    private BigDecimal paidAmount;
+    private BigDecimal totalAmount;
     private String currency;
     private Object lines; // parsed JSON
     private LocalDateTime createdAt;
@@ -87,6 +89,12 @@ public class BookingInvoiceDto {
 
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
+
+    public BigDecimal getPaidAmount() { return paidAmount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
+
+    public BigDecimal getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
 
     public String getCurrency() { return currency; }
     public void setCurrency(String currency) { this.currency = currency; }

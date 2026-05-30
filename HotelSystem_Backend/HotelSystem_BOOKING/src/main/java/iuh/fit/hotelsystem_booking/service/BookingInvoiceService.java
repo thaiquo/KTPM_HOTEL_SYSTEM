@@ -2,6 +2,10 @@ package iuh.fit.hotelsystem_booking.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto;
+import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceDetailResponseDto;
+import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceListDto;
+import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceSearchResponseDto;
+import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceSummaryDto;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingInvoice;
@@ -28,9 +32,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class BookingInvoiceService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingInvoiceService.class);
 
     private final BookingInvoiceRepository invoiceRepository;
     private final BookingRepository bookingRepository;
@@ -38,25 +46,29 @@ public class BookingInvoiceService {
     private final BookingGuestService bookingGuestService;
     private final RefundTransactionRepository refundTransactionRepository;
     private final ObjectMapper objectMapper;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public BookingInvoiceService(BookingInvoiceRepository invoiceRepository,
             BookingRepository bookingRepository,
             BookingStayRepository bookingStayRepository,
             BookingGuestService bookingGuestService,
             RefundTransactionRepository refundTransactionRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            jakarta.persistence.EntityManager entityManager) {
         this.invoiceRepository = invoiceRepository;
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
         this.bookingGuestService = bookingGuestService;
         this.refundTransactionRepository = refundTransactionRepository;
         this.objectMapper = objectMapper;
+        this.entityManager = entityManager;
     }
 
     @Transactional
     public BookingInvoice saveCheckoutInvoice(Long bookingId, BigDecimal amount, String currency,
             Map<String, Object> lines) {
         try {
+            log.info("SAVE CHECKOUT INVOICE START bookingId={}, amount={}, currency={}", bookingId, amount, currency);
             BookingInvoice invoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId)
                     .orElseGet(BookingInvoice::new);
             if (invoice.getId() == null) {
@@ -66,10 +78,291 @@ public class BookingInvoiceService {
             invoice.setAmount(amount != null ? amount : BigDecimal.ZERO);
             invoice.setCurrency(currency != null ? currency : "VND");
             invoice.setLinesJson(objectMapper.writeValueAsString(lines != null ? lines : Map.of()));
-            return invoiceRepository.save(invoice);
+            // If payload includes denormalized aggregates, persist them into columns for fast queries
+            if (lines != null) {
+                invoice.setTotalOriginalAmount(toBigDecimal(lines.get("totalOriginalAmount")));
+                invoice.setTotalAllocatedPaidAmount(toBigDecimal(lines.get("totalAllocatedPaidAmount")));
+                invoice.setTotalActualRevenue(toBigDecimal(lines.get("totalActualRevenue")));
+                invoice.setTotalEarlyCheckoutRefund(toBigDecimal(lines.get("totalEarlyCheckoutRefund")));
+                invoice.setTotalAdditionalCharge(toBigDecimal(lines.get("totalAdditionalCharge")));
+                invoice.setTotalRefundToCustomer(toBigDecimal(lines.get("totalRefundToCustomer")));
+                invoice.setRemainingBalance(toBigDecimal(lines.get("remainingBalance")));
+            }
+            BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
+            log.info("SAVE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}", bookingId, saved.getId());
+            return saved;
         } catch (Exception ex) {
-            throw new IllegalStateException("Could not save checkout invoice", ex);
+            log.error("SAVE CHECKOUT INVOICE ERROR FULL bookingId={}", bookingId, ex);
+            throw new IllegalStateException("Không thể lưu hóa đơn checkout", ex);
         }
+    }
+
+    /**
+     * Merge (tích lũy) invoice theo từng phòng — không overwrite dữ liệu phòng đã checkout trước.
+     * Khi checkout phòng mới, chỉ thêm lines của phòng mới vào invoice hiện có.
+     * Tính lại các tổng booking-level dựa trên tất cả lines hiện có.
+     */
+    @Transactional
+    @SuppressWarnings("unchecked")
+    public BookingInvoice mergeCheckoutInvoice(Long bookingId, BigDecimal newRoomAmount, String currency,
+            Map<String, Object> newPayload) {
+        try {
+            log.info("MERGE CHECKOUT INVOICE START bookingId={}, newRoomAmount={}", bookingId, newRoomAmount);
+
+            // Acquire DB-level pessimistic lock on latest invoice row to avoid lost-update
+            BookingInvoice invoice = null;
+            try {
+                invoice = invoiceRepository.findLatestByBookingIdForUpdate(bookingId).orElse(null);
+            } catch (Exception ex) {
+                // fallback to repository non-locking method
+                invoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId).orElse(null);
+            }
+            boolean isNew = invoice == null || invoice.getId() == null;
+            if (isNew) {
+                invoice = new BookingInvoice();
+                invoice.setBookingId(bookingId);
+                invoice.setCreatedAt(LocalDateTime.now());
+            }
+
+            // Parse existing payload
+            Map<String, Object> existing = new java.util.LinkedHashMap<>();
+            if (!isNew && invoice.getLinesJson() != null) {
+                try {
+                    Object parsed = objectMapper.readValue(invoice.getLinesJson(), Object.class);
+                    if (parsed instanceof Map) {
+                        Map<?, ?> m = (Map<?, ?>) parsed;
+                        m.forEach((k, v) -> existing.put(String.valueOf(k), v));
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Merge invoiceItems — chỉ thêm items của phòng mới, giữ nguyên items cũ
+            List<Object> existingItems = existing.get("invoiceItems") instanceof List
+                    ? new ArrayList<>((List<Object>) existing.get("invoiceItems"))
+                    : new ArrayList<>();
+            List<Object> newItems = newPayload.get("invoiceItems") instanceof List
+                    ? (List<Object>) newPayload.get("invoiceItems")
+                    : List.of();
+
+            // Lấy tập bookingRoomId đã có trong invoice cũ để không duplicate
+            java.util.Set<Object> existingRoomLineKeys = new java.util.HashSet<>();
+            for (Object item : existingItems) {
+                if (item instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) item;
+                    Object brid = m.get("bookingRoomId");
+                    Object type = m.get("itemType");
+                    if (brid != null && type != null) {
+                        existingRoomLineKeys.add(brid + "::" + type);
+                    }
+                }
+            }
+
+            // Thêm line mới nếu chưa tồn tại (idempotent per bookingRoomId + itemType)
+            for (Object item : newItems) {
+                if (item instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) item;
+                    Object brid = m.get("bookingRoomId");
+                    Object type = m.get("itemType");
+                    String key = brid + "::" + type;
+                    // SERVICE / ADJUSTMENT không có bookingRoomId cố định → luôn thêm
+                    boolean isRoomLine = "ROOM".equals(m.get("category"));
+                    if (isRoomLine && existingRoomLineKeys.contains(key)) {
+                        continue; // Bỏ qua — phòng này đã có line trong invoice cũ
+                    }
+                    existingItems.add(item);
+                    if (brid != null && type != null) existingRoomLineKeys.add(key);
+                }
+            }
+
+            // Merge roomSummaries — thêm phòng mới, giữ nguyên phòng cũ
+            List<Object> existingSummaries = existing.get("roomSummaries") instanceof List
+                    ? new ArrayList<>((List<Object>) existing.get("roomSummaries"))
+                    : new ArrayList<>();
+            java.util.Set<Object> existingRoomSummaryIds = new java.util.HashSet<>();
+            for (Object s : existingSummaries) {
+                if (s instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) s;
+                    existingRoomSummaryIds.add(m.get("bookingRoomId"));
+                }
+            }
+            List<Object> newSummaries = newPayload.get("roomSummaries") instanceof List
+                    ? (List<Object>) newPayload.get("roomSummaries")
+                    : List.of();
+            for (Object s : newSummaries) {
+                if (s instanceof Map) {
+                    Map<?, ?> m = (Map<?, ?>) s;
+                    if (!existingRoomSummaryIds.contains(m.get("bookingRoomId"))) {
+                        existingSummaries.add(s);
+                        existingRoomSummaryIds.add(m.get("bookingRoomId"));
+                    }
+                }
+            }
+
+            // Tính lại các tổng booking-level từ roomSummaries + invoiceItems đã merge
+            BigDecimal totalOriginalAmount = BigDecimal.ZERO;
+            BigDecimal totalUsedRoomAmount = BigDecimal.ZERO;
+            BigDecimal totalUnusedRoomAmount = BigDecimal.ZERO;
+            BigDecimal totalHotelKeepAmount = BigDecimal.ZERO;
+            BigDecimal totalAllocatedPaidAmount = BigDecimal.ZERO;
+            BigDecimal totalActualRevenue = BigDecimal.ZERO;
+            BigDecimal totalRefundToCustomer = BigDecimal.ZERO;
+            BigDecimal totalAdditionalCharge = BigDecimal.ZERO;
+            BigDecimal roomServiceFeeTotal = BigDecimal.ZERO;
+            BigDecimal totalEarlyRefund = BigDecimal.ZERO;
+            BigDecimal totalService = BigDecimal.ZERO;
+            BigDecimal bookingServiceTotal = BigDecimal.ZERO;
+            BigDecimal draftServiceLinesTotal = BigDecimal.ZERO;
+            BigDecimal damageFeeTotal = BigDecimal.ZERO;
+            BigDecimal manualSurchargeTotal = BigDecimal.ZERO;
+            BigDecimal lateCheckoutFeeTotal = BigDecimal.ZERO;
+            BigDecimal earlyCheckinFeeTotal = BigDecimal.ZERO;
+
+            for (Object summary : existingSummaries) {
+                if (!(summary instanceof Map)) {
+                    continue;
+                }
+                Map<?, ?> m = (Map<?, ?>) summary;
+                totalOriginalAmount = totalOriginalAmount.add(firstNonZero(m, "roomOriginalAmount", "roomCharge"));
+                totalUsedRoomAmount = totalUsedRoomAmount.add(firstNonZero(m, "usedRoomAmount", "usedNightAmount"));
+                totalUnusedRoomAmount = totalUnusedRoomAmount.add(firstNonZero(m, "unusedRoomAmount", "unusedNightAmount"));
+                totalHotelKeepAmount = totalHotelKeepAmount.add(firstNonZero(m, "hotelKeepAmount", "hotelPenaltyAmount"));
+                totalAllocatedPaidAmount = totalAllocatedPaidAmount.add(firstNonZero(m, "allocatedPaidAmount", "paidAllocated"));
+                BigDecimal actualRevenue = toBigDecimal(m.get("actualRoomRevenue"));
+                if (actualRevenue.compareTo(BigDecimal.ZERO) == 0) {
+                    actualRevenue = firstNonZero(m, "roomCharge").subtract(firstNonZero(m, "earlyCheckoutRefund", "hotelPenaltyAmount")).max(BigDecimal.ZERO);
+                }
+                totalActualRevenue = totalActualRevenue.add(actualRevenue);
+                BigDecimal refundToCustomer = firstNonZero(m, "refundToCustomer");
+                if (refundToCustomer.compareTo(BigDecimal.ZERO) == 0) {
+                    refundToCustomer = firstNonZero(m, "netRefundForRoom").max(BigDecimal.ZERO);
+                }
+                totalRefundToCustomer = totalRefundToCustomer.add(refundToCustomer);
+                BigDecimal additionalCharge = firstNonZero(m, "additionalCharge");
+                if (additionalCharge.compareTo(BigDecimal.ZERO) == 0) {
+                    additionalCharge = firstNonZero(m, "additionalChargeForRoom").max(BigDecimal.ZERO);
+                }
+                totalAdditionalCharge = totalAdditionalCharge.add(additionalCharge);
+                roomServiceFeeTotal = roomServiceFeeTotal.add(firstNonZero(m, "serviceCharge"));
+                damageFeeTotal = damageFeeTotal.add(firstNonZero(m, "damageFee"));
+                manualSurchargeTotal = manualSurchargeTotal.add(firstNonZero(m, "manualSurcharge"));
+                lateCheckoutFeeTotal = lateCheckoutFeeTotal.add(firstNonZero(m, "lateCheckoutFee"));
+                earlyCheckinFeeTotal = earlyCheckinFeeTotal.add(firstNonZero(m, "earlyCheckinFee"));
+                totalEarlyRefund = totalEarlyRefund.add(firstNonZero(m, "earlyCheckoutRefund"));
+            }
+
+            for (Object item : existingItems) {
+                if (!(item instanceof Map)) {
+                    continue;
+                }
+                Map<?, ?> m = (Map<?, ?>) item;
+                BigDecimal amt = toBigDecimal(m.get("amount"));
+                String cat = String.valueOf(m.get("category"));
+                String typ = String.valueOf(m.get("itemType"));
+                if ("SERVICE".equals(cat)) {
+                    totalService = totalService.add(amt);
+                    if ("DRAFT_SERVICE_LINE".equals(typ)) {
+                        draftServiceLinesTotal = draftServiceLinesTotal.add(amt);
+                    } else {
+                        bookingServiceTotal = bookingServiceTotal.add(amt);
+                    }
+                }
+            }
+
+                BigDecimal actualRoomCharge = totalActualRevenue;
+                BigDecimal grandTotal = actualRoomCharge
+                    .add(roomServiceFeeTotal)
+                    .add(totalService)
+                    .add(damageFeeTotal)
+                    .add(manualSurchargeTotal)
+                    .add(lateCheckoutFeeTotal)
+                    .add(earlyCheckinFeeTotal);
+
+                // Use computed totalAllocatedPaidAmount (aggregated from room summaries) as authoritative paid amount
+                BigDecimal totalPaid = totalAllocatedPaidAmount != null ? totalAllocatedPaidAmount : BigDecimal.ZERO;
+                BigDecimal remaining = grandTotal.subtract(totalPaid);
+                BigDecimal refundSettlement = totalPaid.subtract(grandTotal).max(BigDecimal.ZERO);
+
+            // Build merged payload
+            Map<String, Object> merged = new java.util.LinkedHashMap<>(existing);
+            merged.putAll(newPayload); // overwrite booking-level keys với values mới
+            merged.put("invoiceItems", existingItems);
+            merged.put("roomSummaries", existingSummaries);
+            merged.put("totalOriginalAmount", totalOriginalAmount);
+            merged.put("totalUsedRoomAmount", totalUsedRoomAmount);
+            merged.put("totalUnusedRoomAmount", totalUnusedRoomAmount);
+            merged.put("totalHotelKeepAmount", totalHotelKeepAmount);
+            merged.put("totalAllocatedPaidAmount", totalAllocatedPaidAmount);
+            merged.put("totalActualRevenue", totalActualRevenue);
+            merged.put("totalRefundToCustomer", totalRefundToCustomer);
+            merged.put("totalAdditionalCharge", totalAdditionalCharge);
+            merged.put("roomCharge", totalOriginalAmount);
+            merged.put("totalEarlyCheckoutRefund", totalEarlyRefund);
+            merged.put("earlyCheckoutAdjustment", totalEarlyRefund);
+            merged.put("roomServiceFeeTotal", roomServiceFeeTotal);
+            merged.put("actualRoomCharge", actualRoomCharge);
+            merged.put("serviceTotal", totalService);
+            merged.put("bookingServiceTotal", bookingServiceTotal);
+            merged.put("draftServiceLinesTotal", draftServiceLinesTotal);
+            merged.put("manualServiceTotal", roomServiceFeeTotal);
+            merged.put("damageFeeTotal", damageFeeTotal);
+            merged.put("manualSurchargeTotal", manualSurchargeTotal);
+            merged.put("lateCheckoutFeeTotal", lateCheckoutFeeTotal);
+            merged.put("earlyCheckinFeeTotal", earlyCheckinFeeTotal);
+            merged.put("grandTotal", grandTotal);
+            merged.put("totalActualRevenue", totalActualRevenue);
+            // Normalize paid fields to computed authoritative value
+            merged.put("amountPaid", totalPaid);
+            merged.put("paidAmount", totalPaid);
+            merged.put("totalPaidAmount", totalPaid);
+            merged.put("totalAmount", grandTotal);
+            merged.put("remainingBalance", remaining);
+            merged.put("remainingRoomAmount", remaining);
+            merged.put("refundSettlementAmount", refundSettlement);
+            merged.put("additionalRefundAmount", refundSettlement);
+            merged.put("paymentRequired", remaining.compareTo(BigDecimal.ZERO) > 0);
+            merged.put("refundRequired", refundSettlement.compareTo(BigDecimal.ZERO) > 0);
+            merged.put("mergedAt", LocalDateTime.now().toString());
+
+            invoice.setAmount(grandTotal);
+            // Persist denormalized aggregates for faster search/statistics
+            invoice.setTotalOriginalAmount(totalOriginalAmount);
+            invoice.setTotalAllocatedPaidAmount(totalAllocatedPaidAmount);
+            invoice.setTotalActualRevenue(totalActualRevenue);
+            invoice.setTotalEarlyCheckoutRefund(totalEarlyRefund);
+            invoice.setTotalAdditionalCharge(totalAdditionalCharge);
+            invoice.setTotalRefundToCustomer(totalRefundToCustomer);
+            invoice.setRemainingBalance(remaining);
+            invoice.setCurrency(currency != null ? currency : "VND");
+            invoice.setLinesJson(objectMapper.writeValueAsString(merged));
+            BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
+            log.info("MERGE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}, grandTotal={}", bookingId, saved.getId(), grandTotal);
+            return saved;
+        } catch (Exception ex) {
+            log.error("MERGE CHECKOUT INVOICE ERROR bookingId={}", bookingId, ex);
+            throw new IllegalStateException("Không thể merge hóa đơn checkout", ex);
+        }
+    }
+
+    private BigDecimal toBigDecimal(Object val) {
+        if (val instanceof BigDecimal) return (BigDecimal) val;
+        if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
+        if (val instanceof String s) { try { return new BigDecimal(s); } catch (Exception ignored) {} }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal firstNonZero(Map<?, ?> map, String primaryKey, String fallbackKey) {
+        BigDecimal primary = toBigDecimal(map.get(primaryKey));
+        if (primary.compareTo(BigDecimal.ZERO) != 0) {
+            return primary;
+        }
+        if (fallbackKey == null) {
+            return primary;
+        }
+        return toBigDecimal(map.get(fallbackKey));
+    }
+
+    private BigDecimal firstNonZero(Map<?, ?> map, String key) {
+        return toBigDecimal(map.get(key));
     }
 
     @Transactional(readOnly = true)
@@ -80,9 +373,16 @@ public class BookingInvoiceService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<BookingInvoiceDto> findLatestInvoice(Long bookingId) {
+        return invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId)
+                .map(this::toDto);
+    }
+
+    @Transactional(readOnly = true)
     public List<BookingInvoiceDto> listInvoices() {
         Map<Long, BookingInvoiceDto> resultByBooking = new LinkedHashMap<>();
-        for (BookingInvoice invoice : invoiceRepository.findAllByOrderByCreatedAtDesc()) {
+        Pageable pageable = PageRequest.of(0, 200, Sort.by(Sort.Direction.DESC, "createdAt"));
+        for (BookingInvoice invoice : invoiceRepository.findAll(pageable).getContent()) {
             resultByBooking.putIfAbsent(invoice.getBookingId(), toDto(invoice));
         }
         return new ArrayList<>(resultByBooking.values());
@@ -210,6 +510,8 @@ public class BookingInvoiceService {
         dto.setId(invoice.getId());
         dto.setBookingId(invoice.getBookingId());
         dto.setAmount(invoice.getAmount());
+        dto.setPaidAmount(invoice.getAmount());
+        dto.setTotalAmount(invoice.getAmount());
         dto.setCurrency(invoice.getCurrency());
         dto.setCreatedAt(invoice.getCreatedAt());
         try {
@@ -311,9 +613,10 @@ public class BookingInvoiceService {
 
     @SuppressWarnings("unchecked")
     private void applyInvoiceStaff(BookingInvoiceDto dto) {
-        if (!(dto.getLines() instanceof Map<?, ?> lines)) {
+        if (!(dto.getLines() instanceof Map)) {
             return;
         }
+        Map<?, ?> lines = (Map<?, ?>) dto.getLines();
         Object createdByStaffId = lines.get("createdByStaffId");
         if ((dto.getCheckoutStaffId() == null || dto.getCheckoutStaffId().isBlank()) && createdByStaffId != null) {
             dto.setCheckoutStaffId(String.valueOf(createdByStaffId));

@@ -160,6 +160,7 @@ VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
 
 ```bash
 # Khởi động toàn bộ stack dev, bao gồm frontend
+docker compose -f docker-compose.dev.yml run --rm frontend npm install (khởi động lần đầu)
 docker compose -f docker-compose.dev.yml up -d
 
 # Xem trạng thái hoạt động của các service

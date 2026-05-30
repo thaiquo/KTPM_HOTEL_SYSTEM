@@ -13,4 +13,11 @@ public interface BookingGuestRepository extends JpaRepository<BookingGuest, Long
     List<BookingGuest> findByBookingRoomIdOrderByPrimaryGuestDescIdAsc(Long bookingRoomId);
     Optional<BookingGuest> findByIdAndBookingId(Long id, Long bookingId);
     Optional<BookingGuest> findByIdAndBookingRoomId(Long id, Long bookingRoomId);
+
+    // Added for NewInvoiceService
+    List<BookingGuest> findByBookingIdIn(List<Long> bookingIds);
+
+    // Search guests by name or phone (for invoice search filters)
+    List<BookingGuest> findByFullNameContainingIgnoreCase(String name);
+    List<BookingGuest> findByPhoneContaining(String phone);
 }

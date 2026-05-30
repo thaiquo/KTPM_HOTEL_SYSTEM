@@ -70,6 +70,7 @@ public class PricingService {
 
         // Calculate total price by iterating through each night
         double totalBasePrice = 0;
+        java.util.List<PricingResult.DailyPrice> dailyPrices = new java.util.ArrayList<>();
         for (int i = 0; i < nights; i++) {
             LocalDate current = checkIn.plusDays(i);
             double dailyPrice = basePricePerNight;
@@ -81,7 +82,9 @@ public class PricingService {
             }
             
             totalBasePrice += dailyPrice;
+            dailyPrices.add(new PricingResult.DailyPrice(current.toString(), dailyPrice));
         }
+        result.setDailyPrices(dailyPrices);
 
         double holidayAdjustedTotal = totalBasePrice * result.getPriceMultiplier();
         double finalTotal = holidayAdjustedTotal * (1 - result.getDiscountPercent() / 100.0);

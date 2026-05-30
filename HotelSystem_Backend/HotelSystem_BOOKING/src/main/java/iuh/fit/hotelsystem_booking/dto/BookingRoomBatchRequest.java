@@ -9,6 +9,7 @@ public class BookingRoomBatchRequest {
     private Long staffId;
     private List<BookingRoomCheckInRequest> checkIns = new ArrayList<>();
     private List<BookingRoomExtraFeeRequest> extraFees = new ArrayList<>();
+    private List<ServiceLineDto> serviceLines = new ArrayList<>();
     private String paymentMethod;
     private BigDecimal receivedAmount;
     private BigDecimal changeAmount;
@@ -24,6 +25,9 @@ public class BookingRoomBatchRequest {
 
     public List<BookingRoomExtraFeeRequest> getExtraFees() { return extraFees; }
     public void setExtraFees(List<BookingRoomExtraFeeRequest> extraFees) { this.extraFees = extraFees; }
+
+    public List<ServiceLineDto> getServiceLines() { return serviceLines; }
+    public void setServiceLines(List<ServiceLineDto> serviceLines) { this.serviceLines = serviceLines; }
 
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }

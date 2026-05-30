@@ -115,12 +115,7 @@ public class BookingListener {
                 );
 
             } else if ("REMAINING_PAID".equals(result.getStatus())) {
-                RemainingPaymentRequest remainingRequest = new RemainingPaymentRequest();
-                remainingRequest.setAmount(result.getPaidAmount() != null ? result.getPaidAmount() : 0.0);
-                remainingRequest.setUserId(booking.getUserId());
-                remainingRequest.setTransactionId(result.getTransactionId());
-
-                bookingService.collectRemainingPayment(booking.getId(), remainingRequest);
+                System.out.println("Ignoring REMAINING_PAID event for booking " + booking.getId() + ": remaining payment is collected at checkout now.");
                 return;
 
         } else {

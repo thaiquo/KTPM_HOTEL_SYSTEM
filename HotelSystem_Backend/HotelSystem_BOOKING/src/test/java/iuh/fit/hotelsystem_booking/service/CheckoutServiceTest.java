@@ -81,6 +81,104 @@ class CheckoutServiceTest {
     }
 
     @Test
+    void calculateCheckoutFallsBackWhenRefundPreviewTimeouts() {
+    BookingRepository bookingRepository = mock(BookingRepository.class);
+    BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+    RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+    PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+
+    Booking booking = booking(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 6), 5, 1000.0);
+    booking.setStatus(BookingStatus.CHECKED_IN);
+    booking.setRatePlan(RatePlan.FLEXIBLE);
+    booking.setPaidAmount(5000.0);
+
+    BookingStay stay = new BookingStay();
+    stay.setBookingId(1L);
+
+    when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+    when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+    when(paymentClient.previewRefundAllocation(eq(1L), anyMap()))
+        .thenThrow(new RuntimeException("timeout"));
+
+    Clock clock = fixedClock("2026-05-03T03:00:00Z");
+    ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+    when(clockProvider.getIfAvailable()).thenReturn(clock);
+    BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+    when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+    CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+    RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+    CheckoutService service = new CheckoutService(
+        bookingRepository,
+        stayRepository,
+        bookingGuestService,
+        new CheckInOutService(),
+        scheduledService,
+        roomServiceClient,
+        new RefundCalculationService(),
+        rabbitTemplate,
+        paymentClient,
+        clockProvider
+    );
+
+    CheckoutResponse response = service.calculateCheckout(1L);
+
+    assertTrue(response.isEarlyCheckout());
+    assertNotNull(response.getRefundAllocations());
+    assertTrue(response.getRefundAllocations().isEmpty());
+    verify(paymentClient).previewRefundAllocation(eq(1L), anyMap());
+    }
+
+    @Test
+    void checkoutFailsFastWhenInvoicePersistenceFails() {
+    BookingRepository bookingRepository = mock(BookingRepository.class);
+    BookingStayRepository stayRepository = mock(BookingStayRepository.class);
+    RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+    PaymentServiceClient paymentClient = mock(PaymentServiceClient.class);
+    BookingInvoiceService bookingInvoiceService = mock(BookingInvoiceService.class);
+
+    Booking booking = booking(LocalDate.of(2026, 4, 30), LocalDate.of(2026, 5, 1), 1, 1000.0);
+    booking.setStatus(BookingStatus.CHECKED_IN);
+
+    BookingStay stay = new BookingStay();
+    stay.setBookingId(1L);
+
+    when(bookingRepository.findById(1L)).thenReturn(Optional.of(booking));
+    when(stayRepository.findByBookingId(1L)).thenReturn(Optional.of(stay));
+    when(stayRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    when(bookingInvoiceService.saveCheckoutInvoice(anyLong(), any(), anyString(), anyMap()))
+        .thenThrow(new IllegalStateException("duplicate invoice"));
+
+    Clock clock = fixedClock("2026-05-01T04:59:00Z");
+    ObjectProvider<Clock> clockProvider = mock(ObjectProvider.class);
+    when(clockProvider.getIfAvailable()).thenReturn(clock);
+    BookingGuestService bookingGuestService = mock(BookingGuestService.class);
+    when(bookingGuestService.getGuests(anyLong())).thenReturn(Collections.emptyList());
+    CheckInOutScheduledService scheduledService = mock(CheckInOutScheduledService.class);
+    RoomServiceClient roomServiceClient = mock(RoomServiceClient.class);
+    CheckoutService service = new CheckoutService(
+        bookingRepository,
+        stayRepository,
+        bookingGuestService,
+        new CheckInOutService(),
+        scheduledService,
+        roomServiceClient,
+        new RefundCalculationService(),
+        rabbitTemplate,
+        paymentClient,
+        clockProvider
+    );
+    service.setBookingInvoiceService(bookingInvoiceService);
+
+    CheckOutRequest request = new CheckOutRequest();
+    request.setStaffId(99L);
+
+    IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.checkout(1L, request));
+    assertTrue(ex.getMessage().contains("hóa đơn checkout"));
+    verify(bookingInvoiceService).saveCheckoutInvoice(anyLong(), any(), anyString(), anyMap());
+    }
+
+    @Test
     void flexibleEarlyCheckoutCreatesRefundTransaction() {
         BookingRepository bookingRepository = mock(BookingRepository.class);
         BookingStayRepository stayRepository = mock(BookingStayRepository.class);

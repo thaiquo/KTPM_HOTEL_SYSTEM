@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { HiOutlineCash, HiOutlineClipboardCheck, HiOutlineSearch, HiOutlineUserGroup, HiX } from 'react-icons/hi';
 import * as QRCode from 'qrcode';
-import { paymentApi, staffBookingApi, vietnamTodayISO, type CheckinQrPayment, type CheckoutResponse } from '../../../services/api';
+import { paymentApi, staffBookingApi, vietnamTodayISO, type BookingCheckoutPreview, type CheckinQrPayment, type CheckoutResponse } from '../../../services/api';
 import { roomApi } from '../../../services/roomApi';
 import type { Booking, BookingGuest, BookingItem, Room } from '../../../types';
 
@@ -132,7 +132,7 @@ export default function StaffCheckInPage() {
   const [cashReceived, setCashReceived] = useState('');
   const [qrPayment, setQrPayment] = useState<CheckinQrPayment | null>(null);
   const [qrStatus, setQrStatus] = useState<QrStatus>('PENDING');
-  const [checkoutCalc, setCheckoutCalc] = useState<CheckoutResponse | null>(null);
+  const [checkoutPreview, setCheckoutPreview] = useState<BookingCheckoutPreview | null>(null);
   const [checkoutCalcLoading, setCheckoutCalcLoading] = useState(false);
   const qrRef = useRef<HTMLCanvasElement | null>(null);
   const qrPollRef = useRef<number | null>(null);
@@ -262,67 +262,31 @@ export default function StaffCheckInPage() {
     return groups;
   }, {}), []);
   const checkoutSummary = useMemo(() => {
-    // Extra fees entered by staff (draft) — sent to backend on confirm
-    const serviceCatalogAmount = checkoutDraft.serviceLines.reduce((sum, line) => sum + Number(line.unitPrice || 0) * Math.max(1, Number(line.quantity || 1)), 0);
-    const manualServiceAmount = Number(checkoutDraft.serviceCharge || 0);
-    const damageAmount = Number(checkoutDraft.damageFee || 0);
-    const extraService = serviceCatalogAmount + manualServiceAmount;
-
-    // Use backend calculation when available, otherwise fall back to local estimates
-    if (checkoutCalc) {
-      const originalRoomCharge = Number(checkoutCalc.roomCharge ?? 0);
-      const roomCharge = Number(checkoutCalc.actualRoomCharge ?? originalRoomCharge);
-      const serverServiceTotal = Number(checkoutCalc.serviceTotal ?? 0);
-      const lateAmount = Number(checkoutCalc.lateCheckoutFee ?? 0);
-      const paidAmount = Number(checkoutCalc.amountPaid ?? 0);
-      const refundFromEarlyCheckout = Number(checkoutCalc.refundAmount ?? 0);
-      // Grand total = actual room charge (after refund) + services + extra fees + late fee
-      const grandTotal = roomCharge + serverServiceTotal + extraService + damageAmount + lateAmount;
-      const remainingAmount = grandTotal - paidAmount;
-      return {
-        originalRoomCharge,
-        roomAmount: roomCharge,
-        serviceCatalogAmount,
-        manualServiceAmount,
-        serviceAmount: serverServiceTotal + extraService,
-        damageAmount,
-        lateAmount,
-        paidAmount,
-        refundFromEarlyCheckout,
-        finalAmount: grandTotal,
-        remainingAmount,
-        checkoutType: checkoutCalc.checkoutType,
-        usedNights: checkoutCalc.usedNights,
-        unusedNights: checkoutCalc.unusedNights,
-        refundRate: checkoutCalc.refundRate,
-      };
-    }
-
-    // Fallback (before calc loaded)
-    const roomAmount = checkoutRows.reduce((sum, row) => sum + Number(row.priceSnapshot || 0) * Math.max(1, Number(row.nights || 1)), 0);
-    const lateAmount = checkoutRows.reduce((sum, row) => sum + lateCheckoutFeeOf(row), 0);
-    const paidAmount = checkoutRows.length > 0
-      ? Number(checkoutRows[0].booking?.paidAmount || 0)
-      : 0;
-    const finalAmount = roomAmount + extraService + damageAmount + lateAmount;
+    const totalService = Number(checkoutPreview?.serviceTotal ?? 0);
+    const roomServiceFee = Number(checkoutPreview?.roomServiceFeeTotal ?? checkoutPreview?.manualServiceTotal ?? 0);
+    
     return {
-      originalRoomCharge: roomAmount,
-      roomAmount,
-      serviceCatalogAmount,
-      manualServiceAmount,
-      serviceAmount: extraService,
-      damageAmount,
-      lateAmount,
-      paidAmount,
-      refundFromEarlyCheckout: 0,
-      finalAmount,
-      remainingAmount: finalAmount - paidAmount,
-      checkoutType: undefined,
-      usedNights: undefined,
-      unusedNights: undefined,
-      refundRate: undefined,
+      originalRoomCharge: Number(checkoutPreview?.totalOriginalAmount ?? checkoutPreview?.roomCharge ?? 0),
+      roomAmount: Number(checkoutPreview?.totalActualRevenue ?? checkoutPreview?.actualRoomCharge ?? 0),
+      serviceCatalogAmount: Number(checkoutPreview?.draftServiceLinesTotal ?? 0),
+      manualServiceAmount: roomServiceFee,
+      serviceAmount: totalService + roomServiceFee,
+      damageAmount: Number(checkoutPreview?.damageFeeTotal ?? 0),
+      checkInFeeAmount: Number(checkoutPreview?.earlyCheckinFeeTotal ?? 0),
+      lateAmount: Number(checkoutPreview?.lateCheckoutFeeTotal ?? 0),
+      paidAmount: Number(checkoutPreview?.amountPaid ?? 0),
+      refundFromEarlyCheckout: Number(checkoutPreview?.earlyCheckoutRefund ?? 0),
+      finalAmount: Number(checkoutPreview?.grandTotal ?? 0),
+      remainingAmount: Number(checkoutPreview?.remainingBalance ?? 0),
+      checkoutType: checkoutPreview?.checkoutType,
+      usedNights: checkoutPreview?.usedNights,
+      unusedNights: checkoutPreview?.unusedNights,
+      refundRate: checkoutPreview?.refundRate,
+      totalUsedNightAmount: Number(checkoutPreview?.totalUsedRoomAmount ?? 0),
+      totalUnusedNightAmount: Number(checkoutPreview?.totalUnusedRoomAmount ?? 0),
+      totalHotelPenaltyAmount: Number(checkoutPreview?.totalHotelKeepAmount ?? 0),
     };
-  }, [checkoutRows, checkoutDraft, selectedService, checkoutCalc]);
+  }, [checkoutPreview]);
 
   const filteredRooms = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -365,17 +329,8 @@ export default function StaffCheckInPage() {
     setCashReceived('');
     setQrPayment(null);
     setQrStatus('PENDING');
-    setCheckoutCalc(null);
+    setCheckoutPreview(null);
     qrStartedAtRef.current = 0;
-    setCheckoutCalcLoading(true);
-    try {
-      const calc = await staffBookingApi.calculateCheckout(bookingId);
-      setCheckoutCalc(calc);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể tính toán hóa đơn checkout');
-    } finally {
-      setCheckoutCalcLoading(false);
-    }
   };
 
   const closeCheckoutModal = () => {
@@ -384,9 +339,60 @@ export default function StaffCheckInPage() {
     setCashReceived('');
     setQrPayment(null);
     setQrStatus('PENDING');
-    setCheckoutCalc(null);
+    setCheckoutPreview(null);
     qrStartedAtRef.current = 0;
   };
+
+  const buildCheckoutPreviewPayload = (rows: BookingRoomRow[], draft: CheckoutDraft) => ({
+    bookingRoomIds: rows.map((row) => row.id!).filter(Boolean),
+    extraFees: rows.map((row, index) => ({
+      bookingRoomId: row.id!,
+      serviceCharge: index === 0 ? Number(draft.serviceCharge || 0) : 0,
+      surcharge: 0,
+      damageFee: index === 0 ? Number(draft.damageFee || 0) : 0,
+      note: draft.note,
+    })),
+    serviceLines: draft.serviceLines.map((line) => ({
+      name: line.name,
+      quantity: Math.max(1, Number(line.quantity || 1)),
+      unitPrice: Number(line.unitPrice || 0),
+      lineTotal: Number(line.unitPrice || 0) * Math.max(1, Number(line.quantity || 1)),
+    })),
+    paymentMethod: checkoutMethod,
+    receivedAmount: checkoutMethod === 'CASH' ? Number(cashReceived || 0) : Math.max(0, Number(checkoutSummary.remainingAmount || 0)),
+    changeAmount: checkoutMethod === 'CASH' ? Math.max(0, Number(cashReceived || 0) - Math.max(0, Number(checkoutSummary.remainingAmount || 0))) : 0,
+  });
+
+  useEffect(() => {
+    if (checkoutRows.length === 0) {
+      setCheckoutPreview(null);
+      return;
+    }
+    const bookingId = String(checkoutRows[0].booking?.id || checkoutRows[0].bookingId || '');
+    if (!bookingId) return;
+    let cancelled = false;
+    setCheckoutCalcLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const preview = await staffBookingApi.previewCheckout(bookingId, buildCheckoutPreviewPayload(checkoutRows, checkoutDraft));
+        if (!cancelled) {
+          setCheckoutPreview(preview);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          toast.error(error?.response?.data?.message || 'Không thể tính toán hóa đơn checkout');
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckoutCalcLoading(false);
+        }
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [checkoutRows, checkoutDraft, checkoutMethod, cashReceived]);
 
   const selectedRows = () => rooms.filter((row) => row.id && selectedIds.includes(row.id));
   const selectedBookingId = () => {
@@ -574,9 +580,9 @@ export default function StaffCheckInPage() {
     try {
       const extraFees = checkoutRows.map((row, index) => ({
         bookingRoomId: row.id!,
-        serviceCharge: index === 0 ? checkoutSummary.serviceAmount : 0,
+        serviceCharge: index === 0 ? Number(checkoutDraft.serviceCharge || 0) : 0,
         surcharge: 0,
-        damageFee: index === 0 ? checkoutSummary.damageAmount : 0,
+        damageFee: index === 0 ? Number(checkoutDraft.damageFee || 0) : 0,
         note: checkoutDraft.note,
       }));
       const result = await staffBookingApi.checkOutMultipleBookingRooms(
@@ -584,6 +590,12 @@ export default function StaffCheckInPage() {
         checkoutRows.map((row) => row.id!).filter(Boolean),
         extraFees,
         {
+          serviceLines: checkoutDraft.serviceLines.map((line) => ({
+            name: line.name,
+            quantity: Math.max(1, Number(line.quantity || 1)),
+            unitPrice: Number(line.unitPrice || 0),
+            lineTotal: Number(line.unitPrice || 0) * Math.max(1, Number(line.quantity || 1)),
+          })),
           paymentMethod: checkoutMethod,
           receivedAmount: checkoutMethod === 'CASH' ? Number(cashReceived || 0) : amountToCollect,
           changeAmount: checkoutMethod === 'CASH' ? Math.max(0, Number(cashReceived || 0) - amountToCollect) : 0,
@@ -689,6 +701,7 @@ export default function StaffCheckInPage() {
           qrRef={qrRef}
           processing={processing}
           calcLoading={checkoutCalcLoading}
+          preview={checkoutPreview}
           summary={checkoutSummary}
           catalogGroups={catalogGroups}
           selectedService={selectedService}
@@ -737,29 +750,46 @@ function CheckInConfirmModal(props: {
 
   const roomSummaries = props.rows.map(row => {
     const earlyFee = isEarlyCheckIn ? calculateEarlyFee(row.priceSnapshot) : 0;
-    // Map payment (hiện tại booking-level ngầm hiểu chia đều, nếu backend chưa có phân bổ)
-    const proportion = 1 / Math.max(1, props.booking.items?.length || totalRooms);
-    const roomPaid = Math.round(Number(props.booking.paidAmount || 0) * proportion);
-    const roomTotal = Math.round(Number(props.booking.totalPrice || 0) * proportion);
+
+    // Tổng giá trị từng phòng (lấy từ roomTotal của item, fallback priceSnapshot)
+    const thisRoomTotal = Math.round(Number((row as any).roomTotal ?? row.priceSnapshot ?? 0));
+
+    // bookingOriginalTotal = sum tất cả phòng trong booking (không chia đều)
+    const allItems = props.booking.items ?? props.rows;
+    const bookingOriginalTotal = allItems.reduce(
+      (sum, item) => sum + Math.round(Number((item as any).roomTotal ?? (item as any).priceSnapshot ?? (item as any).amount ?? 0)),
+      0
+    );
+
+    // Xác định originalPaidAmount: cùng logic với backend
+    // Nếu paidAmount >= 95% totalPrice → full payment → dùng totalPrice
+    // Nếu paidAmount < 95% totalPrice → deposit → dùng paidAmount
+    const bookingTotalPrice = Number(props.booking.totalPrice || 0);
+    const bookingPaidAmount = Number(props.booking.paidAmount || 0);
+    const threshold95 = bookingTotalPrice * 0.95;
+    const originalPaid = bookingPaidAmount >= threshold95 ? bookingTotalPrice : bookingPaidAmount;
+
+    // Phân bổ theo tỷ lệ giá trị phòng / tổng booking — KHÔNG chia đều
+    const roomPaid = bookingOriginalTotal > 0
+      ? Math.round(originalPaid * thisRoomTotal / bookingOriginalTotal)
+      : 0;
 
     return {
       ...row,
       earlyFee,
       roomPaid,
-      roomTotal,
-      roomRemaining: Math.max(0, roomTotal - roomPaid),
+      roomTotal: thisRoomTotal,
+      roomRemaining: Math.max(0, thisRoomTotal - roomPaid),
     };
   });
 
   const totalEarlyFee = roomSummaries.reduce((sum, r) => sum + r.earlyFee, 0);
   const totalBookingRemaining = Math.max(0, Number(props.booking.totalPrice || 0) - Number(props.booking.paidAmount || 0));
-  // Tiền phụ thu sớm sẽ thu lúc check-out, không cộng vào số cần thu ngay!
-  const amountToCollectNow = totalBookingRemaining;
 
   return (
     <div className="fixed inset-0 z-9999 flex items-center justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-4xl bg-white shadow-2xl flex flex-col">
-        <div className="flex-shrink-0 flex items-start justify-between border-b border-slate-100 bg-slate-950 p-6 text-white">
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-4xl bg-white shadow-2xl">
+        <div className="shrink-0 flex items-start justify-between border-b border-slate-100 bg-slate-950 p-6 text-white">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-sky-300">Xác nhận check-in</p>
             <h2 className="mt-2 text-3xl font-black">Booking {props.booking.bookingCode || `#${props.booking.id}`}</h2>
@@ -772,10 +802,10 @@ function CheckInConfirmModal(props: {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <InfoCard label="Tổng Booking (Phòng)" value={formatCurrency(props.booking.totalPrice)} />
             <InfoCard label="Đã thanh toán/cọc" value={formatCurrency(props.booking.paidAmount)} />
-            <InfoCard label="Còn lại (Tiền phòng)" value={formatCurrency(totalBookingRemaining)} />
+            <InfoCard label="Còn lại (sẽ thanh toán khi checkout)" value={formatCurrency(totalBookingRemaining)} />
             <div className="rounded-2xl bg-sky-100 p-4 border border-sky-200">
-              <div className="text-xs font-black uppercase tracking-widest text-sky-600">Tổng cần thu ngay</div>
-              <div className="mt-1 text-xl font-black text-slate-950">{formatCurrency(amountToCollectNow)}</div>
+              <div className="text-xs font-black uppercase tracking-widest text-sky-600">Sẽ tính vào hóa đơn checkout</div>
+              <div className="mt-1 text-xl font-black text-slate-950">{formatCurrency(totalBookingRemaining + totalEarlyFee)}</div>
             </div>
           </div>
 
@@ -785,7 +815,7 @@ function CheckInConfirmModal(props: {
               <div>
                 <div className="text-base font-black uppercase tracking-widest text-rose-600">Khách đang check-in sớm</div>
                 <div className="mt-1">Giờ check-in chuẩn: 14:00. <br className="md:hidden" />
-                  Dự kiến phụ thu: {formatCurrency(totalEarlyFee)} ({formatCurrency(calculateEarlyFee(props.rows[0]?.priceSnapshot))} / phòng)
+                  Phụ thu check-in sớm (nếu có) sẽ được ghi nhận và cộng vào hóa đơn checkout: {formatCurrency(totalEarlyFee)} ({formatCurrency(calculateEarlyFee(props.rows[0]?.priceSnapshot))} / phòng)
                 </div>
               </div>
             </div>
@@ -801,7 +831,7 @@ function CheckInConfirmModal(props: {
                   <div key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
-                        <div className="text-lg font-black text-slate-950 text-sky-700">{roomNameLabel(row.room, row.roomId)}</div>
+                        <div className="text-lg font-black text-sky-700">{roomNameLabel(row.room, row.roomId)}</div>
                         <div className="text-xs font-semibold text-slate-500 mt-1">{row.room?.roomType?.type || '-'} · {roomStatusLabel(row.status)}</div>
                       </div>
 
@@ -836,10 +866,10 @@ function CheckInConfirmModal(props: {
           </div>
         </div>
 
-        <div className="flex-shrink-0 flex items-center justify-between border-t border-slate-200 bg-white px-6 py-5">
+        <div className="shrink-0 flex items-center justify-between border-t border-slate-200 bg-white px-6 py-5">
           <div className="text-sm font-bold text-slate-500 hidden md:block">
-            {amountToCollectNow > 0
-              ? `Phần tiền ${formatCurrency(amountToCollectNow)} còn lại sẽ được thành toán khi quý khách trả phòng.`
+            {totalBookingRemaining > 0
+              ? `Phần tiền ${formatCurrency(totalBookingRemaining)} còn lại sẽ được thanh toán khi checkout. Phụ thu check-in sớm (nếu có) cũng sẽ tính vào hóa đơn cuối.`
               : 'Khách đã thanh toán đủ hoặc không phát sinh chi phí.'}
           </div>
           <div className="flex gap-3 w-full md:w-auto justify-end">
@@ -944,7 +974,8 @@ function CheckoutModal(props: {
   qrRef: React.RefObject<HTMLCanvasElement | null>;
   processing: boolean;
   calcLoading: boolean;
-  summary: { originalRoomCharge: number; roomAmount: number; serviceCatalogAmount: number; manualServiceAmount: number; serviceAmount: number; damageAmount: number; lateAmount: number; paidAmount: number; finalAmount: number; remainingAmount: number; refundFromEarlyCheckout: number; checkoutType?: string; usedNights?: number; unusedNights?: number; refundRate?: number };
+  preview: BookingCheckoutPreview | null;
+  summary: { originalRoomCharge: number; roomAmount: number; serviceCatalogAmount: number; manualServiceAmount: number; serviceAmount: number; damageAmount: number; checkInFeeAmount: number; lateAmount: number; paidAmount: number; finalAmount: number; remainingAmount: number; refundFromEarlyCheckout: number; checkoutType?: string; usedNights?: number; unusedNights?: number; refundRate?: number; totalUsedNightAmount: number; totalUnusedNightAmount: number; totalHotelPenaltyAmount: number; };
   catalogGroups: Record<string, typeof SERVICE_CATALOG>;
   selectedService?: typeof SERVICE_CATALOG[number];
   onAddServiceLine: () => void;
@@ -1048,20 +1079,23 @@ function CheckoutModal(props: {
               ) : (
                 <div className="mt-4 space-y-3 text-sm font-bold">
                   {/* Tiền phòng gốc (trước hoàn) */}
-                  <SummaryLine label={`Tiền phòng gốc (${props.summary.usedNights != null ? `${props.summary.usedNights} đêm sử dụng` : 'tiêu chuẩn'})`} value={props.summary.originalRoomCharge} />
+                  <SummaryLine label="Tiền phòng gốc (tổng dự kiến)" value={props.summary.originalRoomCharge} />
+                  <SummaryLine label="Tiền phòng đã sử dụng" value={props.summary.totalUsedNightAmount} />
+                  
                   {/* Khoản hoàn checkout sớm (âm) */}
                   {props.summary.refundFromEarlyCheckout > 0 && (
-                    <SummaryLine
-                      label={`Hoàn checkout sớm — ${props.summary.unusedNights ?? 0} đêm còn lại × ${Math.round((props.summary.refundRate ?? 0.8) * 100)}%`}
-                      value={-props.summary.refundFromEarlyCheckout}
-                    />
+                    <>
+                      <SummaryLine label="Tiền phòng chưa sử dụng" value={props.summary.totalUnusedNightAmount} />
+                      <SummaryLine
+                        label="Hoàn checkout sớm 80% (đêm chưa dùng)"
+                        value={-props.summary.refundFromEarlyCheckout}
+                      />
+                      <SummaryLine label="Khách sạn giữ (20%)" value={props.summary.totalHotelPenaltyAmount} />
+                      <SummaryLine label="Doanh thu phòng (sau hoàn)" value={props.summary.roomAmount} />
+                    </>
                   )}
-                  {/* Tiền phòng thực thu sau hoàn */}
-                  {props.summary.refundFromEarlyCheckout > 0 && (
-                    <div className="flex justify-between border-t border-slate-100 pt-2">
-                      <span className="text-slate-500">Tiền phòng thực thu</span>
-                      <span className="font-black text-slate-900">{formatCurrency(props.summary.roomAmount)}</span>
-                    </div>
+                  {props.summary.checkInFeeAmount > 0 && (
+                    <SummaryLine label="Phụ thu check-in sớm" value={props.summary.checkInFeeAmount} />
                   )}
                   {props.summary.lateAmount > 0 && (
                     <SummaryLine label="Phụ thu checkout trễ" value={props.summary.lateAmount} />
@@ -1077,6 +1111,49 @@ function CheckoutModal(props: {
                   <SummaryLine label="Đã thanh toán / cọc" value={props.summary.paidAmount} />
                 </div>
               )}
+              {props.preview?.roomSummaries?.length ? (
+                <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">Chi tiết theo phòng</div>
+                  <div className="mt-3 space-y-3">
+                    {props.preview.roomSummaries.map((room) => (
+                      <div key={`${room.bookingRoomId || room.roomId}`} className="rounded-2xl bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-black text-slate-900">Phòng {room.roomNumber || room.roomId || '-'}</div>
+                          <div className="font-black text-sky-700">{formatCurrency(Number(room.totalAmount ?? room.actualRoomRevenue ?? room.roomCharge ?? 0))}</div>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600 md:grid-cols-3 xl:grid-cols-4">
+                          <span>Tiền phòng gốc: {formatCurrency(Number(room.roomOriginalAmount ?? room.roomCharge ?? 0))}</span>
+                          {Number(room.usedRoomAmount ?? room.usedNightAmount) > 0 && <span>Tiền phòng đã dùng: {formatCurrency(Number(room.usedRoomAmount ?? room.usedNightAmount ?? 0))}</span>}
+                          {Number(room.unusedRoomAmount ?? room.unusedNightAmount) > 0 && <span>Tiền phòng chưa dùng: {formatCurrency(Number(room.unusedRoomAmount ?? room.unusedNightAmount ?? 0))}</span>}
+                          {Number(room.hotelKeepAmount ?? room.hotelPenaltyAmount) > 0 && <span>Khách sạn giữ 20%: {formatCurrency(Number(room.hotelKeepAmount ?? room.hotelPenaltyAmount ?? 0))}</span>}
+                          {Number(room.earlyCheckoutRefund) > 0 && <span className="text-emerald-600">Hoàn sớm 80%: {formatCurrency(room.earlyCheckoutRefund)}</span>}
+                          {Number(room.earlyCheckinFee) > 0 && <span>Phụ thu check-in sớm: {formatCurrency(room.earlyCheckinFee)}</span>}
+                          {Number(room.lateCheckoutFee) > 0 && <span>Phụ thu checkout trễ: {formatCurrency(room.lateCheckoutFee)}</span>}
+                          {Number(room.serviceCharge) > 0 && <span>Dịch vụ: {formatCurrency(room.serviceCharge)}</span>}
+                          {Number(room.damageFee) > 0 && <span>Hư hỏng: {formatCurrency(room.damageFee)}</span>}
+                          {Number(room.manualSurcharge) > 0 && <span>Phí nhập tay: {formatCurrency(room.manualSurcharge)}</span>}
+                          {Number(room.allocatedPaidAmount ?? room.paidAllocated) > 0 && <span className="text-sky-600">Đã thanh toán (phân bổ): {formatCurrency(Number(room.allocatedPaidAmount ?? room.paidAllocated ?? 0))}</span>}
+                          {Number(room.additionalCharge ?? room.additionalChargeForRoom) > 0 && <span className="text-rose-600">Còn phải thu: {formatCurrency(Number(room.additionalCharge ?? room.additionalChargeForRoom ?? 0))}</span>}
+                          {Number(room.refundToCustomer ?? room.netRefundForRoom) > 0 && <span className="text-emerald-600">Hoàn khách: {formatCurrency(Number(room.refundToCustomer ?? room.netRefundForRoom ?? 0))}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {props.preview?.invoiceLines?.length ? (
+                <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">Bảng tính chi tiết</div>
+                  <div className="mt-3 space-y-2">
+                    {props.preview.invoiceLines.map((line, index) => (
+                      <div key={`${line.itemType || 'line'}-${index}`} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                        <span>{line.description || line.itemType || 'Khoản phí'}{line.quantity && line.quantity > 1 ? ` × ${line.quantity}` : ''}</span>
+                        <span className={Number(line.amount || 0) < 0 ? 'text-emerald-700' : 'text-slate-950'}>{formatCurrency(Number(line.amount || 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className={`mt-5 rounded-2xl p-4 ${refundAmount > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
                 <div className="text-xs font-black uppercase tracking-widest">{refundAmount > 0 ? 'Hoàn khách' : 'Còn phải thu'}</div>
                 <div className="mt-1 text-3xl font-black">{formatCurrency(refundAmount > 0 ? refundAmount : amountToCollect)}</div>

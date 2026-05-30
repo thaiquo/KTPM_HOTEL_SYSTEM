@@ -67,6 +67,9 @@ public class BookingItem {
 
     private BigDecimal finalAmount;
 
+    @Column(name = "room_night_lines_json", columnDefinition = "TEXT")
+    private String roomNightLinesJson;
+
     @Transient
     private List<BookingGuest> guests = new ArrayList<>();
 

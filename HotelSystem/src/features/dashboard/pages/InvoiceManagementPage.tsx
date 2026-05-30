@@ -1,992 +1,889 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  HiOutlineCalendar,
-  HiOutlineClipboardCheck,
-  HiOutlineCurrencyDollar,
-  HiOutlineSearch,
-  HiOutlineUser,
-  HiOutlineOfficeBuilding,
-  HiOutlineClock,
-  HiX,
-  HiOutlinePhone,
+  HiOutlineSearch, HiX, HiOutlineRefresh, HiOutlineDocumentText,
+  HiOutlineCurrencyDollar, HiOutlineTrendingUp, HiOutlineTrendingDown,
+  HiOutlineReceiptRefund, HiOutlineCalendar, HiOutlineChevronLeft,
+  HiOutlineChevronRight, HiOutlineUser, HiOutlinePhone, HiOutlineIdentification,
+  HiOutlineHome, HiOutlineClipboardList, HiOutlineExclamationCircle,
+  HiOutlineClock, HiOutlineChevronDown,
 } from 'react-icons/hi';
+import { MdOutlineReceipt, MdOutlinePayments } from 'react-icons/md';
 import toast from 'react-hot-toast';
-import { staffInvoiceApi, bookingApi, userApi, type InvoiceSummary, type PaymentRecord } from '../../../services/api';
-import { roomApi } from '../../../services/roomApi';
-import type { Booking, Room } from '../../../types';
+import {
+  newInvoiceApi,
+  type InvoiceListItem,
+  type InvoiceSummaryV2,
+  type InvoiceDetailResponse,
+  type InvoiceSearchParams,
+} from '../../../services/api';
 
-const formatCurrency = (value: number) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const fmt = (v: number) => Number(v || 0).toLocaleString('vi-VN') + 'đ';
+const fmtDate = (s?: string | null) =>
+  s ? new Date(s).toLocaleDateString('vi-VN') : '—';
+const fmtDateTime = (s?: string | null) =>
+  s ? new Date(s).toLocaleString('vi-VN') : '—';
 
-const getInvoiceCategory = (invoice: PaymentRecord): 'BOOKING' | 'CHECKIN' | 'CHECKOUT' | 'REFUND' => {
-  const type = (invoice.paymentType || '').toUpperCase();
-  if (type === 'DEPOSIT' || type === 'FULL') return 'BOOKING';
-  if (type === 'EARLY_CHECKIN_FEE' || type === 'REMAINING') return 'CHECKIN';
-  if (type === 'LATE_CHECKOUT_FEE') return 'CHECKOUT';
-  if (type === 'REFUND' || type === 'EARLY_CHECKOUT_REFUND') return 'REFUND';
-  
-  const cat = (invoice.invoiceCategory || '').toUpperCase();
-  if (cat === 'BOOKING' || cat === 'CHECKIN' || cat === 'CHECKOUT' || cat === 'REFUND') {
-    return cat as any;
-  }
-  return 'BOOKING';
-};
-
-const normalizeInvoiceStatus = (invoice: PaymentRecord) => {
-  if (invoice.paymentType === 'REFUND') return 'REFUNDED';
-  if (invoice.status === 'SUCCESS') return 'PAID';
-  if (invoice.status === 'PENDING') return 'PENDING';
-  if (invoice.status === 'FAILED') return 'CANCELLED';
-  if (invoice.status === 'EXPIRED') return 'EXPIRED';
-  return invoice.status || 'PENDING';
-};
-
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'PAID':
-      return <span className="px-3 py-1 text-[10px] font-bold bg-green-100 text-green-600 rounded-full uppercase tracking-wider border border-green-200 whitespace-nowrap">Đã thanh toán</span>;
-    case 'REFUNDED':
-      return <span className="px-3 py-1 text-[10px] font-bold bg-sky-100 text-sky-600 rounded-full uppercase tracking-wider border border-sky-200 whitespace-nowrap">Đã hoàn tiền</span>;
-    case 'PENDING':
-      return <span className="px-3 py-1 text-[10px] font-bold bg-amber-100 text-amber-600 rounded-full uppercase tracking-wider border border-amber-200 whitespace-nowrap">Chờ xử lý</span>;
-    case 'CANCELLED':
-      return <span className="px-3 py-1 text-[10px] font-bold bg-red-100 text-red-600 rounded-full uppercase tracking-wider border border-red-200 whitespace-nowrap">Đã hủy</span>;
-    case 'EXPIRED':
-      return <span className="px-3 py-1 text-[10px] font-bold bg-gray-500 text-white rounded-full uppercase tracking-wider border border-gray-600 shadow-sm whitespace-nowrap">Quá hạn / No-Show</span>;
-    default:
-      return <span className="px-3 py-1 text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full uppercase tracking-wider whitespace-nowrap">{status}</span>;
-  }
-};
-
-const getCategoryBadge = (category?: string) => {
-  switch (category) {
-    case 'BOOKING':
-      return <span className="px-2 py-0.5 text-[9px] font-black bg-indigo-50 text-indigo-600 rounded border border-indigo-100 uppercase whitespace-nowrap">Đặt phòng</span>;
-    case 'CHECKIN':
-      return <span className="px-2 py-0.5 text-[9px] font-black bg-teal-50 text-teal-600 rounded border border-teal-100 uppercase whitespace-nowrap">Giai đoạn Check-in</span>;
-    case 'CHECKOUT':
-      return <span className="px-2 py-0.5 text-[9px] font-black bg-rose-50 text-rose-600 rounded border border-rose-100 uppercase whitespace-nowrap">Giai đoạn Checkout</span>;
-    case 'REFUND':
-      return <span className="px-2 py-0.5 text-[9px] font-black bg-cyan-50 text-cyan-600 rounded border border-cyan-100 uppercase whitespace-nowrap">Hoàn trả</span>;
-    default:
-      return null;
-  }
-};
-
-const getMethodBadge = (method?: string) => {
-  if (!method) return <span className="px-2 py-0.5 text-[9px] font-bold bg-gray-50 text-gray-400 rounded border border-gray-100 uppercase whitespace-nowrap">-</span>;
-  const m = method.toUpperCase();
-  if (m.includes('CASH')) {
-    return (
-      <span className="px-2 py-0.5 text-[9px] font-black bg-emerald-50 text-emerald-600 rounded border border-emerald-100 uppercase whitespace-nowrap">
-        💵 Tiền mặt
-      </span>
-    );
-  }
-  if (m.includes('BANK') || m.includes('TRANSFER') || m.includes('CONF_')) {
-    return (
-      <span className="px-2 py-0.5 text-[9px] font-black bg-blue-50 text-blue-600 rounded border border-blue-100 uppercase whitespace-nowrap">
-        💳 Chuyển khoản
-      </span>
-    );
-  }
-  if (m.includes('VNPAY')) {
-    return (
-      <span className="px-2 py-0.5 text-[9px] font-black bg-indigo-50 text-indigo-600 rounded border border-indigo-100 uppercase whitespace-nowrap">
-        🏦 VNPAY
-      </span>
-    );
-  }
-  if (m.includes('MOMO')) {
-    return (
-      <span className="px-2 py-0.5 text-[9px] font-black bg-pink-50 text-pink-600 rounded border border-pink-100 uppercase whitespace-nowrap">
-        🌸 MoMo
-      </span>
-    );
-  }
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const map: Record<string, { label: string; cls: string }> = {
+    DRAFT: { label: 'Nháp', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
+    PARTIAL: { label: 'Một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    COMPLETED: { label: 'Hoàn tất', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    CANCELLED: { label: 'Đã hủy', cls: 'bg-red-50 text-red-700 border-red-200' },
+  };
+  const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-50 text-gray-600 border-gray-200' };
   return (
-    <span className="px-2 py-0.5 text-[9px] font-black bg-purple-50 text-purple-600 rounded border border-purple-100 uppercase whitespace-nowrap">
-      ⚡ {method}
+    <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full border uppercase tracking-wide whitespace-nowrap ${cls}`}>
+      {label}
     </span>
   );
 };
 
-const getPaymentTypeLabel = (type?: string) => {
-  if (!type) return '-';
-  switch (type.toUpperCase()) {
-    case 'DEPOSIT': return 'Tiền cọc';
-    case 'FULL': return 'Thanh toán trọn gói';
-    case 'REMAINING': return 'Thanh toán còn lại';
-    case 'EARLY_CHECKIN_FEE': return 'Phí check-in sớm';
-    case 'LATE_CHECKOUT_FEE': return 'Thanh toán checkout';
-    case 'EARLY_CHECKOUT_REFUND': return 'Hoàn tiền checkout sớm';
-    case 'REFUND': return 'Hóa đơn hoàn trả';
-    default: return type;
-  }
+const PaymentStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const map: Record<string, { label: string; cls: string }> = {
+    PAID: { label: 'Đã TT', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    PARTIALLY_PAID: { label: 'Một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    UNPAID: { label: 'Chưa TT', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+    REFUNDED: { label: 'Đã hoàn', cls: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+  };
+  const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-50 text-gray-600 border-gray-200' };
+  return (
+    <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full border uppercase tracking-wide whitespace-nowrap ${cls}`}>
+      {label}
+    </span>
+  );
+};
+
+// ─── Summary Cards ────────────────────────────────────────────────────────────
+const SummaryCard: React.FC<{
+  icon: React.ReactNode; label: string; value: string | number;
+  sub?: string; color?: string; trend?: 'up'|'down'|'neutral';
+}> = ({ icon, label, value, sub, color = 'indigo', trend }) => {
+  const colorMap: Record<string, string> = {
+    indigo: 'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    rose: 'bg-rose-50 text-rose-600',
+    amber: 'bg-amber-50 text-amber-600',
+    sky: 'bg-sky-50 text-sky-600',
+    violet: 'bg-violet-50 text-violet-600',
+    teal: 'bg-teal-50 text-teal-600',
+    orange: 'bg-orange-50 text-orange-600',
+  };
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
+      <div className="flex items-start justify-between mb-3">
+        <div className={`p-2.5 rounded-xl ${colorMap[color] ?? colorMap.indigo}`}>{icon}</div>
+        {trend === 'up' && <HiOutlineTrendingUp className="w-4 h-4 text-emerald-500" />}
+        {trend === 'down' && <HiOutlineTrendingDown className="w-4 h-4 text-rose-500" />}
+      </div>
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
+      <p className="text-xl font-black text-gray-900 mt-0.5 leading-tight">{value}</p>
+      {sub && <p className="text-[11px] text-gray-400 mt-1 font-medium">{sub}</p>}
+    </div>
+  );
+};
+
+// ─── Detail Modal ─────────────────────────────────────────────────────────────
+const InvoiceDetailModal: React.FC<{
+  invoiceId: number | null;
+  onClose: () => void;
+}> = ({ invoiceId, onClose }) => {
+  const [data, setData] = React.useState<InvoiceDetailResponse | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<'overview'|'rooms'|'services'|'payments'|'refunds'>('overview');
+
+  React.useEffect(() => {
+    if (!invoiceId) { setData(null); return; }
+    setLoading(true); setError(null); setData(null); setActiveTab('overview');
+    newInvoiceApi.getDetail(invoiceId)
+      .then(setData)
+      .catch(e => setError(e?.response?.data?.message || 'Không thể tải chi tiết hóa đơn.'))
+      .finally(() => setLoading(false));
+  }, [invoiceId]);
+
+  if (!invoiceId) return null;
+
+  const rs = data?.revenueSummary;
+  const tabs = [
+    { id: 'overview', label: 'Tổng quan' },
+    { id: 'rooms', label: `Phòng (${data?.rooms?.length ?? 0})` },
+    { id: 'services', label: `Dịch vụ (${(data?.serviceCharges?.length ?? 0) + (data?.damageCharges?.length ?? 0)})` },
+    { id: 'payments', label: 'Thanh toán' },
+    { id: 'refunds', label: 'Hoàn tiền' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+      <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-6 duration-300">
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-8 py-5 border-b border-gray-100 bg-linear-to-r from-indigo-50/60 via-white to-sky-50/40 rounded-t-3xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-600 text-white rounded-xl">
+              <MdOutlineReceipt className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-gray-900">Chi tiết Hóa đơn</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                  {data?.invoiceCode ?? `INV-${String(invoiceId).padStart(6, '0')}`}
+                </span>
+                {data?.bookingCode && (
+                  <span className="text-xs text-gray-400 font-bold">Booking: {data.bookingCode}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-700 transition-all">
+            <HiX className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="shrink-0 flex items-center gap-1 px-6 pt-4 pb-0 border-b border-gray-100 overflow-x-auto">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id as any)}
+              className={`px-4 py-2 text-xs font-black rounded-t-xl border-b-2 whitespace-nowrap transition-all ${
+                activeTab === t.id
+                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50/60'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >{t.label}</button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading && (
+            <div className="py-20 flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-bold text-gray-400">Đang tải dữ liệu...</p>
+            </div>
+          )}
+          {error && (
+            <div className="py-12 flex flex-col items-center gap-2 text-center">
+              <HiOutlineExclamationCircle className="w-10 h-10 text-red-400" />
+              <p className="text-sm font-bold text-red-500">{error}</p>
+            </div>
+          )}
+          {data && !loading && (
+            <>
+              {/* ── OVERVIEW TAB ── */}
+              {activeTab === 'overview' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Left col */}
+                  <div className="space-y-4">
+                    {/* General Info */}
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-3">
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <HiOutlineDocumentText className="w-3.5 h-3.5" /> Thông tin chung
+                      </h3>
+                      <InfoRow label="Mã hóa đơn" value={data.invoiceCode} highlight />
+                      <InfoRow label="Mã booking" value={data.bookingCode} highlight />
+                      <InfoRow label="Ngày tạo" value={fmtDateTime(data.createdAt)} />
+                      {data.checkoutStaff && <InfoRow label="Nhân viên checkout" value={data.checkoutStaff} />}
+                    </div>
+                    {/* Customer */}
+                    {data.customer && (
+                      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-3">
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <HiOutlineUser className="w-3.5 h-3.5" /> Khách hàng
+                        </h3>
+                        <InfoRow label="Họ tên" value={data.customer.fullName} />
+                        <InfoRow label="SĐT" value={data.customer.phone} icon={<HiOutlinePhone className="w-3 h-3 text-sky-500" />} />
+                        <InfoRow label="CCCD/Hộ chiếu" value={data.customer.cccd || '—'} icon={<HiOutlineIdentification className="w-3 h-3 text-gray-400" />} />
+                      </div>
+                    )}
+                  </div>
+                  {/* Right col — Revenue Summary */}
+                  <div className="bg-linear-to-br from-indigo-600 to-violet-700 rounded-2xl p-5 text-white space-y-3">
+                    <h3 className="text-[10px] font-black text-indigo-200 uppercase tracking-widest flex items-center gap-1.5">
+                      <MdOutlinePayments className="w-3.5 h-3.5" /> Tổng kết tài chính
+                    </h3>
+                    {rs && (
+                      <div className="space-y-2">
+                        <MoneyRow label="Tổng tiền phòng" value={rs.totalRoomAmount} className="text-white/80" />
+                        <MoneyRow label="Tổng dịch vụ" value={rs.totalServiceAmount} className="text-white/80" />
+                        <MoneyRow label="Phí hư hỏng" value={rs.totalDamageAmount} className="text-white/80" />
+                        <hr className="border-white/20 my-1" />
+                        <MoneyRow label="Tổng hóa đơn (Gross)" value={rs.grossInvoiceAmount} className="text-white font-black" />
+                            <MoneyRow label="Hoàn checkout sớm" value={-rs.totalEarlyCheckoutRefundAmount} className="text-rose-300" negative />
+                        <hr className="border-white/20 my-1" />
+                            <MoneyRow label="Doanh thu thực thu (Net)" value={rs.netRevenue} className="text-emerald-300 font-black text-base" />
+                            <MoneyRow label="Doanh thu thực thu (actual)" value={rs.totalActualRevenue ?? rs.totalRoomAmount} className="text-emerald-200" />
+                        <hr className="border-white/20 my-1" />
+                            <MoneyRow label="Đã thanh toán (paid)" value={rs.totalPaidAmount} className="text-sky-300" />
+                            <MoneyRow label="Đã phân bổ (cọc)" value={rs.totalAllocatedPaidAmount ?? rs.totalPaidAmount} className="text-violet-200" />
+                            <div className="mt-1" />
+                            {rs.remainingToPay > 0 ? (
+                              <MoneyRow label="Còn phải thu" value={rs.remainingToPay} className="text-amber-300 font-black" />
+                            ) : (
+                              <MoneyRow label="Hoàn thêm cho khách" value={rs.refundToCustomer} className="text-teal-300" />
+                            )}
+                            <MoneyRow label="Đã hoàn" value={rs.alreadyRefundedAmount ?? 0} className="text-teal-100" />
+                            <MoneyRow label="Đang chờ hoàn" value={rs.pendingRefundAmount ?? 0} className="text-rose-100" />
+                            <div className="text-xs text-white/70 font-bold">Trạng thái hoàn: {data.refundStatus ?? 'NONE'}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── ROOMS TAB ── */}
+              {activeTab === 'rooms' && (
+                <div className="space-y-4">
+                  {data.rooms?.length === 0 && <Empty text="Không có dữ liệu phòng" />}
+                  {data.rooms?.map((r, i) => (
+                    <div key={i} className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
+                      <div className="flex items-center gap-3 px-5 py-3 bg-indigo-50 border-b border-indigo-100">
+                        <HiOutlineHome className="w-4 h-4 text-indigo-600" />
+                        <span className="font-black text-indigo-700 text-sm">{r.roomName}</span>
+                        {r.roomType && <span className="text-xs text-indigo-400 font-bold">{r.roomType}</span>}
+                      </div>
+                      <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <RoomStat label="Giá gốc" value={r.originalAmount} />
+                        <RoomStat label="Đã sử dụng" value={r.usedAmount} color="teal" />
+                        <RoomStat label="Chưa sử dụng" value={r.unusedAmount} color="amber" />
+                        <RoomStat label="Hoàn 80%" value={r.earlyCheckoutRefund} color="sky" />
+                        <RoomStat label="KS giữ lại 20%" value={r.hotelKeepAmount} color="orange" />
+                        <RoomStat label="Doanh thu thực" value={r.netRevenue} color="emerald" />
+                        <RoomStat label="Cọc phân bổ" value={r.allocatedPaidAmount} color="violet" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── SERVICES TAB ── */}
+              {activeTab === 'services' && (
+                <div className="space-y-5">
+                  {/* Service charges */}
+                  {data.serviceCharges && data.serviceCharges.length > 0 && (
+                    <div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <HiOutlineClipboardList className="w-3.5 h-3.5" /> Dịch vụ phát sinh
+                      </h3>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-2 text-[10px] text-gray-400 font-black uppercase tracking-widest">Dịch vụ</th>
+                            <th className="text-center py-2 text-[10px] text-gray-400 font-black uppercase tracking-widest">SL</th>
+                            <th className="text-right py-2 text-[10px] text-gray-400 font-black uppercase tracking-widest">Thành tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {data.serviceCharges.map((s, i) => (
+                            <tr key={i}>
+                              <td className="py-3">
+                                <div className="font-semibold text-gray-800">{s.itemName}</div>
+                                <div className="text-[10px] text-gray-400">{s.category}</div>
+                              </td>
+                              <td className="py-3 text-center text-gray-600">{s.quantity ?? 1}</td>
+                              <td className="py-3 text-right font-black text-gray-900">{fmt(s.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {/* Damage charges */}
+                  {data.damageCharges && data.damageCharges.length > 0 && (
+                    <div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <HiOutlineExclamationCircle className="w-3.5 h-3.5 text-red-400" /> Phí hư hỏng
+                      </h3>
+                      <div className="space-y-2">
+                        {data.damageCharges.map((d, i) => (
+                          <div key={i} className="flex items-center justify-between bg-red-50 border border-red-100 rounded-xl p-3">
+                            <div>
+                              <div className="font-semibold text-red-800 text-sm">{d.itemName}</div>
+                              {d.note && <div className="text-[11px] text-red-400">{d.note}</div>}
+                            </div>
+                            <span className="font-black text-red-700">{fmt(d.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(!data.serviceCharges?.length && !data.damageCharges?.length) && (
+                    <Empty text="Không có phí dịch vụ / hư hỏng" />
+                  )}
+                </div>
+              )}
+
+              {/* ── PAYMENTS TAB ── */}
+              {activeTab === 'payments' && (
+                <div>
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
+                    <MdOutlinePayments className="w-3.5 h-3.5" /> Lịch sử thanh toán
+                  </h3>
+                  {!data.paymentHistory?.records?.length && <Empty text="Không có lịch sử thanh toán" />}
+                  <div className="space-y-3">
+                    {data.paymentHistory?.records?.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-100 rounded-xl">
+                            <MdOutlinePayments className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-black text-emerald-800">{p.method}</div>
+                            <div className="text-[11px] text-emerald-500 flex items-center gap-1">
+                              <HiOutlineClock className="w-3 h-3" /> {fmtDateTime(p.time)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-black text-emerald-700 text-sm">{fmt(p.amount)}</div>
+                          <div className="text-[10px] text-emerald-500 uppercase">{p.status}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── REFUNDS TAB ── */}
+              {activeTab === 'refunds' && (
+                <div>
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
+                    <HiOutlineReceiptRefund className="w-3.5 h-3.5" /> Lịch sử hoàn tiền
+                  </h3>
+                  {!data.refundHistory?.records?.length && <Empty text="Không có lịch sử hoàn tiền" />}
+                  <div className="space-y-3">
+                    {data.refundHistory?.records?.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between bg-sky-50 border border-sky-100 rounded-2xl p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-sky-100 rounded-xl">
+                            <HiOutlineReceiptRefund className="w-4 h-4 text-sky-600" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-black text-sky-800">{r.reason || 'Hoàn tiền checkout sớm'}</div>
+                            <div className="text-[11px] text-sky-500 flex items-center gap-1">
+                              <HiOutlineClock className="w-3 h-3" /> {fmtDateTime(r.time)}
+                            </div>
+                            {r.staff && <div className="text-[11px] text-sky-400">NV: {r.staff}</div>}
+                          </div>
+                        </div>
+                        <div className="font-black text-sky-700 text-sm">{fmt(r.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Sub-components ─────────────────────────────────────────────────────────
+const InfoRow: React.FC<{ label: string; value: string; highlight?: boolean; icon?: React.ReactNode }> = ({ label, value, highlight, icon }) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="text-[11px] text-gray-400 font-bold shrink-0">{label}</span>
+    <span className={`text-right text-[12px] font-black flex items-center gap-1 ${highlight ? 'text-indigo-700' : 'text-gray-800'}`}>
+      {icon}{value || '—'}
+    </span>
+  </div>
+);
+
+const MoneyRow: React.FC<{ label: string; value: number; className?: string; negative?: boolean }> = ({ label, value, className, negative }) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="text-[11px] text-white/70 font-bold">{label}</span>
+    <span className={`text-sm font-black ${className ?? 'text-white'}`}>
+      {negative && value > 0 ? '-' : ''}{fmt(Math.abs(value))}
+    </span>
+  </div>
+);
+
+const RoomStat: React.FC<{ label: string; value: number; color?: string }> = ({ label, value, color = 'gray' }) => {
+  const colorMap: Record<string, string> = {
+    gray: 'bg-gray-100 text-gray-700',
+    teal: 'bg-teal-50 text-teal-700',
+    amber: 'bg-amber-50 text-amber-700',
+    sky: 'bg-sky-50 text-sky-700',
+    orange: 'bg-orange-50 text-orange-700',
+    emerald: 'bg-emerald-50 text-emerald-700',
+    violet: 'bg-violet-50 text-violet-700',
+  };
+  return (
+    <div className={`rounded-xl p-3 ${colorMap[color] ?? colorMap.gray}`}>
+      <div className="text-[10px] font-black uppercase tracking-wide opacity-70 mb-1">{label}</div>
+      <div className="text-sm font-black">{fmt(value)}</div>
+    </div>
+  );
+};
+
+const Empty: React.FC<{ text: string }> = ({ text }) => (
+  <div className="py-10 flex flex-col items-center gap-2 text-center">
+    <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
+      <HiOutlineDocumentText className="w-6 h-6 text-gray-300" />
+    </div>
+    <p className="text-sm font-bold text-gray-400">{text}</p>
+  </div>
+);
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+const DATE_PRESETS = [
+  { id: 'ALL', label: 'Tất cả' },
+  { id: 'TODAY', label: 'Hôm nay' },
+  { id: 'YESTERDAY', label: 'Hôm qua' },
+  { id: 'THIS_WEEK', label: 'Tuần này' },
+  { id: 'THIS_MONTH', label: 'Tháng này' },
+  { id: 'CUSTOM', label: 'Tùy chỉnh' },
+];
+
+const STATUSES = ['DRAFT', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
+const PAYMENT_STATUSES = [
+  { id: 'ALL', label: 'Tất cả' },
+  { id: 'PAID', label: 'Đã thanh toán' },
+  { id: 'PARTIALLY_PAID', label: 'Thanh toán một phần' },
+  { id: 'UNPAID', label: 'Chưa thanh toán' },
+  { id: 'REFUNDED', label: 'Đã hoàn tiền' },
+];
+
+const PAGE_SIZE = 10;
+
+const defaultSummary: InvoiceSummaryV2 = {
+  totalInvoices: 0, grossInvoiceAmount: 0, totalRefundAmount: 0, netRevenue: 0,
+  totalPaidAmount: 0, totalRemainingAmount: 0, refundedInvoiceCount: 0, todayInvoiceCount: 0,
+  totalActualRevenue: 0, totalRefundedAmount: 0, totalPendingRefundAmount: 0,
+  totalAdditionalCharge: 0, totalRemainingToPay: 0, paidInvoiceCount: 0, unpaidInvoiceCount: 0,
+  partiallyPaidInvoiceCount: 0,
 };
 
 const InvoiceManagementPage: React.FC = () => {
-  const [invoices, setInvoices] = useState<PaymentRecord[]>([]);
-  const [summary, setSummary] = useState<InvoiceSummary>({
-    monthlyRevenue: 0,
-    paidTotal: 0,
-    pendingTotal: 0,
-    paidCount: 0,
-    pendingCount: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'ALL' | 'BOOKING' | 'CHECKIN' | 'CHECKOUT' | 'REFUND'>('ALL');
-  const [timeRange, setTimeRange] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'>('ALL');
-  const [customDate, setCustomDate] = useState<string>('');
+  // Filter state
+  const [keyword, setKeyword] = useState('');
+  const [datePreset, setDatePreset] = useState('ALL');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [paymentStatus, setPaymentStatus] = useState('ALL');
+  const [showStatusDrop, setShowStatusDrop] = useState(false);
 
-  // Detail modal state variables
-  const [selectedInvoice, setSelectedInvoice] = useState<PaymentRecord | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [bookingDetails, setBookingDetails] = useState<Booking | null>(null);
-  const [roomDetails, setRoomDetails] = useState<Room | null>(null);
-  const [roomList, setRoomList] = useState<Room[]>([]);
-  const [guestList, setGuestList] = useState<any[]>([]);
+  // Data state
+  const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
+  const [summary, setSummary] = useState<InvoiceSummaryV2>(defaultSummary);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // Cache states for table rows
-  const [userNameByUser, setUserNameByUser] = useState<Record<string, string>>({});
-  const [guestsByBooking, setGuestsByBooking] = useState<Record<string, any[]>>({});
+  // Detail modal
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  // Background data resolver
-  useEffect(() => {
-    if (invoices.length === 0) return;
-
-    const uniqueUserIds = Array.from(new Set(invoices.map(inv => inv.userId).filter(Boolean)));
-    const uniqueBookingIds = Array.from(new Set(invoices.map(inv => inv.bookingId).filter(Boolean)));
-
-    uniqueUserIds.forEach(async (userId) => {
-      const uId = String(userId);
-      if (userNameByUser[uId]) return;
-      try {
-        const res = await userApi.getUserById(Number(uId));
-        let name = '';
-        if (res.data?.data?.name) {
-          name = res.data.data.name;
-        } else if (res.data?.data?.fullName) {
-          name = res.data.data.fullName;
-        } else if (res.data?.name) {
-          name = res.data.name;
-        } else if (res.data?.fullName) {
-          name = res.data.fullName;
-        }
-        if (name.trim()) {
-          setUserNameByUser(prev => ({ ...prev, [uId]: name }));
-        } else {
-          setUserNameByUser(prev => ({ ...prev, [uId]: `User #${uId}` }));
-        }
-      } catch (err) {
-        setUserNameByUser(prev => ({ ...prev, [uId]: `User #${uId}` }));
-      }
-    });
-
-    uniqueBookingIds.forEach(async (bookingId) => {
-      const bId = String(bookingId);
-      if (guestsByBooking[bId]) return;
-      try {
-        const guests = await bookingApi.getGuests(bId).catch(() => []);
-        setGuestsByBooking(prev => ({ ...prev, [bId]: guests }));
-      } catch (err) {
-        setGuestsByBooking(prev => ({ ...prev, [bId]: [] }));
-      }
-    });
-  }, [invoices]);
-
-  const getSelectedRepresentative = (bookingId: number, category: string) => {
-    const list = guestsByBooking[String(bookingId)] || [];
-    if (list.length === 0) return null;
-    return [...list].sort((a, b) => {
-      if (category === 'BOOKING') {
-        if (a.primaryGuest && !b.primaryGuest) return -1;
-        if (!a.primaryGuest && b.primaryGuest) return 1;
-        return 0;
-      } else {
-        if (a.checkInPerson && !b.checkInPerson) return -1;
-        if (!a.checkInPerson && b.checkInPerson) return 1;
-        if (a.primaryGuest && !b.primaryGuest) return -1;
-        if (!a.primaryGuest && b.primaryGuest) return 1;
-        return 0;
-      }
-    })[0];
-  };
-
-  const handleRowClick = async (invoice: PaymentRecord) => {
-    try {
-      setSelectedInvoice(invoice);
-      setDetailsLoading(true);
-      setBookingDetails(null);
-      setRoomDetails(null);
-      setGuestList([]);
-
-      // Fetch booking details
-      const booking = await bookingApi.getById(String(invoice.bookingId)).catch(() => null);
-      if (booking) {
-        setBookingDetails(booking);
-        setRoomList([]);
-        // Fetch room details (support multi-room bookings)
-        const roomIds: string[] = (booking.items || []).map((it: any) => String(it.roomId)).filter(Boolean);
-        if (roomIds.length === 0 && booking.roomId) roomIds.push(String(booking.roomId));
-        if (roomIds.length > 0) {
-          const fetched = await Promise.all(roomIds.map(async (rid) => await roomApi.getById(rid).catch(() => null)));
-          const rooms = fetched.filter((r): r is Room => Boolean(r));
-          setRoomList(rooms);
-          setRoomDetails(rooms.length === 1 ? rooms[0] : null);
-        } else {
-          setRoomDetails(null);
-        }
-      }
-      // Fetch guest list
-      const guests = await bookingApi.getGuests(String(invoice.bookingId)).catch(() => []);
-      setGuestList(guests);
-    } catch (err) {
-      console.error('Fetch invoice details error:', err);
-      toast.error('Không thể tải chi tiết hóa đơn.');
-    } finally {
-      setDetailsLoading(false);
+  const computeDateRange = useCallback(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const weekStartDate = new Date();
+    weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+    const weekStart = weekStartDate.toISOString().split('T')[0];
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    switch (datePreset) {
+      case 'TODAY': return { from: today, to: today };
+      case 'YESTERDAY': return { from: yesterday, to: yesterday };
+      case 'THIS_WEEK': return { from: weekStart, to: today };
+      case 'THIS_MONTH': return { from: monthStart, to: today };
+      case 'CUSTOM': return { from: fromDate, to: toDate };
+      default: return { from: '', to: '' };
     }
-  };
+  }, [datePreset, fromDate, toDate]);
 
-  const fetchInvoices = async () => {
+  const doSearch = useCallback(async (p = 0) => {
+    setLoading(true);
+    setHasSearched(true);
+    const { from, to } = computeDateRange();
+    const params: InvoiceSearchParams = {
+      page: p, size: PAGE_SIZE,
+      paymentStatus: paymentStatus !== 'ALL' ? paymentStatus : undefined,
+      invoiceStatus: selectedStatuses.length > 0 ? selectedStatuses : undefined,
+    };
+    // keyword distributed
+    const kw = keyword.trim();
+    if (kw) {
+      // autodetect keyword type
+      if (/^\d{9,11}$/.test(kw)) params.customerPhone = kw;
+      else if (/^HD-?\d+$/i.test(kw) || /^INV-?\d+$/i.test(kw)) params.invoiceCode = kw;
+      else if (/^BK/i.test(kw)) params.bookingCode = kw;
+      else if (/^\d{3,4}$/.test(kw)) params.bookingCode = kw; // room number — passed as keyword
+      else params.customerName = kw; // name fallback
+    }
+    if (from) params.fromDate = from;
+    if (to) params.toDate = to;
     try {
-      setLoading(true);
-      const [summaryData, invoiceData] = await Promise.all([
-        staffInvoiceApi.getSummary(),
-        staffInvoiceApi.getAll(),
-      ]);
-      setSummary(summaryData);
-      setInvoices(invoiceData);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Không thể tải dữ liệu hóa đơn');
+      const res = await newInvoiceApi.search(params);
+      setInvoices(res.content);
+      setSummary(res.summary);
+      setTotalElements(res.totalElements);
+      setTotalPages(res.totalPages);
+      setPage(p);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Không thể tìm kiếm hóa đơn');
     } finally {
       setLoading(false);
     }
+  }, [keyword, datePreset, fromDate, toDate, selectedStatuses, paymentStatus, computeDateRange]);
+
+  const handleReset = () => {
+    setKeyword(''); setDatePreset('ALL'); setFromDate(''); setToDate('');
+    setSelectedStatuses([]); setPaymentStatus('ALL'); setPage(0);
+    setInvoices([]); setSummary(defaultSummary); setTotalElements(0); setTotalPages(0);
+    setHasSearched(false);
   };
 
-  useEffect(() => {
-    fetchInvoices();
-  }, []);
+  const toggleStatus = (s: string) => {
+    setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  };
 
-  const filteredInvoices = useMemo(() => {
-    let result = invoices;
-    
-    if (activeCategory !== 'ALL') {
-      result = result.filter(inv => getInvoiceCategory(inv) === activeCategory);
-    }
-
-    if (timeRange !== 'ALL') {
-      const now = new Date();
-      result = result.filter(inv => {
-        if (!inv.createdAt) return false;
-        const invDate = new Date(inv.createdAt);
-        
-        if (timeRange === 'TODAY') {
-          return invDate.toDateString() === now.toDateString();
-        }
-        
-        if (timeRange === 'WEEK') {
-          const startOfWeek = new Date(now);
-          const day = startOfWeek.getDay();
-          const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-          startOfWeek.setDate(diff);
-          startOfWeek.setHours(0, 0, 0, 0);
-          
-          const endOfWeek = new Date(startOfWeek);
-          endOfWeek.setDate(endOfWeek.getDate() + 7);
-          
-          return invDate >= startOfWeek && invDate < endOfWeek;
-        }
-        
-        if (timeRange === 'MONTH') {
-          return invDate.getMonth() === now.getMonth() && invDate.getFullYear() === now.getFullYear();
-        }
-        
-        if (timeRange === 'CUSTOM' && customDate) {
-          const selected = new Date(customDate);
-          return invDate.toDateString() === selected.toDateString();
-        }
-        
-        return true;
-      });
-    }
-
-    const keyword = searchTerm.trim().toLowerCase();
-    if (keyword) {
-      result = result.filter((invoice) =>
-        [`INV-${invoice.id}`, invoice.bookingId, invoice.userId, invoice.transactionId]
-          .join(' ')
-          .toLowerCase()
-          .includes(keyword)
-      );
-    }
-    // Hide cancelled/failed invoices that are not refunds to match backend rule:
-    // booking invoices should only show real payment invoices; cancellations without refund shouldn't create visible cancel invoices.
-    result = result.filter(inv => {
-      const isRefund = (inv.paymentType || '').toUpperCase() === 'REFUND' || ((inv.invoiceCategory || '').toUpperCase() === 'REFUND');
-      const isCancelledLike = (inv.status === 'CANCELLED' || inv.status === 'FAILED');
-      if (isCancelledLike && !isRefund) return false;
-      return true;
-    });
-    
-    return result;
-  }, [invoices, searchTerm, activeCategory, timeRange, customDate]);
-
-  const refundStats = useMemo(() => {
-    const refundInvoices = invoices.filter((inv) => getInvoiceCategory(inv) === 'REFUND');
-    const refundedSuccess = refundInvoices.filter((inv) => normalizeInvoiceStatus(inv) === 'REFUNDED');
-    const refundedPending = refundInvoices.filter((inv) => normalizeInvoiceStatus(inv) === 'PENDING');
-    const refundAmount = refundInvoices.reduce((sum, inv) => sum + Number(inv.amount || inv.totalAmount || 0), 0);
-    return {
-      total: refundInvoices.length,
-      success: refundedSuccess.length,
-      pending: refundedPending.length,
-      amount: refundAmount,
-    };
-  }, [invoices]);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') doSearch(0);
+  };
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-5 animate-in slide-in-from-bottom-4 duration-400 pb-8">
+      {/* ── Page Title ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">Xử lý Hóa đơn</h1>
-          <p className="text-sm text-gray-500 mt-1">Quản lý dòng tiền: Đặt cọc, Thanh toán Check-in/Checkout và Hoàn trả.</p>
-        </div>
-        <button 
-          onClick={fetchInvoices}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-2xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"
-        >
-          Làm mới dữ liệu
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm transition-hover hover:shadow-md duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-green-50 rounded-2xl">
-              <HiOutlineCurrencyDollar className="w-6 h-6 text-green-600" />
-            </div>
-            <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Tháng {new Date().getMonth() + 1}</span>
-          </div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Doanh thu thực tế</p>
-          <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(summary.monthlyRevenue)}</p>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm transition-hover hover:shadow-md duration-300">
-          <div className="p-3 bg-indigo-50 rounded-2xl w-fit mb-4">
-            <HiOutlineClipboardCheck className="w-6 h-6 text-indigo-600" />
-          </div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tổng tiền đã thu</p>
-          <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(summary.paidTotal)}</p>
-          <p className="text-[11px] text-gray-400 mt-1 font-medium">{summary.paidCount} giao dịch thành công</p>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm transition-hover hover:shadow-md duration-300">
-          <div className="p-3 bg-amber-50 rounded-2xl w-fit mb-4">
-            <HiOutlineCalendar className="w-6 h-6 text-amber-600" />
-          </div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Đang chờ thanh toán</p>
-          <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(summary.pendingTotal)}</p>
-          <p className="text-[11px] text-gray-400 mt-1 font-medium">{summary.pendingCount} hóa đơn chưa tất toán</p>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm transition-hover hover:shadow-md duration-300">
-          <div className="p-3 bg-cyan-50 rounded-2xl w-fit mb-4">
-            <HiOutlineCurrencyDollar className="w-6 h-6 text-cyan-600" />
-          </div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hoàn tiền</p>
-          <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(refundStats.amount)}</p>
-          <p className="text-[11px] text-gray-400 mt-1 font-medium">
-            {refundStats.success}/{refundStats.total} hóa đơn refund đã thành công · {refundStats.pending} chờ xử lý
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl"><MdOutlineReceipt className="w-5 h-5" /></div>
+            Quản lý Hóa đơn
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 ml-0.5">
+            Tìm kiếm, thống kê và theo dõi doanh thu thực thu theo từng hóa đơn checkout.
           </p>
         </div>
       </div>
 
-      <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden min-h-[500px] flex flex-col">
-        <div className="p-6 border-b border-gray-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center p-1 bg-gray-100/80 rounded-2xl w-fit">
-            {[
-              { id: 'ALL', label: 'Tất cả' },
-              { id: 'BOOKING', label: 'Đặt phòng' },
-              { id: 'CHECKIN', label: 'Check-in' },
-              { id: 'CHECKOUT', label: 'Trả phòng' },
-              { id: 'REFUND', label: 'Hoàn trả' }
-            ].map((tab) => (
+      {/* ── Filter Bar ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        {/* Row 1: keyword + date preset */}
+        <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+          <div className="relative flex-1 min-w-0">
+            <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              value={keyword}
+              onChange={e => setKeyword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Mã HĐ, mã booking, tên khách, SĐT, số phòng..."
+              className="w-full pl-10 pr-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all font-medium placeholder:text-gray-400"
+            />
+          </div>
+          {/* Date preset pills */}
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl shrink-0">
+            {DATE_PRESETS.map(d => (
               <button
-                key={tab.id}
-                onClick={() => setActiveCategory(tab.id as any)}
-                className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-                  activeCategory === tab.id 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-500 hover:text-gray-700'
+                key={d.id}
+                onClick={() => setDatePreset(d.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                  datePreset === d.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
-              >
-                {tab.label}
-              </button>
+              >{d.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: custom date + status + payment status + actions */}
+        <div className="flex flex-wrap items-center gap-3">
+          {datePreset === 'CUSTOM' && (
+            <div className="flex items-center gap-2 animate-in slide-in-from-top-2 duration-200">
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-bold" />
+              <span className="text-xs text-gray-400 font-bold">→</span>
+              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-bold" />
+            </div>
+          )}
+
+          {/* Booking status multi-select */}
+          <div className="relative">
+            <button
+              onClick={() => setShowStatusDrop(v => !v)}
+              className="flex items-center gap-2 px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl hover:border-indigo-300 transition-all font-bold text-gray-700"
+            >
+              Trạng thái booking {selectedStatuses.length > 0 && `(${selectedStatuses.length})`}
+              <HiOutlineChevronDown className={`w-3.5 h-3.5 transition-transform ${showStatusDrop ? 'rotate-180' : ''}`} />
+            </button>
+            {showStatusDrop && (
+              <div className="absolute z-50 top-full mt-1 left-0 bg-white border border-gray-200 rounded-xl shadow-lg p-2 space-y-1 min-w-44 animate-in slide-in-from-top-2 duration-150">
+                {STATUSES.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => toggleStatus(s)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                      selectedStatuses.includes(s) ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {selectedStatuses.includes(s) && '✓ '}
+                    <StatusBadge status={s} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Payment status select */}
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl">
+            {PAYMENT_STATUSES.map(p => (
+              <button key={p.id} onClick={() => setPaymentStatus(p.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                  paymentStatus === p.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >{p.label}</button>
             ))}
           </div>
 
-          <div className="relative w-full md:w-80">
-            <HiOutlineSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Tìm mã, booking, khách..."
-              className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-2.5 pl-12 pr-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all placeholder:text-gray-400"
-            />
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-all"
+            >
+              <HiOutlineRefresh className="w-3.5 h-3.5" /> Làm mới
+            </button>
+            <button
+              onClick={() => doSearch(0)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-black text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200 disabled:opacity-60"
+            >
+              <HiOutlineSearch className="w-3.5 h-3.5" />
+              {loading ? 'Đang tìm...' : 'Tìm kiếm'}
+            </button>
           </div>
-        </div>
-
-        {/* Date Filter sub-bar */}
-        <div className="px-6 py-4 bg-gray-50/30 border-b border-gray-50 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-gray-400 uppercase tracking-wider mr-2">Khoảng thời gian:</span>
-            <div className="flex items-center p-0.5 bg-gray-100 rounded-xl w-fit">
-              {[
-                { id: 'ALL', label: 'Tất cả' },
-                { id: 'TODAY', label: 'Hôm nay' },
-                { id: 'WEEK', label: 'Tuần này' },
-                { id: 'MONTH', label: 'Tháng này' },
-                { id: 'CUSTOM', label: 'Chọn ngày...' }
-              ].map((range) => (
-                <button
-                  key={range.id}
-                  onClick={() => setTimeRange(range.id as any)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    timeRange === range.id 
-                      ? 'bg-white text-indigo-600 shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {timeRange === 'CUSTOM' && (
-            <div className="flex items-center gap-2 animate-in slide-in-from-left-4 duration-300">
-              <span className="text-xs font-bold text-gray-400">Chọn ngày:</span>
-              <input
-                type="date"
-                value={customDate}
-                onChange={(e) => setCustomDate(e.target.value)}
-                className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-x-auto scrollbar-thin scrollbar-thumb-indigo-200 scrollbar-track-transparent">
-          {loading ? (
-            <div className="py-24 flex flex-col items-center justify-center space-y-4">
-               <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-               <p className="text-sm font-bold text-gray-400">Đang đồng bộ hóa đơn...</p>
-            </div>
-          ) : filteredInvoices.length === 0 ? (
-            <div className="py-24 flex flex-col items-center justify-center text-center px-6">
-              <div className="w-16 h-16 bg-gray-50 rounded-3xl flex items-center justify-center mb-4">
-                <HiOutlineClipboardCheck className="w-8 h-8 text-gray-300" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900">Không tìm thấy hóa đơn</h3>
-              <p className="text-sm text-gray-500 mt-1 max-w-[280px]">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm của bạn.</p>
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse min-w-[1200px]">
-              <thead>
-                <tr className="bg-gray-50/50">
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Giao dịch</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Nghiệp vụ</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Hình thức</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 min-w-[220px]">Booking / Khách</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 text-right">Số tiền</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 text-center">Trạng thái</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100 text-right">Thời gian</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filteredInvoices.map((invoice) => {
-                  const status = normalizeInvoiceStatus(invoice);
-                  return (
-                    <tr 
-                      key={invoice.id} 
-                      onClick={() => handleRowClick(invoice)}
-                      className="group hover:bg-indigo-50/20 cursor-pointer transition-all border-l-4 border-l-transparent hover:border-l-indigo-500"
-                    >
-                      <td className="px-8 py-5">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-indigo-600">INV-{invoice.id}</span>
-                          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tight truncate max-w-[120px]">{invoice.transactionId}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="flex flex-col space-y-1">
-                          {getCategoryBadge(getInvoiceCategory(invoice))}
-                          {getInvoiceCategory(invoice) === 'REFUND' && (
-                            <span className="inline-flex items-center rounded bg-cyan-50 px-1.5 py-0.5 text-[9px] font-black text-cyan-700 uppercase border border-cyan-200 w-fit mt-0.5">
-                              {normalizeInvoiceStatus(invoice) === 'REFUNDED' ? 'Hoàn tiền thành công' : 'Hóa đơn hoàn tiền'}
-                            </span>
-                          )}
-                          <span className="text-xs font-bold text-gray-700">{getPaymentTypeLabel(invoice.paymentType)}</span>
-                          {invoice.paymentType === 'DEPOSIT' && (
-                            <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-black text-amber-700 uppercase border border-amber-200 w-fit mt-0.5">Hóa đơn cọc</span>
-                          )}
-                          {invoice.paymentType === 'FULL' && (
-                            <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black text-emerald-700 uppercase border border-emerald-200 w-fit mt-0.5">T.Toán 100%</span>
-                          )}
-                          {invoice.paymentType === 'EARLY_CHECKIN_FEE' && (
-                            <span className="inline-flex items-center rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-black text-rose-700 uppercase border border-rose-200 w-fit mt-0.5">
-                              Check-in sớm ({invoice.method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'}: {formatCurrency(invoice.amount || invoice.totalAmount)})
-                            </span>
-                          )}
-                          {invoice.paymentType === 'REMAINING' && (
-                            <span className="inline-flex items-center rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-black text-indigo-700 uppercase border border-indigo-200 w-fit mt-0.5">
-                              Thanh toán còn lại ({invoice.method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'}: {formatCurrency(invoice.amount || invoice.totalAmount)})
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        {getMethodBadge(invoice.method)}
-                      </td>
-                      <td className="px-6 py-5 min-w-[220px]">
-                        <div className="space-y-2">
-                          {/* Booking ID */}
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-lg bg-indigo-50 text-indigo-600">
-                              <HiOutlineClipboardCheck className="w-3.5 h-3.5" />
-                            </span>
-                            <span className="text-xs font-black text-gray-900">Booking #{invoice.bookingId}</span>
-                          </div>
-
-                          {/* Info card */}
-                          {(() => {
-                            const category = getInvoiceCategory(invoice);
-                            const rep = getSelectedRepresentative(invoice.bookingId, category);
-                            const repPhone = rep?.phone || rep?.phoneNumber || '-';
-                            const repName = rep?.fullName || 'Chưa có thông tin';
-                            const repCccd = rep?.cccd || rep?.idNumber || '-';
-
-                            return (
-                              <div className="bg-gray-50/70 rounded-2xl p-3 border border-gray-100/50 space-y-1.5 text-[11px] w-full">
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-gray-400 font-bold shrink-0">Tài khoản:</span>
-                                  <span className="text-gray-800 font-black truncate max-w-[120px]" title={userNameByUser[invoice.userId] || `User #${invoice.userId}`}>
-                                    {userNameByUser[invoice.userId] || `User #${invoice.userId}`}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-3 border-t border-gray-100/40 pt-1.5">
-                                  <span className="text-gray-400 font-bold shrink-0">Đại diện:</span>
-                                  <span className="text-gray-800 font-black truncate max-w-[120px]" title={repName}>
-                                    {repName}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-3 border-t border-gray-100/40 pt-1.5">
-                                  <span className="text-gray-400 font-bold shrink-0">SĐT:</span>
-                                  <span className="text-sky-600 font-black flex items-center gap-1">
-                                    <HiOutlinePhone className="w-3 h-3" />
-                                    {repPhone}
-                                  </span>
-                                </div>
-                                {category === 'CHECKOUT' && (
-                                  <div className="flex items-center justify-between gap-3 border-t border-gray-100/40 pt-1.5">
-                                    <span className="text-gray-400 font-bold shrink-0">CCCD:</span>
-                                    <span className="text-gray-800 font-black">{repCccd}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 text-right">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-gray-900">{formatCurrency(invoice.amount || invoice.totalAmount)}</span>
-                          <span className="text-[10px] text-gray-400 font-bold">Thực nhận: {formatCurrency(invoice.paidAmount)}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        {getStatusBadge(status)}
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-gray-700">{invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('vi-VN') : '-'}</span>
-                          <span className="text-[10px] text-gray-400 font-medium">{invoice.createdAt ? new Date(invoice.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
 
-      {/* Modal chi tiết hóa đơn */}
-      {selectedInvoice && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-5 animate-in fade-in duration-300">
-          <div className="relative w-full max-w-3xl bg-white rounded-[32px] shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh] animate-in slide-in-from-bottom-8 duration-300">
-            
-            {/* Header */}
-            <div className="shrink-0 flex items-center justify-between border-b border-gray-50 px-8 py-6 bg-gradient-to-r from-indigo-50/50 via-white to-sky-50/30">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600/10 text-indigo-600 rounded-2xl">
-                  <HiOutlineClipboardCheck className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-gray-900 leading-tight">Chi tiết Hóa đơn & Giao dịch</h3>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">INV-{selectedInvoice.id}</span>
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">{selectedInvoice.transactionId}</span>
-                  </div>
-                </div>
-              </div>
-              <button 
-                onClick={() => setSelectedInvoice(null)} 
-                className="p-2 hover:bg-gray-100 rounded-2xl text-gray-400 hover:text-gray-700 transition-all"
-              >
-                <HiX className="w-5 h-5" />
-              </button>
+      {/* ── Summary Cards (8 cards, only shown after search) ── */}
+      {hasSearched && (
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 animate-in fade-in duration-300">
+          <SummaryCard
+            icon={<MdOutlineReceipt className="w-4 h-4" />}
+            label="Tổng HĐ" value={summary.totalInvoices}
+            color="indigo" trend="neutral"
+          />
+          <SummaryCard
+            icon={<HiOutlineCurrencyDollar className="w-4 h-4" />}
+            label="Tổng HĐ (Gross)" value={fmt(summary.grossInvoiceAmount)}
+            color="violet"
+          />
+          <SummaryCard
+            icon={<HiOutlineReceiptRefund className="w-4 h-4" />}
+            label="Tổng hoàn" value={fmt(summary.totalRefundAmount)}
+            color="rose"
+          />
+          <SummaryCard
+            icon={<HiOutlineTrendingUp className="w-4 h-4" />}
+            label="Doanh thu (Net)" value={fmt(summary.netRevenue)}
+            color="emerald" trend="up"
+          />
+          <SummaryCard
+            icon={<MdOutlinePayments className="w-4 h-4" />}
+            label="Đã thu" value={fmt(summary.totalPaidAmount)}
+            color="teal"
+          />
+          <SummaryCard
+            icon={<HiOutlineTrendingDown className="w-4 h-4" />}
+            label="Còn phải thu" value={fmt(summary.totalRemainingAmount)}
+            color="amber"
+          />
+          <SummaryCard
+            icon={<HiOutlineReceiptRefund className="w-4 h-4" />}
+            label="HĐ có hoàn" value={summary.refundedInvoiceCount}
+            color="sky"
+          />
+          <SummaryCard
+            icon={<HiOutlineCalendar className="w-4 h-4" />}
+            label="HĐ hôm nay" value={summary.todayInvoiceCount}
+            color="orange"
+          />
+          <SummaryCard
+            icon={<HiOutlineTrendingUp className="w-4 h-4" />}
+            label="Doanh thu thực" value={fmt(summary.totalActualRevenue)}
+            color="teal"
+          />
+          <SummaryCard
+            icon={<HiOutlineReceiptRefund className="w-4 h-4" />}
+            label="Đã hoàn" value={fmt(summary.totalRefundedAmount)}
+            color="sky"
+          />
+          <SummaryCard
+            icon={<HiOutlineClock className="w-4 h-4" />}
+            label="Chờ hoàn" value={fmt(summary.totalPendingRefundAmount)}
+            color="amber"
+          />
+          <SummaryCard
+            icon={<HiOutlineClipboardList className="w-4 h-4" />}
+            label="Đã TT / Chưa TT" value={`${summary.paidInvoiceCount} / ${summary.unpaidInvoiceCount}`}
+            color="violet"
+          />
+        </div>
+      )}
+
+      {/* ── Invoice Table ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {/* Table header */}
+        <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-black text-gray-900">Danh sách hóa đơn</h2>
+            {hasSearched && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                Hiển thị {invoices.length} / {totalElements} hóa đơn
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Empty / Loading / Table */}
+        {!hasSearched ? (
+          <div className="py-24 flex flex-col items-center gap-3 text-center px-4">
+            <div className="w-16 h-16 bg-indigo-50 rounded-3xl flex items-center justify-center">
+              <HiOutlineSearch className="w-7 h-7 text-indigo-300" />
             </div>
-
-            {/* Scrollable Body */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              {detailsLoading ? (
-                <div className="py-16 flex flex-col items-center justify-center space-y-4">
-                  <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs font-bold text-gray-400">Đang truy vấn thông tin lưu trú...</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Cột trái: Thông tin tổng quan và Khách hàng */}
-                  <div className="space-y-6">
-                    {/* Hóa đơn & Trạng thái */}
-                    <div className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100/50 space-y-3.5">
-                      <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">Thông tin giao dịch</h4>
-                      <div className="grid grid-cols-2 gap-4 text-xs font-bold text-gray-600">
-                        <div>
-                          <div className="text-[10px] text-gray-400 uppercase font-bold">Hình thức</div>
-                          <div className="mt-1">{getMethodBadge(selectedInvoice.method)}</div>
+            <h3 className="text-base font-black text-gray-700">Chưa có kết quả</h3>
+            <p className="text-sm text-gray-400 max-w-xs">
+              Nhập từ khóa tìm kiếm hoặc chọn bộ lọc rồi nhấn <strong>Tìm kiếm</strong> để xem danh sách hóa đơn.
+            </p>
+          </div>
+        ) : loading ? (
+          <div className="py-20 flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-bold text-gray-400">Đang tìm kiếm...</p>
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="py-20 flex flex-col items-center gap-3">
+            <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center">
+              <HiOutlineDocumentText className="w-6 h-6 text-gray-300" />
+            </div>
+            <p className="text-sm font-bold text-gray-400">Không tìm thấy hóa đơn nào.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-300">
+              <thead>
+                <tr className="bg-gray-50/60 border-b border-gray-100">
+                    {'Mã HĐ', 'Mã Booking', 'Khách hàng', 'Phòng', 'Ngày tạo',
+                    'Tổng HĐ', 'Hoàn tiền', 'Doanh thu net', 'Đã TT', 'Còn TT',
+                    'TT HĐ', 'TT Thanh toán', 'Hành động'].map(h => (
+                    <th key={h} className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-indigo-50/20 transition-colors group">
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs font-black text-indigo-600">{inv.invoiceCode}</span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs font-semibold text-gray-700">{inv.bookingCode || `#${inv.bookingId}`}</span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="text-xs font-bold text-gray-900">{inv.customerName || '—'}</div>
+                      {inv.customerPhone && (
+                        <div className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5">
+                          <HiOutlinePhone className="w-3 h-3" />{inv.customerPhone}
                         </div>
-                        <div>
-                          <div className="text-[10px] text-gray-400 uppercase font-bold">Trạng thái</div>
-                          <div className="mt-1">{getStatusBadge(normalizeInvoiceStatus(selectedInvoice))}</div>
-                        </div>
-                          <div>
-                            <div className="text-[10px] text-gray-400 uppercase font-bold">Loại hóa đơn</div>
-                            <div className="mt-1">{getCategoryBadge(getInvoiceCategory(selectedInvoice))}</div>
-                          </div>
-                        <div>
-                          <div className="text-[10px] text-gray-400 uppercase font-bold">Mã Booking</div>
-                          <div className="mt-1 text-sm font-black text-gray-900">#Booking {selectedInvoice.bookingId}</div>
-                        </div>
-                          <div>
-                            <div className="text-[10px] text-gray-400 uppercase font-bold">Mã giao dịch hóa đơn</div>
-                            <div className="mt-1 text-sm font-black text-gray-900 break-all">{selectedInvoice.transactionId || '-'}</div>
-                          </div>
-                        <div>
-                          <div className="text-[10px] text-gray-400 uppercase font-bold">Thời gian GD</div>
-                          <div className="mt-1 text-sm font-black text-gray-900 flex items-center gap-1">
-                            <HiOutlineClock className="w-3.5 h-3.5 text-gray-400" />
-                            {selectedInvoice.createdAt ? new Date(selectedInvoice.createdAt).toLocaleString('vi-VN') : '-'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Khách hàng */}
-                    <div className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100/50 space-y-3.5">
-                      <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">Khách hàng đại diện</h4>
-                      {guestList.length > 0 ? (
-                        <div className="space-y-3">
-                          {[
-                            [...guestList].sort((a, b) => {
-                              const isBookingInvoice = selectedInvoice.invoiceCategory === 'BOOKING';
-                              if (isBookingInvoice) {
-                                if (a.primaryGuest && !b.primaryGuest) return -1;
-                                if (!a.primaryGuest && b.primaryGuest) return 1;
-                                return 0;
-                              } else {
-                                if (a.checkInPerson && !b.checkInPerson) return -1;
-                                if (!a.checkInPerson && b.checkInPerson) return 1;
-                                if (a.primaryGuest && !b.primaryGuest) return -1;
-                                if (!a.primaryGuest && b.primaryGuest) return 1;
-                                return 0;
-                              }
-                            })[0]
-                          ].map((guest, idx) => {
-                            if (!guest) return null;
-                            return (
-                              <div key={guest.id || idx} className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                                    <HiOutlineUser className="w-4 h-4" />
-                                  </div>
-                                  <div>
-                                    <div className="text-sm font-black text-gray-900">{guest.fullName}</div>
-                                    <div className="text-[10px] font-bold text-gray-400">CCCD: {guest.cccd || guest.idNumber || 'Chưa cung cấp'}</div>
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-xs font-bold text-gray-600 pl-8 pt-1">
-                                  <div>
-                                    <span className="text-[10px] text-gray-400 font-bold block">Điện thoại</span>
-                                    <span>{guest.phone || guest.phoneNumber || '—'}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] text-gray-400 font-bold block">Email</span>
-                                    <span className="truncate block max-w-[150px]">{guest.email || '—'}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-xs font-bold text-gray-400 pl-2">Mã Khách hàng: Khách #{selectedInvoice.userId}</div>
                       )}
-                    </div>
-
-                    {/* Phòng số mấy */}
-                    <div className="bg-gray-50/50 rounded-2xl p-5 border border-gray-100/50 space-y-3.5">
-                      <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">Thông tin Phòng & Lưu trú</h4>
-                      <div>
-                        {roomList.length > 0 ? (
-                          <div className="space-y-3">
-                            <div className="text-sm font-black text-indigo-600">Danh sách phòng ({roomList.length})</div>
-                            <div className="grid grid-cols-1 gap-2">
-                              {roomList.map((r) => (
-                                <div key={r.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-gray-100">
-                                  <div>
-                                    <div className="text-sm font-black text-gray-900">Phòng {r.roomNumber || r.id}</div>
-                                    <div className="text-[11px] text-gray-500">Tầng {r.floor || r.floorNumber || '-'} • {r.roomType?.name || r.roomType?.type || 'Loại không rõ'}</div>
-                                  </div>
-                                  <div className="text-[10px] font-black px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-100">{r.status || 'UNKNOWN'}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-3">
-                            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-                              <HiOutlineOfficeBuilding className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <div className="text-sm font-black text-indigo-600">
-                                {roomDetails ? `Phòng ${roomDetails.roomNumber}` : `Phòng ID ${bookingDetails?.roomId || selectedInvoice.bookingId}`}
-                              </div>
-                              {roomDetails && (
-                                <div className="text-[10px] text-gray-400 font-bold">
-                                  Tầng {roomDetails.floor} • Loại {roomDetails.roomType?.name || 'Standard'}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {bookingDetails && (
-                          <div className="grid grid-cols-2 gap-4 text-xs font-bold text-gray-600 border-t border-gray-100 pt-3 mt-3">
-                            <div>
-                              <span className="text-[10px] text-gray-400 font-bold block">Ngày nhận (Check-in)</span>
-                              <span className="text-gray-900">{bookingDetails.checkIn}</span>
-                              {bookingDetails.actualCheckInAt && (
-                                <span className="text-[10px] text-emerald-600 block font-bold text-ellipsis overflow-hidden">
-                                  Thực tế: {new Date(bookingDetails.actualCheckInAt).toLocaleString('vi-VN')}
-                                </span>
-                              )}
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-gray-400 font-bold block">Ngày trả (Check-out)</span>
-                              <span className="text-gray-900">{bookingDetails.checkOut}</span>
-                              {bookingDetails.actualCheckOutAt && (
-                                <span className="text-[10px] text-sky-600 block font-bold text-ellipsis overflow-hidden">
-                                  Thực tế: {new Date(bookingDetails.actualCheckOutAt).toLocaleString('vi-VN')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs text-gray-600 font-semibold">{inv.roomNumbers || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <div className="text-xs font-bold text-gray-700">{fmtDate(inv.createdAt)}</div>
+                      <div className="text-[10px] text-gray-400">
+                        {inv.createdAt ? new Date(inv.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
                       </div>
-                    </div>
-                  </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <span className="text-xs font-black text-gray-900">{fmt(inv.grossInvoiceAmount)}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      {inv.totalRefundAmount > 0 ? (
+                        <span className="text-xs font-black text-rose-600">-{fmt(inv.totalRefundAmount)}</span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <span className="text-xs font-black text-emerald-700">{fmt(inv.netRevenue)}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <span className="text-xs font-semibold text-teal-700">{fmt(inv.paidAmount)}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      {inv.remainingAmount > 0 ? (
+                        <span className="text-xs font-black text-amber-700">{fmt(inv.remainingAmount)}</span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <StatusBadge status={inv.invoiceStatus || 'DRAFT'} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <PaymentStatusBadge status={inv.paymentStatus || 'UNPAID'} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <button
+                        onClick={() => setSelectedId(inv.id)}
+                        className="px-3 py-1.5 text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-all whitespace-nowrap"
+                      >
+                        Xem chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-                  {/* Cột phải: Nghiệp vụ tài chính (Chi tiết thu / hoàn) */}
-                  <div className="space-y-6 flex flex-col justify-between">
-                    <div className="space-y-5">
-                      <div className="border border-indigo-100 rounded-2xl bg-indigo-50/20 p-5 space-y-4">
-                        <h4 className="text-xs font-black text-indigo-600 uppercase tracking-wider">Chi tiết nghiệp vụ</h4>
-                        {getInvoiceCategory(selectedInvoice) === 'REFUND' && (
-                          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
-                            Đây là hóa đơn hoàn tiền. Nếu trạng thái là <span className="font-black">Đã hoàn tiền</span>, giao dịch refund đã được ghi nhận thành công.
-                          </div>
-                        )}
-                        
-                        {/* ĐỐI TƯỢNG VÀ THỜI GIAN GIAO DỊCH GHI NHẬN TỪ DỮ LIỆU */}
-                        {(() => {
-                          const representativeGuest = [...guestList].sort((a, b) => {
-                            const isBookingInvoice = selectedInvoice.invoiceCategory === 'BOOKING';
-                            if (isBookingInvoice) {
-                              if (a.primaryGuest && !b.primaryGuest) return -1;
-                              if (!a.primaryGuest && b.primaryGuest) return 1;
-                              return 0;
-                            } else {
-                              if (a.checkInPerson && !b.checkInPerson) return -1;
-                              if (!a.checkInPerson && b.checkInPerson) return 1;
-                              if (a.primaryGuest && !b.primaryGuest) return -1;
-                              if (!a.primaryGuest && b.primaryGuest) return 1;
-                              return 0;
-                            }
-                          })[0];
-                          const repCccd = representativeGuest?.cccd || representativeGuest?.idNumber;
-                          
-                          return (
-                            <div className="p-3 bg-white rounded-xl border border-indigo-100/50 space-y-2 text-xs">
-                              {['REFUND', 'EARLY_CHECKOUT_REFUND'].includes(selectedInvoice.paymentType?.toUpperCase() || '') ? (
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase font-black block">Người nhận hoàn tiền (Khách hàng)</span>
-                                  <span className="text-gray-950 font-extrabold text-sm block mt-0.5">
-                                    👤 {representativeGuest?.fullName || `Khách hàng đại diện (ID: ${selectedInvoice.userId})`}
-                                  </span>
-                                  {repCccd && (
-                                    <span className="text-[10px] text-gray-500 block font-semibold mt-0.5">
-                                      🆔 CCCD: {repCccd}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase font-black block">Người thanh toán (Khách hàng)</span>
-                                  <span className="text-gray-950 font-extrabold text-sm block mt-0.5">
-                                    👤 {representativeGuest?.fullName || `Khách hàng đại diện (ID: ${selectedInvoice.userId})`}
-                                  </span>
-                                  {repCccd && (
-                                    <span className="text-[10px] text-gray-500 block font-semibold mt-0.5">
-                                      🆔 CCCD: {repCccd}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              <div className="border-t border-gray-100 pt-2 mt-2">
-                                <span className="text-[10px] text-gray-400 uppercase font-black block">Thời gian thanh toán ghi nhận thực tế</span>
-                                <span className="text-indigo-600 font-extrabold block mt-0.5">
-                                  ⏰ {selectedInvoice.createdAt ? new Date(selectedInvoice.createdAt).toLocaleString('vi-VN') : '-'}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                        
-                        {/* 1. GIAI ĐOẠN CHECK-IN */}
-                        {(selectedInvoice.invoiceCategory === 'CHECKIN' || ['DEPOSIT', 'FULL', 'REMAINING', 'EARLY_CHECKIN_FEE'].includes(selectedInvoice.paymentType?.toUpperCase() || '')) && (
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 text-[10px] font-black bg-indigo-100 text-indigo-600 rounded">NHẬN PHÒNG (CHECK-IN)</span>
-                            </div>
-                            
-                            {selectedInvoice.paymentType === 'EARLY_CHECKIN_FEE' ? (
-                              <div className="text-xs font-bold text-gray-600 space-y-1">
-                                <p className="text-gray-900 font-black">Nghiệp vụ: Check-in Sớm</p>
-                                <p className="text-[11px] text-gray-400 font-bold">Khách yêu cầu nhận phòng sớm hơn khung giờ tiêu chuẩn (14:00).</p>
-                                <p className="text-rose-600 font-black">Phụ thu phát sinh: +{formatCurrency(selectedInvoice.amount || selectedInvoice.totalAmount)}</p>
-                              </div>
-                            ) : (
-                              <div className="text-xs font-bold text-gray-600 space-y-1">
-                                <p className="text-gray-900 font-black">Loại: {getPaymentTypeLabel(selectedInvoice.paymentType)}</p>
-                                {bookingDetails?.earlyCheckInFee && bookingDetails.earlyCheckInFee > 0 && (
-                                  <div className="flex justify-between items-center text-[11px] text-rose-600 font-bold mt-1">
-                                    <span>Trong đó phụ thu check-in sớm:</span>
-                                    <span>+{formatCurrency(bookingDetails.earlyCheckInFee)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 2. GIAI ĐOẠN CHECKOUT */}
-                        {(selectedInvoice.invoiceCategory === 'CHECKOUT' || ['LATE_CHECKOUT_FEE'].includes(selectedInvoice.paymentType?.toUpperCase() || '')) && (
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 text-[10px] font-black bg-rose-100 text-rose-600 rounded">TRẢ PHÒNG (CHECKOUT)</span>
-                            </div>
-                            
-                            {selectedInvoice.paymentType === 'LATE_CHECKOUT_FEE' && (
-                              <div className="text-xs font-bold text-gray-600 space-y-1">
-                                <p className="text-gray-900 font-black">Nghiệp vụ: Checkout Trễ</p>
-                                <p className="text-[11px] text-gray-400 font-bold">Khách trả phòng muộn hơn khung giờ quy định (12:00).</p>
-                                <p className="text-rose-600 font-black">Phụ thu phát sinh: +{formatCurrency(selectedInvoice.amount || selectedInvoice.totalAmount)}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 3. HOÀN TRẢ / HỦY GIAO DỊCH */}
-                        {(selectedInvoice.invoiceCategory === 'REFUND' || ['EARLY_CHECKOUT_REFUND', 'REFUND'].includes(selectedInvoice.paymentType?.toUpperCase() || '')) && (
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 text-[10px] font-black bg-cyan-100 text-cyan-600 rounded">HOÀN TRẢ</span>
-                            </div>
-                            
-                            {selectedInvoice.paymentType === 'EARLY_CHECKOUT_REFUND' ? (
-                              <div className="text-xs font-bold text-gray-600 space-y-2">
-                                <p className="text-gray-900 font-black">Nghiệp vụ: Hoàn tiền Checkout Sớm</p>
-                                <p className="text-[11px] text-gray-400 font-bold">Khách trả phòng sớm hơn ngày dự kiến. Hoàn trả 80% chi phí các đêm chưa sử dụng.</p>
-                                <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-800 text-[11px] font-bold border border-emerald-100">
-                                  <span>Đã được nhân viên xử lý hoàn tiền thành công!</span>
-                                  <span className="block mt-0.5 font-normal text-emerald-600">Thời gian: {selectedInvoice.createdAt ? new Date(selectedInvoice.createdAt).toLocaleString('vi-VN') : '-'}</span>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-xs font-bold text-gray-600 space-y-1">
-                                <p className="text-gray-900 font-black">Nghiệp vụ: Hoàn trả hủy phòng</p>
-                                <p className="text-[11px] text-gray-400 font-bold">Giao dịch hoàn trả tiền cọc cho khách hàng khi hủy phòng theo chính sách.</p>
-                              </div>
-                            )}
-                            <div className="mt-3 rounded-2xl border border-cyan-100 bg-white p-3 text-[11px] font-bold text-gray-700">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-gray-400 uppercase tracking-wider">Số tiền refund</span>
-                                <span className="text-cyan-700">{formatCurrency(selectedInvoice.amount || selectedInvoice.totalAmount)}</span>
-                              </div>
-                              <div className="mt-2 flex items-center justify-between gap-3 border-t border-gray-100 pt-2">
-                                <span className="text-gray-400 uppercase tracking-wider">Trạng thái refund</span>
-                                <span className="text-emerald-700">{normalizeInvoiceStatus(selectedInvoice) === 'REFUNDED' ? 'Thành công' : normalizeInvoiceStatus(selectedInvoice)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Net Summary block */}
-                    <div className="bg-gray-900 rounded-3xl p-6 text-white space-y-4 shadow-xl">
-                      <div className="flex justify-between items-center border-b border-gray-800 pb-3">
-                        <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Tổng tiền hóa đơn</span>
-                        <span className="text-lg font-black">{formatCurrency(selectedInvoice.amount || selectedInvoice.totalAmount)}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-indigo-300 font-black uppercase tracking-wider">Số tiền thực nhận</span>
-                        <span className="text-2xl font-black text-indigo-400">{formatCurrency(selectedInvoice.paidAmount)}</span>
-                      </div>
-                      <div className="text-[10px] text-gray-400 text-center font-bold pt-2 border-t border-gray-800/50">
-                        Hóa đơn được phát hành hợp lệ bởi Hệ thống Khách sạn
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="shrink-0 flex justify-end gap-3 border-t border-gray-100 px-8 py-5 bg-gray-50/50">
-              <button 
-                onClick={() => setSelectedInvoice(null)} 
-                className="rounded-2xl bg-gray-900 hover:bg-gray-800 px-6 py-2.5 text-sm font-black text-white transition-all shadow-md shadow-gray-200"
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-50 flex items-center justify-between">
+            <span className="text-xs text-gray-400 font-medium">
+              Trang {page + 1} / {totalPages} · {totalElements} hóa đơn
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page === 0 || loading}
+                onClick={() => doSearch(page - 1)}
+                className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
               >
-                Đóng
+                <HiOutlineChevronLeft className="w-4 h-4" />
+              </button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                const start = Math.max(0, Math.min(page - 2, totalPages - 5));
+                const pg = start + i;
+                return (
+                  <button
+                    key={pg}
+                    onClick={() => doSearch(pg)}
+                    className={`px-3 py-1.5 text-xs font-black rounded-xl transition-all ${
+                      pg === page ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >{pg + 1}</button>
+                );
+              })}
+              <button
+                disabled={page >= totalPages - 1 || loading}
+                onClick={() => doSearch(page + 1)}
+                className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                <HiOutlineChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* ── Detail Modal ── */}
+      {selectedId && (
+        <InvoiceDetailModal invoiceId={selectedId} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );

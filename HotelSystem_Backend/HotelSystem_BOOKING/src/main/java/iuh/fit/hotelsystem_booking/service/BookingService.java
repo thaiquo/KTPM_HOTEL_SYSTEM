@@ -179,6 +179,12 @@ public class BookingService {
             item.setPriceSnapshot(basePrice); // Store the adjusted base price
                 item.setFinalPrice(itemPrice.getFinalTotal());
                 item.setDiscount(Math.max(0.0, itemPrice.getBaseTotal() - itemPrice.getFinalTotal()));
+                
+                try {
+                	item.setRoomNightLinesJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(itemPrice.getDailyPrices()));
+                } catch (Exception e) {
+                	log.error("Failed to serialize room night lines", e);
+                }
 
                 subtotal += itemPrice.getBaseTotal();
                 discountTotal += item.getDiscount() != null ? item.getDiscount() : 0.0;
@@ -489,69 +495,12 @@ public class BookingService {
 
     @Transactional
     public Booking collectRemainingPayment(Long bookingId, RemainingPaymentRequest request) {
-        Booking booking = findBookingWithItems(bookingId);
-        if (request == null || request.getAmount() == null || request.getAmount() <= 0) {
-            throw new IllegalArgumentException("Remaining payment amount must be greater than zero");
-        }
-
-        if (request.getUserId() == null) {
-            request.setUserId(booking.getUserId());
-        }
-        paymentServiceClient.collectRemainingPayment(bookingId, request);
-        double paid = valueOrZero(booking.getPaidAmount()) + request.getAmount();
-        booking.setPaidAmount(paid);
-        if (paid + 0.01 >= valueOrZero(booking.getFinalTotal())) {
-            booking.setPaymentStatus("PAID");
-            booking.setStatus(BookingStatus.CONFIRMED);
-        }
-        if (request.getTransactionId() != null && !request.getTransactionId().isBlank()) {
-            booking.setPaymentTransactionId(request.getTransactionId());
-        }
-        return bookingRepository.save(booking);
+        throw new IllegalStateException("Remaining payment is no longer collected at check-in. The unpaid balance is settled at checkout.");
     }
 
     @Transactional
     public Booking confirmCheckinPayment(Long bookingId, ConfirmCheckinPaymentRequest request) {
-        Booking booking = findBookingWithItems(bookingId);
-        if (request == null || request.getPaymentCode() == null || request.getPaymentCode().isBlank()) {
-            throw new IllegalArgumentException("paymentCode is required");
-        }
-        if (request.getAmount() == null || request.getAmount() <= 0) {
-            throw new IllegalArgumentException("amount must be greater than zero");
-        }
-        if (booking.getStatus() == BookingStatus.CHECKED_IN) {
-            return withStayTimes(booking);
-        }
-        if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.DEPOSIT_PAID) {
-            throw new IllegalStateException("Booking cannot be checked in with current status: " + booking.getStatus());
-        }
-
-        double paid = valueOrZero(booking.getPaidAmount()) + request.getAmount();
-        booking.setPaidAmount(paid);
-        booking.setPaymentStatus("PAID");
-        booking.setPaymentTransactionId(request.getPaymentCode());
-        booking.setStatus(BookingStatus.CHECKED_IN);
-        booking.setActualCheckInAt(ZonedDateTime.now(TimeConfig.VIETNAM_ZONE).toLocalDateTime());
-
-        BookingStay stay = bookingStayRepository.findByBookingId(bookingId).orElseGet(BookingStay::new);
-        stay.setBookingId(bookingId);
-        stay.setActualCheckInAt(booking.getActualCheckInAt());
-        BookingGuest representative = resolveRepresentativeForAutoCheckin(bookingId, booking.getCheckIn());
-        if (representative != null) {
-            stay.setRepresentativeGuestId(representative.getId());
-            stay.setRepresentativeFullName(representative.getFullName());
-            stay.setRepresentativePhone(clean(representative.getPhone()));
-            stay.setRepresentativeCccd(clean(representative.getCccd()));
-        }
-        stay.setLateCheckoutPaymentStatus(LateCheckoutPaymentStatus.NONE);
-        bookingStayRepository.save(stay);
-
-        Booking saved = bookingRepository.save(booking);
-        for (BookingItem item : saved.getItems()) {
-            setRoomStatus(item.getRoomId(), "OCCUPIED");
-        }
-        publishBookingEvent(saved, "BookingCheckedInEvent");
-        return withStayTimes(saved);
+        throw new IllegalStateException("Check-in no longer collects payment. The remaining balance and early check-in surcharge are finalized at checkout.");
     }
 
     public CheckoutResponse calculateCheckout(Long bookingId) {
