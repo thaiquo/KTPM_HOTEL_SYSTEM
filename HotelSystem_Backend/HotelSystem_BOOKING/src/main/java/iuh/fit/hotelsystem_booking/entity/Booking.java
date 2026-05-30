@@ -10,7 +10,15 @@ import java.util.List;
  * Booking entity — redesigned to support multiple rooms (BookingItems).
  */
 @Entity
-@Table(name = "bookings")
+@Table(name = "bookings", indexes = {
+    @Index(name = "idx_bookings_user_id",       columnList = "userId"),
+    @Index(name = "idx_bookings_status",         columnList = "status"),
+    @Index(name = "idx_bookings_booking_code",   columnList = "booking_code"),
+    @Index(name = "idx_bookings_created_at",     columnList = "createdAt"),
+    @Index(name = "idx_bookings_check_in",       columnList = "checkIn"),
+    @Index(name = "idx_bookings_check_out",      columnList = "checkOut"),
+    @Index(name = "idx_bookings_user_status",    columnList = "userId, status")
+})
 public class Booking {
 
     @Id

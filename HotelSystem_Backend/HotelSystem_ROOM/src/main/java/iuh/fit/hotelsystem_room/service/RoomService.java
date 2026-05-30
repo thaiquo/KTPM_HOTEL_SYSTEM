@@ -5,7 +5,12 @@ import iuh.fit.hotelsystem_room.entity.RoomBedOverride;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
 import iuh.fit.hotelsystem_room.repository.RoomTypeRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -20,6 +25,8 @@ import java.util.Set;
 @Service
 public class RoomService {
 
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
+
     private final RoomRepository roomRepository;
     private final RoomTypeRepository roomTypeRepository;
     private final RestTemplate restTemplate;
@@ -33,11 +40,23 @@ public class RoomService {
         this.restTemplate = restTemplate;
     }
 
+    /**
+     * Returns all rooms. Result is cached in Redis under "rooms:all".
+     * Cache is evicted by RoomListener when room status/data changes via RabbitMQ events.
+     */
+    @Cacheable(value = "rooms:all", unless = "#result == null || #result.isEmpty()")
     public List<Room> getAllRooms() {
+        log.debug("[CACHE MISS] rooms:all — loading from database");
         return roomRepository.findAllWithDetails();
     }
 
+    /**
+     * Returns a single room by ID. Cached under "rooms:detail" with the room ID as key.
+     * Cache is evicted by RoomListener on room update events.
+     */
+    @Cacheable(value = "rooms:detail", key = "#id", unless = "#result == null")
     public Room getRoomById(Long id) {
+        log.debug("[CACHE MISS] rooms:detail:{} — loading from database", id);
         return roomRepository.findByIdWithDetails(id).orElse(null);
     }
 
@@ -52,10 +71,23 @@ public class RoomService {
         return roomRepository.findByRoomTypeIdAndStatusWithDetails(roomTypeId, RoomStatus.AVAILABLE);
     }
 
+    /**
+     * Returns available rooms for a date range and optional room type.
+     * Cached under "rooms:available" with a composite key (roomTypeId + checkIn + checkOut).
+     * TTL is 10 minutes — shorter than full list because availability changes frequently.
+     */
+    @Cacheable(
+        value = "rooms:available",
+        key = "'type:' + (#roomTypeId != null ? #roomTypeId : 'all') + ':' + #checkIn + ':' + #checkOut",
+        unless = "#result == null"
+    )
     public List<Room> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
         if (checkIn == null || checkOut == null || !checkIn.isBefore(checkOut)) {
             throw new IllegalArgumentException("checkIn/checkOut invalid");
         }
+
+        log.debug("[CACHE MISS] rooms:available type={} {}~{} — computing from DB + booking-service",
+                roomTypeId, checkIn, checkOut);
 
         List<Room> inventory = roomRepository.findAllWithDetails().stream()
                 .filter(room -> roomTypeId == null
@@ -74,6 +106,10 @@ public class RoomService {
     }
 
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public Room createRoom(Room room) {
         if (room.getBedOverrides() != null) {
             for (RoomBedOverride bed : room.getBedOverrides()) {
@@ -84,6 +120,11 @@ public class RoomService {
     }
 
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:detail", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public Room updateRoom(Long id, Room roomDetails) {
         return roomRepository.findById(id).map(room -> {
             room.setRoomNumber(roomDetails.getRoomNumber());
@@ -115,6 +156,11 @@ public class RoomService {
     }
 
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:detail", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public Room updateRoomStatus(Long id, RoomStatus status) {
         return roomRepository.findById(id).map(room -> {
             room.setStatus(status);
@@ -123,6 +169,11 @@ public class RoomService {
     }
 
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:detail", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true)
+    })
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);
     }

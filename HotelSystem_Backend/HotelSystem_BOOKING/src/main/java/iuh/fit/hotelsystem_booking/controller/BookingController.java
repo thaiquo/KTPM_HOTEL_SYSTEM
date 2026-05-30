@@ -45,8 +45,9 @@ public class BookingController {
     }
     // Tạo booking (gửi sang Payment qua Rabbit)
     @PostMapping
-    public Booking createBooking(@RequestBody iuh.fit.hotelsystem_booking.dto.BookingCreateRequest booking) {
-        return bookingService.createBooking(booking);
+    public Booking createBooking(@RequestBody iuh.fit.hotelsystem_booking.dto.BookingCreateRequest booking,
+                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return bookingService.createBooking(booking, idempotencyKey);
     }
 
     // Xem booking theo id

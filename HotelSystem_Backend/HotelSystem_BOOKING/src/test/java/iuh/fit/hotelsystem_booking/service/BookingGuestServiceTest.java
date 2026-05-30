@@ -59,6 +59,7 @@ class BookingGuestServiceTest {
         request.setFullName(name);
         request.setDateOfBirth(dob);
         request.setPhone(phone);
+        request.setCccd("079204000001");
         request.setPrimary(primary);
         request.setCheckInPerson(primary);
         return request;

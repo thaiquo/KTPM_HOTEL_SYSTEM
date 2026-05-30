@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class JwtAuthFilter implements GlobalFilter, Ordered {
@@ -107,6 +108,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             Claims claims = validateToken(token);
             String userIdHeader = resolveUserIdClaim(claims);
             String role = claims.get("role", String.class);
+            if (!isAuthorized(path, role)) {
+                return onError(exchange, "Forbidden", HttpStatus.FORBIDDEN);
+            }
             if (userIdHeader != null) {
                 exchange.getAttributes().put(RateLimiterConfig.RATE_LIMIT_USER_ID_ATTR, userIdHeader);
             }
@@ -167,6 +171,20 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    private boolean isAuthorized(String path, String role) {
+        if (path == null) {
+            return true;
+        }
+        String roleUpper = role == null ? "" : role.toUpperCase(Locale.ROOT);
+        if (path.contains("/api/admin")) {
+            return "ADMIN".equals(roleUpper);
+        }
+        if (path.contains("/api/staff")) {
+            return "ADMIN".equals(roleUpper) || "STAFF".equals(roleUpper);
+        }
+        return true;
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String err, HttpStatus status) {

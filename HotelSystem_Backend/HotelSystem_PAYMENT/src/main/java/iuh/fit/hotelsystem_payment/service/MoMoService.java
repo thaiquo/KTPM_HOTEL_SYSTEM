@@ -10,9 +10,12 @@ import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import iuh.fit.hotelsystem_payment.repository.OutboxEventRepository;
+import iuh.fit.hotelsystem_payment.entity.OutboxEvent;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
@@ -39,23 +42,37 @@ public class MoMoService {
     private final MoMoConfig moMoConfig;
     private final BookingServiceClient bookingServiceClient;
     private final HttpClient httpClient;
+    private final OutboxEventRepository outboxEventRepository;
 
-    public MoMoService(PaymentRepository paymentRepository,
-                       RabbitTemplate rabbitTemplate,
-                       MoMoConfig moMoConfig,
-                       BookingServiceClient bookingServiceClient) {
+        public MoMoService(PaymentRepository paymentRepository,
+                   RabbitTemplate rabbitTemplate,
+                   MoMoConfig moMoConfig,
+                   BookingServiceClient bookingServiceClient,
+                   OutboxEventRepository outboxEventRepository) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.moMoConfig = moMoConfig;
         this.bookingServiceClient = bookingServiceClient;
+        this.outboxEventRepository = outboxEventRepository;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
-    }
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+        }
 
     public MoMoResponse createPayment(CreateMoMoRequest request) {
+        return createPayment(request, null);
+    }
+
+    public MoMoResponse createPayment(CreateMoMoRequest request, String idempotencyKey) {
         if (request.getBookingId() == null || request.getUserId() == null || request.getTotalAmount() == null) {
             throw new IllegalArgumentException("bookingId, userId, totalAmount are required");
+        }
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Payment existing = paymentRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+            if (existing != null) {
+                return new MoMoResponse(moMoConfig.getRedirectUrl() + "?orderId=" + existing.getTransactionId());
+            }
         }
 
         PaymentType paymentType = parsePaymentType(request.getPaymentType());
@@ -66,12 +83,23 @@ public class MoMoService {
 
         Double authoritativeTotalAmount = resolveBookingTotalAmount(request.getBookingId(), request.getTotalAmount());
 
-        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request);
+        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request, idempotencyKey);
     }
 
     public MoMoResponse createRemainingPayment(CreateMoMoRequest request) {
+        return createRemainingPayment(request, null);
+    }
+
+    public MoMoResponse createRemainingPayment(CreateMoMoRequest request, String idempotencyKey) {
         if (request.getBookingId() == null || request.getUserId() == null) {
             throw new IllegalArgumentException("bookingId, userId are required");
+        }
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Payment existing = paymentRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+            if (existing != null) {
+                return new MoMoResponse(moMoConfig.getRedirectUrl() + "?orderId=" + existing.getTransactionId());
+            }
         }
 
         Payment successfulDeposit = paymentRepository
@@ -95,7 +123,7 @@ public class MoMoService {
 
         totalAmount = resolveBookingTotalAmount(request.getBookingId(), totalAmount);
 
-        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request);
+        return createAndRequestMoMo(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, idempotencyKey);
     }
 
     private Double resolveBookingTotalAmount(Long bookingId, Double requestedTotalAmount) {
@@ -162,7 +190,8 @@ public class MoMoService {
                                              Long userId,
                                              Double totalAmount,
                                              PaymentType paymentType,
-                                             CreateMoMoRequest request) {
+                                             CreateMoMoRequest request,
+                                             String idempotencyKey) {
         Double paidAmount = calculatePaidAmount(totalAmount, paymentType);
 
         Payment payment = new Payment();
@@ -177,6 +206,9 @@ public class MoMoService {
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
         payment.setTransactionId(generateTransactionId(bookingId));
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            payment.setIdempotencyKey(idempotencyKey);
+        }
         payment = paymentRepository.save(payment);
 
         String amount = toMoMoAmount(paidAmount);
@@ -232,6 +264,7 @@ public class MoMoService {
         }
     }
 
+    @Transactional
     private Map<String, String> processCallback(Map<String, String> inputParams, boolean ipnMode) {
         String orderId = inputParams.get("orderId");
         if (orderId == null || orderId.isBlank()) {
@@ -242,7 +275,7 @@ public class MoMoService {
             return buildCallbackResponse(ipnMode, "97", "Invalid signature", null);
         }
 
-        Payment payment = paymentRepository.findByTransactionId(orderId).orElse(null);
+        Payment payment = paymentRepository.findByTransactionIdForUpdate(orderId).orElse(null);
         if (payment == null) {
             return buildCallbackResponse(ipnMode, "01", "Order not found", null);
         }
@@ -276,7 +309,25 @@ public class MoMoService {
         }
 
         paymentRepository.save(payment);
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.PAYMENT_RESULT_ROUTING_KEY, result);
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            OutboxEvent out = new OutboxEvent();
+            out.setAggregateType("Payment");
+            out.setAggregateId(payment.getTransactionId());
+            out.setType(RabbitConfig.PAYMENT_RESULT_ROUTING_KEY);
+            out.setPayload(om.writeValueAsString(result));
+            try {
+                String correlation = org.slf4j.MDC.get("X-Correlation-Id");
+                if (correlation != null && !correlation.isBlank()) {
+                    java.util.Map<String, String> headers = new java.util.HashMap<>();
+                    headers.put("X-Correlation-Id", correlation);
+                    out.setHeaders(om.writeValueAsString(headers));
+                }
+            } catch (Exception ignored) {}
+            outboxEventRepository.save(out);
+        } catch (Exception ex) {
+            // non-fatal: payment saved, publisher will pick this up
+        }
 
         return buildCallbackResponse(ipnMode, "0".equals(resultCode) ? "00" : resultCode, "Confirm Success", payment);
     }

@@ -12,6 +12,9 @@ spring:
     gateway:
       server:
         webflux:
+          httpclient:
+            connect-timeout: 2500
+            response-timeout: 8s
           filter:
             request-rate-limiter:
               # Avoid 403 when a key cannot be resolved behind proxy/IPv6 setups.
@@ -110,6 +113,18 @@ spring:
                     redis-rate-limiter.burstCapacity: 100
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@ipKeyResolver}"
+                - name: Retry
+                  args:
+                    retries: 2
+                    statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                    methods: GET
+                - name: CircuitBreaker
+                  args:
+                    name: roomCircuit
+                    fallbackUri: forward:/fallback/room
+              metadata:
+                response-timeout: 4000
+                connect-timeout: 2000
 
             - id: booking-service
               uri: lb://booking-service
@@ -123,6 +138,18 @@ spring:
                     redis-rate-limiter.burstCapacity: 20
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@userOrIpKeyResolver}"
+                - name: Retry
+                  args:
+                    retries: 1
+                    statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                    methods: GET,POST
+                - name: CircuitBreaker
+                  args:
+                    name: bookingCircuit
+                    fallbackUri: forward:/fallback/booking
+              metadata:
+                response-timeout: 5000
+                connect-timeout: 2500
 
             # Payment provider returns/IPNs are separate from user-facing payment
             # APIs so the user payment rate limit cannot drop provider callbacks.
@@ -146,6 +173,18 @@ spring:
                     redis-rate-limiter.burstCapacity: 10
                     redis-rate-limiter.requestedTokens: 1
                     key-resolver: "#{@userOrIpKeyResolver}"
+                - name: Retry
+                  args:
+                    retries: 1
+                    statuses: BAD_GATEWAY,GATEWAY_TIMEOUT,SERVICE_UNAVAILABLE
+                    methods: GET,POST
+                - name: CircuitBreaker
+                  args:
+                    name: paymentCircuit
+                    fallbackUri: forward:/fallback/payment
+              metadata:
+                response-timeout: 4500
+                connect-timeout: 2500
 
             - id: notification-service
               uri: lb://notification-service
@@ -190,7 +229,26 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,gateway
+        include: health,info,metrics,gateway,prometheus
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      roomCircuit:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 20
+        failureRateThreshold: 50
+        waitDurationInOpenState: 15s
+      bookingCircuit:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 20
+        failureRateThreshold: 50
+        waitDurationInOpenState: 20s
+      paymentCircuit:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 20
+        failureRateThreshold: 40
+        waitDurationInOpenState: 30s
 
 jwt:
   secret: iJXVUFK+5ccfmPvUHI8lY5CcSql77pZUS4gnf887kbM=

@@ -11,6 +11,8 @@ import iuh.fit.hotelsystem_payment.entity.Payment;
 import iuh.fit.hotelsystem_payment.entity.PaymentStatus;
 import iuh.fit.hotelsystem_payment.entity.PaymentType;
 import iuh.fit.hotelsystem_payment.repository.PaymentRepository;
+import iuh.fit.hotelsystem_payment.repository.OutboxEventRepository;
+import iuh.fit.hotelsystem_payment.entity.OutboxEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -21,6 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -54,17 +57,20 @@ public class VNPayService {
     private final VNPayConfig vnPayConfig;
     private final BookingServiceClient bookingServiceClient;
     private final RestTemplate restTemplate;
+    private final OutboxEventRepository outboxEventRepository;
 
     public VNPayService(PaymentRepository paymentRepository,
                         RabbitTemplate rabbitTemplate,
                         VNPayConfig vnPayConfig,
                         BookingServiceClient bookingServiceClient,
-                        RestTemplateBuilder restTemplateBuilder) {
+                        RestTemplateBuilder restTemplateBuilder,
+                        OutboxEventRepository outboxEventRepository) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.vnPayConfig = vnPayConfig;
         this.bookingServiceClient = bookingServiceClient;
         this.restTemplate = restTemplateBuilder.build();
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     public VNPayRefundResult refund(String transactionRef,
@@ -131,8 +137,19 @@ public class VNPayService {
     }
 
     public VNPayResponse createPayment(CreateVNPayRequest request, String ipAddress) {
+        return createPayment(request, ipAddress, null);
+    }
+
+    public VNPayResponse createPayment(CreateVNPayRequest request, String ipAddress, String idempotencyKey) {
         if (request.getBookingId() == null || request.getUserId() == null || request.getTotalAmount() == null) {
             throw new IllegalArgumentException("bookingId, userId, totalAmount are required");
+        }
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Payment existing = paymentRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+            if (existing != null) {
+                return buildResponseFromExisting(existing, request, ipAddress);
+            }
         }
 
         PaymentType paymentType = parsePaymentType(request.getPaymentType());
@@ -143,12 +160,23 @@ public class VNPayService {
 
         Double authoritativeTotalAmount = resolveBookingTotalAmount(request.getBookingId(), request.getTotalAmount());
 
-        return createAndBuildUrl(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request, ipAddress);
+        return createAndBuildUrl(request.getBookingId(), request.getUserId(), authoritativeTotalAmount, paymentType, request, ipAddress, idempotencyKey);
     }
 
     public VNPayResponse createRemainingPayment(CreateVNPayRequest request, String ipAddress) {
+        return createRemainingPayment(request, ipAddress, null);
+    }
+
+    public VNPayResponse createRemainingPayment(CreateVNPayRequest request, String ipAddress, String idempotencyKey) {
         if (request.getBookingId() == null || request.getUserId() == null) {
             throw new IllegalArgumentException("bookingId, userId are required");
+        }
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Payment existing = paymentRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+            if (existing != null) {
+                return buildResponseFromExisting(existing, request, ipAddress);
+            }
         }
 
         Payment successfulDeposit = paymentRepository
@@ -172,7 +200,7 @@ public class VNPayService {
 
         totalAmount = resolveBookingTotalAmount(request.getBookingId(), totalAmount);
 
-        return createAndBuildUrl(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, ipAddress);
+        return createAndBuildUrl(request.getBookingId(), request.getUserId(), totalAmount, PaymentType.REMAINING, request, ipAddress, idempotencyKey);
     }
 
     private Double resolveBookingTotalAmount(Long bookingId, Double requestedTotalAmount) {
@@ -239,6 +267,7 @@ public class VNPayService {
         return processCallback(inputParams, true);
     }
 
+    @Transactional
     private Map<String, String> processCallback(Map<String, String> inputParams, boolean ipnMode) {
         Map<String, String> response = new HashMap<>();
 
@@ -263,7 +292,7 @@ public class VNPayService {
             return buildErrorResponse(ipnMode, "01", "Order not Found");
         }
 
-        Payment payment = paymentRepository.findByTransactionId(txnRef).orElse(null);
+        Payment payment = paymentRepository.findByTransactionIdForUpdate(txnRef).orElse(null);
         if (payment == null) {
             return buildErrorResponse(ipnMode, "01", "Order not Found");
         }
@@ -314,20 +343,48 @@ public class VNPayService {
                 result.setStatus("REMAINING_PAID");
             }
 
-            rabbitTemplate.convertAndSend(
-                    RabbitConfig.EXCHANGE,
-                    RabbitConfig.PAYMENT_RESULT_ROUTING_KEY,
-                    result
-            );
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+                OutboxEvent out = new OutboxEvent();
+                out.setAggregateType("Payment");
+                out.setAggregateId(payment.getTransactionId());
+                out.setType(RabbitConfig.PAYMENT_RESULT_ROUTING_KEY);
+                out.setPayload(om.writeValueAsString(result));
+                try {
+                    String correlation = org.slf4j.MDC.get("X-Correlation-Id");
+                    if (correlation != null && !correlation.isBlank()) {
+                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        headers.put("X-Correlation-Id", correlation);
+                        out.setHeaders(om.writeValueAsString(headers));
+                    }
+                } catch (Exception ignored) {}
+                outboxEventRepository.save(out);
+            } catch (Exception ex) {
+                log.warn("Failed to enqueue payment result outbox: {}", ex.getMessage());
+            }
         } else {
             payment.setStatus(PaymentStatus.FAILED);
             result.setStatus("FAILED");
 
-            rabbitTemplate.convertAndSend(
-                    RabbitConfig.EXCHANGE,
-                    RabbitConfig.PAYMENT_RESULT_ROUTING_KEY,
-                    result
-            );
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+                OutboxEvent out = new OutboxEvent();
+                out.setAggregateType("Payment");
+                out.setAggregateId(payment.getTransactionId());
+                out.setType(RabbitConfig.PAYMENT_RESULT_ROUTING_KEY);
+                out.setPayload(om.writeValueAsString(result));
+                try {
+                    String correlation = org.slf4j.MDC.get("X-Correlation-Id");
+                    if (correlation != null && !correlation.isBlank()) {
+                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        headers.put("X-Correlation-Id", correlation);
+                        out.setHeaders(om.writeValueAsString(headers));
+                    }
+                } catch (Exception ignored) {}
+                outboxEventRepository.save(out);
+            } catch (Exception ex) {
+                log.warn("Failed to enqueue payment result outbox: {}", ex.getMessage());
+            }
         }
 
         paymentRepository.save(payment);
@@ -366,7 +423,8 @@ public class VNPayService {
                                             Double totalAmount,
                                             PaymentType paymentType,
                                             CreateVNPayRequest request,
-                                            String ipAddress) {
+                                            String ipAddress,
+                                            String idempotencyKey) {
         Double paidAmount = calculatePaidAmount(totalAmount, paymentType);
 
         Payment payment = new Payment();
@@ -381,6 +439,9 @@ public class VNPayService {
         payment.setStatus(PaymentStatus.PENDING);
         payment.setCreatedAt(LocalDateTime.now());
         payment.setTransactionId(generateTransactionId(bookingId));
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            payment.setIdempotencyKey(idempotencyKey);
+        }
 
         payment = paymentRepository.save(payment);
 
@@ -421,6 +482,40 @@ public class VNPayService {
         String paymentUrl = vnPayConfig.getPayUrl() + "?" + query + "&vnp_SecureHash=" + secureHash;
 
         return new VNPayResponse(paymentUrl);
+    }
+
+    private VNPayResponse buildResponseFromExisting(Payment payment, CreateVNPayRequest request, String ipAddress) {
+        Map<String, String> vnpParams = new HashMap<>();
+        vnpParams.put("vnp_Version", "2.1.0");
+        vnpParams.put("vnp_Command", "pay");
+        vnpParams.put("vnp_TmnCode", vnPayConfig.getTmnCode());
+        vnpParams.put("vnp_Amount", toVnpAmount(payment.getAmount()));
+        vnpParams.put("vnp_CurrCode", "VND");
+        vnpParams.put("vnp_TxnRef", payment.getTransactionId());
+        vnpParams.put("vnp_OrderInfo", "Thanh toan booking " + payment.getBookingId());
+        vnpParams.put("vnp_OrderType", "other");
+
+        String locale = request.getLocale();
+        if (locale == null || locale.isBlank()) {
+            locale = "vn";
+        }
+        locale = "en".equalsIgnoreCase(locale) ? "en" : "vn";
+        vnpParams.put("vnp_Locale", locale);
+
+        if (request.getBankCode() != null && !request.getBankCode().isBlank()) {
+            vnpParams.put("vnp_BankCode", request.getBankCode().trim());
+        }
+
+        vnpParams.put("vnp_ReturnUrl", vnPayConfig.getReturnUrl());
+        vnpParams.put("vnp_IpAddr", normalizeIp(ipAddress));
+        LocalDateTime now = LocalDateTime.now(VNP_TIMEZONE);
+        vnpParams.put("vnp_CreateDate", now.format(VNP_DATE_FORMAT));
+        vnpParams.put("vnp_ExpireDate", now.plusMinutes(vnPayConfig.getExpireMinutes()).format(VNP_DATE_FORMAT));
+
+        String hashData = buildQueryData(vnpParams);
+        String secureHash = hmacSHA512(vnPayConfig.getHashSecret(), hashData);
+        String query = buildQueryData(vnpParams);
+        return new VNPayResponse(vnPayConfig.getPayUrl() + "?" + query + "&vnp_SecureHash=" + secureHash);
     }
 
     private PaymentType parsePaymentType(String paymentType) {

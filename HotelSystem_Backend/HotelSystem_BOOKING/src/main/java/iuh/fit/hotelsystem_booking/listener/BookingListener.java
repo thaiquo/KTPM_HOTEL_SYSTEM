@@ -24,13 +24,16 @@ public class BookingListener {
     private final BookingRepository bookingRepository;
     private final RabbitTemplate rabbitTemplate;
     private final BookingService bookingService;
+    private final iuh.fit.hotelsystem_booking.saga.BookingSagaOrchestrator sagaOrchestrator;
 
     public BookingListener(BookingRepository bookingRepository,
                            RabbitTemplate rabbitTemplate,
-                           @Lazy BookingService bookingService) {
+                           @Lazy BookingService bookingService,
+                           iuh.fit.hotelsystem_booking.saga.BookingSagaOrchestrator sagaOrchestrator) {
         this.bookingRepository = bookingRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.bookingService = bookingService;
+        this.sagaOrchestrator = sagaOrchestrator;
     }
 
     // =========================================
@@ -57,88 +60,7 @@ public class BookingListener {
     @RabbitListener(queues = RabbitConfig.PAYMENT_RESULT_QUEUE)
     @Transactional
     public void handlePaymentResult(PaymentResultMessage result) {
-
-        Booking booking = bookingRepository
-                .findById(result.getBookingId())
-                .orElseThrow();
-
-        BookingEvent event = new BookingEvent();
-        event.setBookingId(booking.getId());
-        event.setUserId(booking.getUserId());
-
-        if ("FULL_PAID".equals(result.getStatus())) {
-
-            booking.setStatus(BookingStatus.CONFIRMED);
-            booking.setConfirmedAt(java.time.ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime());
-            booking.setLockStatus(BookingLockStatus.CONFIRMED);
-            booking.setPaidAmount(result.getPaidAmount());
-            booking.setPaymentStatus("PAID");
-            booking.setPaymentTransactionId(result.getTransactionId());
-            event.setStatus(BookingStatus.CONFIRMED.name());
-
-            for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
-                item.setStatus(BookingItemStatus.BOOKED);
-                RoomMessage msg = new RoomMessage();
-                msg.setBookingId(booking.getId());
-                msg.setRoomId(item.getRoomId());
-                rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.confirm", msg);
-            }
-
-            rabbitTemplate.convertAndSend(
-                RabbitConfig.EXCHANGE,
-                "booking.confirmed",
-                event
-            );
-
-            } else if ("DEPOSIT_PAID".equals(result.getStatus())) {
-
-                booking.setStatus(BookingStatus.DEPOSIT_PAID);
-                booking.setConfirmedAt(java.time.ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime());
-                booking.setLockStatus(BookingLockStatus.CONFIRMED);
-                booking.setPaidAmount(result.getPaidAmount());
-                booking.setPaymentStatus("DEPOSITED");
-                booking.setPaymentTransactionId(result.getTransactionId());
-                event.setStatus(BookingStatus.DEPOSIT_PAID.name());
-
-                for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
-                    item.setStatus(BookingItemStatus.BOOKED);
-                    RoomMessage msg = new RoomMessage();
-                    msg.setBookingId(booking.getId());
-                    msg.setRoomId(item.getRoomId());
-                    rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.confirm", msg);
-                }
-
-                rabbitTemplate.convertAndSend(
-                    RabbitConfig.EXCHANGE,
-                    "booking.confirmed",
-                    event
-                );
-
-            } else if ("REMAINING_PAID".equals(result.getStatus())) {
-                System.out.println("Ignoring REMAINING_PAID event for booking " + booking.getId() + ": remaining payment is collected at checkout now.");
-                return;
-
-        } else {
-
-            booking.setStatus(BookingStatus.CANCELLED);
-                booking.setLockStatus(BookingLockStatus.EXPIRED);
-            event.setStatus(BookingStatus.CANCELLED.name());
-
-            for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
-                item.setStatus(BookingItemStatus.CANCELLED);
-                RoomMessage msg = new RoomMessage();
-                msg.setBookingId(booking.getId());
-                msg.setRoomId(item.getRoomId());
-                rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", msg);
-            }
-
-            rabbitTemplate.convertAndSend(
-                RabbitConfig.EXCHANGE,
-                "booking.cancelled",
-                event
-            );
-        }
-
-        bookingRepository.save(booking);
+        // Delegate to saga orchestrator which writes outbox events and updates booking transactionally
+        sagaOrchestrator.processPaymentResult(result);
     }
 }

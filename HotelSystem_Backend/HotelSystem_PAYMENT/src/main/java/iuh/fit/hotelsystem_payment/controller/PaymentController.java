@@ -61,14 +61,16 @@ public class PaymentController {
 
     @PostMapping("/vnpay/create")
     public ResponseEntity<VNPayResponse> createVNPayPayment(@RequestBody CreateVNPayRequest request,
-                                                            HttpServletRequest httpServletRequest) {
-        return ResponseEntity.ok(vnPayService.createPayment(request, extractClientIp(httpServletRequest)));
+                                                            HttpServletRequest httpServletRequest,
+                                                            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(vnPayService.createPayment(request, extractClientIp(httpServletRequest), idempotencyKey));
     }
 
     @PostMapping("/vnpay/create-remaining")
     public ResponseEntity<VNPayResponse> createRemainingPayment(@RequestBody CreateVNPayRequest request,
-                                                                HttpServletRequest httpServletRequest) {
-        return ResponseEntity.ok(vnPayService.createRemainingPayment(request, extractClientIp(httpServletRequest)));
+                                                                HttpServletRequest httpServletRequest,
+                                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(vnPayService.createRemainingPayment(request, extractClientIp(httpServletRequest), idempotencyKey));
     }
 
     @GetMapping("/vnpay-return")
@@ -83,13 +85,15 @@ public class PaymentController {
     }
 
     @PostMapping("/momo/create")
-    public ResponseEntity<MoMoResponse> createMoMoPayment(@RequestBody CreateMoMoRequest request) {
-        return ResponseEntity.ok(moMoService.createPayment(request));
+    public ResponseEntity<MoMoResponse> createMoMoPayment(@RequestBody CreateMoMoRequest request,
+                                                          @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(moMoService.createPayment(request, idempotencyKey));
     }
 
     @PostMapping("/momo/create-remaining")
-    public ResponseEntity<MoMoResponse> createRemainingMoMoPayment(@RequestBody CreateMoMoRequest request) {
-        return ResponseEntity.ok(moMoService.createRemainingPayment(request));
+    public ResponseEntity<MoMoResponse> createRemainingMoMoPayment(@RequestBody CreateMoMoRequest request,
+                                                                   @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(moMoService.createRemainingPayment(request, idempotencyKey));
     }
 
     @GetMapping("/momo-return")

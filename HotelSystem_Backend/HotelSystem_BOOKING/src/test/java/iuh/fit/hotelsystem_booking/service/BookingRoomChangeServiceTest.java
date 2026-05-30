@@ -33,17 +33,20 @@ class BookingRoomChangeServiceTest {
         BookingServiceLineRepository serviceLineRepository = mock(BookingServiceLineRepository.class);
 
         BookingService bookingService = new BookingService(
-                bookingRepository,
-                bookingStayRepository,
-                mock(RabbitTemplate.class),
-                mock(BookingValidator.class),
-                mock(PricingService.class),
-                mock(CheckInOutService.class),
-                mock(BookingGuestService.class),
-                mock(CheckoutService.class),
-                mock(PaymentServiceClient.class),
-                roomServiceClient,
-                serviceLineRepository
+            bookingRepository,
+            bookingStayRepository,
+            mock(RabbitTemplate.class),
+            mock(BookingValidator.class),
+            mock(PricingService.class),
+            mock(CheckInOutService.class),
+            mock(BookingGuestService.class),
+            mock(CheckoutService.class),
+            mock(PaymentServiceClient.class),
+            roomServiceClient,
+            serviceLineRepository,
+            mock(RedisLockService.class),
+            mock(org.springframework.data.redis.core.StringRedisTemplate.class),
+            mock(iuh.fit.hotelsystem_booking.repository.OutboxEventRepository.class)
         );
 
         Booking booking = checkedInBooking(1L, 101L, 500000.0);
@@ -76,17 +79,20 @@ class BookingRoomChangeServiceTest {
         RefundService refundService = mock(RefundService.class);
 
         BookingService bookingService = new BookingService(
-                bookingRepository,
-                bookingStayRepository,
-                mock(RabbitTemplate.class),
-                mock(BookingValidator.class),
-                mock(PricingService.class),
-                mock(CheckInOutService.class),
-                mock(BookingGuestService.class),
-                mock(CheckoutService.class),
-                mock(PaymentServiceClient.class),
-                roomServiceClient,
-                serviceLineRepository
+            bookingRepository,
+            bookingStayRepository,
+            mock(RabbitTemplate.class),
+            mock(BookingValidator.class),
+            mock(PricingService.class),
+            mock(CheckInOutService.class),
+            mock(BookingGuestService.class),
+            mock(CheckoutService.class),
+            mock(PaymentServiceClient.class),
+            roomServiceClient,
+            serviceLineRepository,
+            mock(RedisLockService.class),
+            mock(org.springframework.data.redis.core.StringRedisTemplate.class),
+            mock(iuh.fit.hotelsystem_booking.repository.OutboxEventRepository.class)
         );
         bookingService.setRefundService(refundService);
 

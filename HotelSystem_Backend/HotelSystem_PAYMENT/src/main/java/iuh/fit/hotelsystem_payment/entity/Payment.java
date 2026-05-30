@@ -7,7 +7,15 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payments")
+@Table(name = "payments", indexes = {
+    @Index(name = "idx_payments_booking_id",      columnList = "bookingId"),
+    @Index(name = "idx_payments_user_id",         columnList = "userId"),
+    @Index(name = "idx_payments_status",          columnList = "status"),
+    @Index(name = "idx_payments_transaction_id",  columnList = "transactionId"),
+    @Index(name = "idx_payments_payment_code",    columnList = "paymentCode"),
+    @Index(name = "idx_payments_created_at",      columnList = "createdAt"),
+    @Index(name = "idx_payments_booking_status",  columnList = "bookingId, status")
+})
 @AllArgsConstructor
 @NoArgsConstructor
 public class Payment {

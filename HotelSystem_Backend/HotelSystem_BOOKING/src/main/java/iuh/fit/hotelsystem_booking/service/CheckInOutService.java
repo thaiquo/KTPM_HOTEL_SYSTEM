@@ -23,7 +23,6 @@ public class CheckInOutService {
         }
         
         LocalTime time = item.getActualCheckInAt().toLocalTime();
-        
         // 3. Check-in từ 14:00 trở đi: miễn phí.
         if (!time.isBefore(LocalTime.of(14, 0))) {
             return 0.0;
@@ -31,26 +30,22 @@ public class CheckInOutService {
 
         BigDecimal oneNightPrice = getFirstNightPrice(item);
 
-        // 1. Check-in từ 07:00 đến trước 12:00: phụ thu 100%
-        // (Chú ý: nếu trước 07:00 cũng là 100%, hoặc tùy yêu cầu, hiện prompt ghi "từ 07:00 đến trước 12:00: phụ thu 100%")
-        if (time.isBefore(LocalTime.of(12, 0)) && !time.isBefore(LocalTime.of(7, 0))) {
-            return oneNightPrice.doubleValue();
+        // If check-in at or after 12:00 but before 14:00 -> free
+        if (!time.isBefore(LocalTime.of(12, 0))) {
+            return 0.0;
         }
-        // Trước 07:00 cũng coi như 100% (or using EARLY_BEFORE_7_FEE_PERCENT)
-        if (time.isBefore(LocalTime.of(7, 0))) {
-            return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_BEFORE_7_FEE_PERCENT))
+
+        // 07:00 – 12:00 -> 50%
+        if (!time.isBefore(LocalTime.of(7, 0))) {
+            return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_7_TO_12_FEE_PERCENT))
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
                     .doubleValue();
         }
 
-        // 2. Check-in từ 12:00 đến trước 14:00: phụ thu 50%
-        if (time.isBefore(LocalTime.of(14, 0))) {
-            return oneNightPrice.multiply(BigDecimal.valueOf(50)) // 50%
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
-                    .doubleValue();
-        }
-        
-        return 0.0;
+        // Before 07:00 -> 100%
+        return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_BEFORE_7_FEE_PERCENT))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     private BigDecimal getFirstNightPrice(iuh.fit.hotelsystem_booking.entity.BookingItem item) {
@@ -77,16 +72,33 @@ public class CheckInOutService {
      */
     public double calculateEarlyCheckInFee(Booking booking, LocalDateTime checkInTime) {
         double total = 0.0;
-        if (booking.getItems() != null) {
+        if (booking.getItems() != null && !booking.getItems().isEmpty()) {
             for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
-                // Giả lập actual checkin time cho item
                 LocalDateTime oldActual = item.getActualCheckInAt();
                 item.setActualCheckInAt(checkInTime);
                 total += calculateEarlyCheckInFee(item);
                 item.setActualCheckInAt(oldActual);
             }
+            return total;
         }
-        return total;
+        // No item-level data: compute based on booking-level pricePerNight (no weekend multiplier)
+        if (booking.getPricePerNight() == null) return 0.0;
+        BigDecimal oneNightPrice = BigDecimal.valueOf(booking.getPricePerNight());
+        LocalTime time = checkInTime.toLocalTime();
+        if (!time.isBefore(LocalTime.of(14, 0))) {
+            return 0.0;
+        }
+        if (!time.isBefore(LocalTime.of(12, 0))) {
+            return 0.0;
+        }
+        if (!time.isBefore(LocalTime.of(7, 0))) {
+            return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_7_TO_12_FEE_PERCENT))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+        return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_BEFORE_7_FEE_PERCENT))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     /**
@@ -149,15 +161,21 @@ public class CheckInOutService {
      */
     public double calculateLateCheckOutFee(Booking booking, LocalDateTime checkOutTime) {
         double total = 0.0;
-        if (booking.getItems() != null) {
+        if (booking.getItems() != null && !booking.getItems().isEmpty()) {
             for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
                 LocalDateTime oldActual = item.getActualCheckOutAt();
                 item.setActualCheckOutAt(checkOutTime);
                 total += calculateLateCheckOutFee(item);
                 item.setActualCheckOutAt(oldActual);
             }
+            return total;
         }
-        return total;
+        // No item-level data: compute based on booking-level pricePerNight (no weekend shifting)
+        iuh.fit.hotelsystem_booking.entity.BookingItem synthetic = new iuh.fit.hotelsystem_booking.entity.BookingItem();
+        synthetic.setFinalAmount(BigDecimal.valueOf(booking.getPricePerNight() != null ? booking.getPricePerNight() : 0.0));
+        synthetic.setCheckOut(checkOutTime.toLocalDate());
+        synthetic.setActualCheckOutAt(checkOutTime);
+        return calculateLateCheckOutFee(synthetic);
     }
 
     /**

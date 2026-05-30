@@ -6,6 +6,8 @@ import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.dto.*;
 import iuh.fit.hotelsystem_booking.entity.*;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.OutboxEventRepository;
+import iuh.fit.hotelsystem_booking.entity.OutboxEvent;
 import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,9 +15,14 @@ import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
 import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
@@ -48,7 +55,19 @@ public class BookingService {
     private final PaymentServiceClient paymentServiceClient;
     private final RoomServiceClient roomServiceClient;
     private final iuh.fit.hotelsystem_booking.repository.BookingServiceLineRepository serviceLineRepository;
+    private final RedisLockService redisLockService;
+    private final StringRedisTemplate redisTemplate;
+    private final OutboxEventRepository outboxEventRepository;
     private RefundService refundService;
+
+    @Value("${booking.lock.wait-ms:1500}")
+    private long lockWaitMs;
+
+    @Value("${booking.lock.lease-ms:12000}")
+    private long lockLeaseMs;
+
+    @Value("${booking.idempotency.ttl-minutes:1440}")
+    private long idempotencyTtlMinutes;
 
     @Autowired
     public BookingService(BookingRepository bookingRepository,
@@ -61,7 +80,10 @@ public class BookingService {
                           CheckoutService checkoutService,
                           PaymentServiceClient paymentServiceClient,
                           RoomServiceClient roomServiceClient,
-                          iuh.fit.hotelsystem_booking.repository.BookingServiceLineRepository serviceLineRepository) {
+                          iuh.fit.hotelsystem_booking.repository.BookingServiceLineRepository serviceLineRepository,
+                          RedisLockService redisLockService,
+                          StringRedisTemplate redisTemplate,
+                          OutboxEventRepository outboxEventRepository) {
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
         this.rabbitTemplate = rabbitTemplate;
@@ -73,6 +95,9 @@ public class BookingService {
         this.paymentServiceClient = paymentServiceClient;
         this.roomServiceClient = roomServiceClient;
         this.serviceLineRepository = serviceLineRepository;
+        this.redisLockService = redisLockService;
+        this.redisTemplate = redisTemplate;
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -91,7 +116,8 @@ public class BookingService {
                           PaymentServiceClient paymentServiceClient,
                           RoomServiceClient roomServiceClient) {
         this(bookingRepository, bookingStayRepository, rabbitTemplate, bookingValidator, pricingService,
-                checkInOutService, bookingGuestService, checkoutService, paymentServiceClient, roomServiceClient, null);
+                checkInOutService, bookingGuestService, checkoutService, paymentServiceClient, roomServiceClient,
+                null, null, null, null);
     }
 
     /**
@@ -242,15 +268,29 @@ public class BookingService {
 
         Booking saved = bookingRepository.save(booking);
 
-        // RabbitMQ room hold events
+        // Enqueue room hold events into outbox (transactional)
         for (BookingItem item : saved.getItems()) {
-            RoomMessage msg = new RoomMessage();
-            msg.setBookingId(saved.getId());
-            msg.setRoomId(item.getRoomId());
             try {
-                rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.hold", msg);
+                RoomMessage msg = new RoomMessage();
+                msg.setBookingId(saved.getId());
+                msg.setRoomId(item.getRoomId());
+                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+                OutboxEvent out = new OutboxEvent();
+                out.setAggregateType("Booking");
+                out.setAggregateId(String.valueOf(saved.getId()));
+                out.setType("room.hold");
+                out.setPayload(om.writeValueAsString(msg));
+                try {
+                    String correlation = MDC.get("X-Correlation-Id");
+                    if (correlation != null && !correlation.isBlank()) {
+                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        headers.put("X-Correlation-Id", correlation);
+                        out.setHeaders(om.writeValueAsString(headers));
+                    }
+                } catch (Exception ignored) {}
+                outboxEventRepository.save(out);
             } catch (Exception ex) {
-                log.warn("Could not publish room hold event. bookingId={}, roomId={}", saved.getId(), item.getRoomId());
+                log.warn("Could not enqueue room hold outbox. bookingId={}, roomId={}, reason={}", saved.getId(), item.getRoomId(), ex.getMessage());
             }
         }
 
@@ -262,6 +302,49 @@ public class BookingService {
      */
     @Transactional
     public Booking createBooking(BookingCreateRequest request) {
+        return createBooking(request, null);
+    }
+
+    @Transactional
+    public Booking createBooking(BookingCreateRequest request, String idempotencyKey) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            String idempotencyRedisKey = "idem:booking:create:" + idempotencyKey;
+            String cachedBookingId = redisTemplate.opsForValue().get(idempotencyRedisKey);
+            if (cachedBookingId != null && !cachedBookingId.isBlank()) {
+                try {
+                    return getBooking(Long.parseLong(cachedBookingId));
+                } catch (Exception ignored) {
+                    // Continue with normal create flow if cached ID is stale.
+                }
+            }
+        }
+
+        List<String> lockKeys = request.getRooms() == null ? List.of() : request.getRooms().stream()
+                .map(BookingCreateRequest.RoomBookingRequest::getRoomId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .map(roomId -> "lock:booking:room:" + roomId + ":" + request.getCheckIn() + ":" + request.getCheckOut())
+                .toList();
+
+        List<java.util.Map.Entry<String, String>> acquired = new java.util.ArrayList<>();
+        for (String lockKey : lockKeys) {
+            String token = redisLockService.tryAcquire(
+                    lockKey,
+                    Duration.ofMillis(lockWaitMs),
+                    Duration.ofMillis(lockLeaseMs)
+            );
+            if (token == null) {
+                for (int i = acquired.size() - 1; i >= 0; i--) {
+                    java.util.Map.Entry<String, String> held = acquired.get(i);
+                    redisLockService.release(held.getKey(), held.getValue());
+                }
+                throw new IllegalStateException("Phòng đang được người khác đặt, vui lòng thử lại");
+            }
+            acquired.add(java.util.Map.entry(lockKey, token));
+        }
+
+        try {
         Booking booking = new Booking();
         booking.setUserId(request.getUserId());
         booking.setCheckIn(request.getCheckIn());
@@ -314,7 +397,24 @@ public class BookingService {
         saved.setPreCheckinCompleted(false);
         saved.setGuestCount(savedGuests.size());
         saved.setTotalGuests(savedGuests.size());
-        return attachGuestsToItems(bookingRepository.save(saved));
+        Booking persisted = attachGuestsToItems(bookingRepository.save(saved));
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank() && persisted.getId() != null) {
+            String idempotencyRedisKey = "idem:booking:create:" + idempotencyKey;
+            redisTemplate.opsForValue().set(
+                    idempotencyRedisKey,
+                    String.valueOf(persisted.getId()),
+                    Duration.ofMinutes(idempotencyTtlMinutes)
+            );
+        }
+
+        return persisted;
+        } finally {
+            for (int i = acquired.size() - 1; i >= 0; i--) {
+                java.util.Map.Entry<String, String> held = acquired.get(i);
+                redisLockService.release(held.getKey(), held.getValue());
+            }
+        }
     }
 
     public Booking getBooking(Long id) {
@@ -327,6 +427,33 @@ public class BookingService {
                 .map(this::normalizePaidBooking)
                 .map(this::attachGuestsToItems)
                 .toList();
+    }
+
+    /**
+     * CQRS-lite: Paginated booking list for staff dashboard.
+     * Supports optional filter by bookingCode and status.
+     * Backward-compatible: if page/size not supplied, use defaults that return everything.
+     */
+    public org.springframework.data.domain.Page<Booking> getStaffBookings(
+            int page, int size, String bookingCode, BookingStatus status) {
+        org.springframework.data.domain.Pageable pageable =
+                org.springframework.data.domain.PageRequest.of(
+                        page, size,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+
+        boolean hasCode   = bookingCode != null && !bookingCode.isBlank();
+        boolean hasStatus = status != null;
+
+        if (hasCode && hasStatus) {
+            return bookingRepository.findByBookingCodeContainingIgnoreCaseAndStatus(bookingCode, status, pageable);
+        } else if (hasCode) {
+            return bookingRepository.findByBookingCodeContainingIgnoreCase(bookingCode, pageable);
+        } else if (hasStatus) {
+            return bookingRepository.findByStatus(status, pageable);
+        } else {
+            return bookingRepository.findAll(pageable);
+        }
     }
 
     public List<BookingGuest> getGuests(Long bookingId) {
@@ -685,11 +812,38 @@ public class BookingService {
             return booking;
         }
 
-        if (booking.getStatus() != BookingStatus.PENDING_PAYMENT
-                && booking.getStatus() != BookingStatus.PENDING
-                && booking.getStatus() != BookingStatus.DEPOSIT_PAID
-                && booking.getStatus() != BookingStatus.CONFIRMED) {
+        // ── OPTIMIZATION: Skip remote REST call for stable-state bookings ──────────
+        // Bookings in these statuses have their payment state set authoritatively
+        // by the Saga Orchestrator (BookingSagaOrchestrator) via RabbitMQ events.
+        // Calling Payment Service for each of these is an N+1 anti-pattern.
+        EnumSet<BookingStatus> stableStatuses = EnumSet.of(
+                BookingStatus.CONFIRMED,
+                BookingStatus.DEPOSIT_PAID,
+                BookingStatus.CHECKED_IN,
+                BookingStatus.PARTIALLY_CHECKED_IN,
+                BookingStatus.PARTIALLY_CHECKED_OUT,
+                BookingStatus.CHECKOUT_PENDING_PAYMENT,
+                BookingStatus.CHECKED_OUT,
+                BookingStatus.COMPLETED,
+                BookingStatus.CANCELLED,
+                BookingStatus.BOOKED,
+                BookingStatus.CREATED
+        );
+        if (stableStatuses.contains(booking.getStatus())) {
             return booking;
+        }
+
+        // ── Only reconcile PENDING_PAYMENT / PENDING that are still in hold window ─
+        // If the hold has expired, the booking is likely stale — skip to avoid
+        // unnecessary REST calls on timed-out sessions.
+        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                || booking.getStatus() == BookingStatus.PENDING) {
+            if (booking.getHoldExpiresAt() != null
+                    && booking.getHoldExpiresAt().isBefore(
+                            java.time.ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime())) {
+                // Hold window expired — trust local state, do not call remote
+                return booking;
+            }
         }
 
         try {
@@ -942,8 +1096,26 @@ public class BookingService {
     }
 
     private void publishBookingEvent(Booking booking, String status) {
-        BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), status);
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "booking.status", event);
+        try {
+            BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), status);
+            OutboxEvent out = new OutboxEvent();
+            out.setAggregateType("Booking");
+            out.setAggregateId(String.valueOf(booking.getId()));
+            out.setType("booking.status");
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            out.setPayload(om.writeValueAsString(event));
+            try {
+                String correlation = MDC.get("X-Correlation-Id");
+                if (correlation != null && !correlation.isBlank()) {
+                    java.util.Map<String, String> headers = new java.util.HashMap<>();
+                    headers.put("X-Correlation-Id", correlation);
+                    out.setHeaders(om.writeValueAsString(headers));
+                }
+            } catch (Exception ignored) {}
+            outboxEventRepository.save(out);
+        } catch (Exception ex) {
+            log.warn("Failed to enqueue booking event to outbox: {}", ex.getMessage());
+        }
     }
 
     private void setRoomStatus(Long roomId, String status) {

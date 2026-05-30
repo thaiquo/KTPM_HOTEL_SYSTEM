@@ -2,12 +2,16 @@ package iuh.fit.hotelsystem_booking.repository;
 
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,6 +33,14 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
             WHERE b.id = :id
             """)
     java.util.Optional<Booking> findByIdWithItems(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
+            WHERE b.id = :id
+            """)
+    java.util.Optional<Booking> findByIdWithItemsForUpdate(@Param("id") Long id);
 
     @Query("""
             SELECT COUNT(bi) FROM Booking b
@@ -163,8 +175,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
 
     List<Booking> findByCleaningStartAtIsNotNullAndCleaningEndAtIsNotNull();
 
-        // Add quick search by booking code
-        List<Booking> findByBookingCodeContainingIgnoreCase(String code);
+    // Quick search by booking code (non-paginated, for simple lookups)
+    List<Booking> findByBookingCodeContainingIgnoreCase(String code);
 
     @Query("""
             SELECT b FROM Booking b
@@ -339,4 +351,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
 
     @Query("SELECT DISTINCT b FROM Booking b LEFT JOIN FETCH b.items ORDER BY b.createdAt DESC, b.id DESC")
     List<Booking> findAllByOrderByCreatedAtDesc();
+
+    // ── CQRS-lite pagination for staff dashboard ──────────────────────────────────
+    // These methods power BookingService.getStaffBookings() with optional filters.
+    // They leverage the @Index on status and booking_code columns for fast queries.
+
+    Page<Booking> findByBookingCodeContainingIgnoreCase(String bookingCode, Pageable pageable);
+
+    Page<Booking> findByStatus(BookingStatus status, Pageable pageable);
+
+    Page<Booking> findByBookingCodeContainingIgnoreCaseAndStatus(
+            String bookingCode, BookingStatus status, Pageable pageable);
 }

@@ -155,10 +155,45 @@ public class StaffBookingController {
         return ResponseEntity.ok(bookingRoomWorkflowService.getCheckOutRooms(resolveDate(date)));
     }
 
+    /**
+     * GET /api/staff/bookings
+     *
+     * Backward-compatible paginated endpoint:
+     *   - No params         → returns flat List<Booking> (same as before, sorted DESC by createdAt)
+     *   - ?page=0&size=20   → returns Page<Booking> with pagination metadata
+     * Optional filters: bookingCode (partial, case-insensitive), status (exact BookingStatus name)
+     */
     @GetMapping("/bookings")
-    public List<Booking> bookings(HttpServletRequest request) {
+    public ResponseEntity<?> bookings(
+            HttpServletRequest request,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String bookingCode,
+            @RequestParam(required = false) String status) {
         ensureStaff(request);
-        return bookingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        // ── Backward compatible: no pagination params → return flat list ──────────
+        if (page == null && size == null) {
+            return ResponseEntity.ok(
+                    bookingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")));
+        }
+
+        // ── Paginated mode ────────────────────────────────────────────────────────
+        int pageNum  = page  != null ? Math.max(0, page)  : 0;
+        int pageSize = size  != null ? Math.min(Math.max(1, size), 200) : 20; // cap at 200
+
+        iuh.fit.hotelsystem_booking.entity.BookingStatus bookingStatus = null;
+        if (status != null && !status.isBlank()) {
+            try {
+                bookingStatus = iuh.fit.hotelsystem_booking.entity.BookingStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // unknown status → ignore filter
+            }
+        }
+
+        org.springframework.data.domain.Page<iuh.fit.hotelsystem_booking.entity.Booking> resultPage =
+                bookingService.getStaffBookings(pageNum, pageSize, bookingCode, bookingStatus);
+        return ResponseEntity.ok(resultPage);
     }
 
     @PostMapping("/booking-rooms/{bookingRoomId:\\d+}/check-in")
