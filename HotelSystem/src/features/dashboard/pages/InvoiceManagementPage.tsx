@@ -27,8 +27,9 @@ const fmtDateTime = (s?: string | null) =>
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const map: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Nháp', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
-    PARTIAL: { label: 'Một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-    COMPLETED: { label: 'Hoàn tất', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    PARTIAL: { label: 'Checkout một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    PARTIAL_CHECKOUT: { label: 'Checkout một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    COMPLETED: { label: 'Đã checkout', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     CANCELLED: { label: 'Đã hủy', cls: 'bg-red-50 text-red-700 border-red-200' },
   };
   const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-50 text-gray-600 border-gray-200' };
@@ -45,6 +46,7 @@ const PaymentStatusBadge: React.FC<{ status: string }> = ({ status }) => {
     PARTIALLY_PAID: { label: 'Một phần', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
     UNPAID: { label: 'Chưa TT', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
     REFUNDED: { label: 'Đã hoàn', cls: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+    PENDING_REFUND: { label: 'Chờ hoàn', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
   };
   const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-50 text-gray-600 border-gray-200' };
   return (
@@ -183,7 +185,12 @@ const InvoiceDetailModal: React.FC<{
                       <InfoRow label="Mã hóa đơn" value={data.invoiceCode} highlight />
                       <InfoRow label="Mã booking" value={data.bookingCode} highlight />
                       <InfoRow label="Ngày tạo" value={fmtDateTime(data.createdAt)} />
-                      {data.checkoutStaff && <InfoRow label="Nhân viên checkout" value={data.checkoutStaff} />}
+                      <InfoRow label="Trạng thái invoice" value={data.invoiceStatus || data.status || '—'} />
+                      <InfoRow label="Trạng thái booking" value={data.bookingStatus || '—'} />
+                      <InfoRow label="Nhân viên check-in" value={data.checkinStaffName || data.checkinStaff || data.checkinStaffId || '—'} />
+                      <InfoRow label="Nhân viên checkout" value={data.checkoutStaffName || data.checkoutStaff || data.checkoutStaffId || '—'} />
+                      <InfoRow label="Processed by" value={data.processedByName || data.processedBy || data.processedByStaffId || '—'} />
+                      <InfoRow label="Thời gian checkout" value={fmtDateTime(data.checkoutTime)} />
                     </div>
                     {/* Customer */}
                     {data.customer && (
@@ -241,8 +248,12 @@ const InvoiceDetailModal: React.FC<{
                         <HiOutlineHome className="w-4 h-4 text-indigo-600" />
                         <span className="font-black text-indigo-700 text-sm">{r.roomName}</span>
                         {r.roomType && <span className="text-xs text-indigo-400 font-bold">{r.roomType}</span>}
+                        {r.roomStatus && <span className="ml-auto text-[10px] font-black text-indigo-600 bg-white border border-indigo-100 rounded-full px-2 py-0.5">{r.roomStatus}</span>}
                       </div>
                       <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <RoomText label="Check-in" value={fmtDate(r.checkInDate)} />
+                        <RoomText label="Dự kiến checkout" value={fmtDate(r.plannedCheckoutDate)} />
+                        <RoomText label="Actual checkout" value={fmtDateTime(r.actualCheckoutDate)} />
                         <RoomStat label="Giá gốc" value={r.originalAmount} />
                         <RoomStat label="Đã sử dụng" value={r.usedAmount} color="teal" />
                         <RoomStat label="Chưa sử dụng" value={r.unusedAmount} color="amber" />
@@ -328,15 +339,28 @@ const InvoiceDetailModal: React.FC<{
                             <MdOutlinePayments className="w-4 h-4 text-emerald-600" />
                           </div>
                           <div>
-                            <div className="text-sm font-black text-emerald-800">{p.method}</div>
-                            <div className="text-[11px] text-emerald-500 flex items-center gap-1">
-                              <HiOutlineClock className="w-3 h-3" /> {fmtDateTime(p.time)}
+                            <div className="text-sm font-black text-emerald-800">
+                              {p.method || p.paymentType || p.invoiceCategory || 'PAYMENT'}
                             </div>
+                            <div className="text-[11px] text-emerald-500 flex items-center gap-1">
+                              <HiOutlineClock className="w-3 h-3" /> {fmtDateTime(p.paidAt || p.time)}
+                            </div>
+                            {(p.transactionId || p.paymentCode || p.vnpTransactionNo) && (
+                              <div className="text-[11px] text-emerald-500">
+                                {p.transactionId || p.paymentCode || p.vnpTransactionNo}
+                              </div>
+                            )}
+                            {(p.payerName || p.payerPhone) && (
+                              <div className="text-[11px] text-emerald-400">
+                                {p.payerName || '—'}{p.payerPhone ? ` · ${p.payerPhone}` : ''}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">
                           <div className="font-black text-emerald-700 text-sm">{fmt(p.amount)}</div>
                           <div className="text-[10px] text-emerald-500 uppercase">{p.status}</div>
+                          {p.invoiceCategory && <div className="text-[10px] text-emerald-400 uppercase">{p.invoiceCategory}</div>}
                         </div>
                       </div>
                     ))}
@@ -417,6 +441,13 @@ const RoomStat: React.FC<{ label: string; value: number; color?: string }> = ({ 
   );
 };
 
+const RoomText: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-xl p-3 bg-gray-100 text-gray-700">
+    <div className="text-[10px] font-black uppercase tracking-wide opacity-70 mb-1">{label}</div>
+    <div className="text-xs font-black">{value || '—'}</div>
+  </div>
+);
+
 const Empty: React.FC<{ text: string }> = ({ text }) => (
   <div className="py-10 flex flex-col items-center gap-2 text-center">
     <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
@@ -452,7 +483,7 @@ const defaultSummary: InvoiceSummaryV2 = {
   totalPaidAmount: 0, totalRemainingAmount: 0, refundedInvoiceCount: 0, todayInvoiceCount: 0,
   totalActualRevenue: 0, totalRefundedAmount: 0, totalPendingRefundAmount: 0,
   totalAdditionalCharge: 0, totalRemainingToPay: 0, paidInvoiceCount: 0, unpaidInvoiceCount: 0,
-  partiallyPaidInvoiceCount: 0,
+  partiallyPaidInvoiceCount: 0, partialInvoiceCount: 0, completedInvoiceCount: 0,
 };
 
 const InvoiceManagementPage: React.FC = () => {
@@ -667,7 +698,7 @@ const InvoiceManagementPage: React.FC = () => {
           />
           <SummaryCard
             icon={<HiOutlineCurrencyDollar className="w-4 h-4" />}
-            label="Tổng HĐ (Gross)" value={fmt(summary.grossInvoiceAmount)}
+            label="Doanh thu thực thu" value={fmt(summary.totalActualRevenue)}
             color="violet"
           />
           <SummaryCard
@@ -677,7 +708,7 @@ const InvoiceManagementPage: React.FC = () => {
           />
           <SummaryCard
             icon={<HiOutlineTrendingUp className="w-4 h-4" />}
-            label="Doanh thu (Net)" value={fmt(summary.netRevenue)}
+            label="Tổng phụ thu" value={fmt(summary.totalAdditionalCharge)}
             color="emerald" trend="up"
           />
           <SummaryCard
@@ -692,12 +723,12 @@ const InvoiceManagementPage: React.FC = () => {
           />
           <SummaryCard
             icon={<HiOutlineReceiptRefund className="w-4 h-4" />}
-            label="HĐ có hoàn" value={summary.refundedInvoiceCount}
+            label="HĐ PARTIAL" value={summary.partialInvoiceCount ?? summary.partiallyPaidInvoiceCount}
             color="sky"
           />
           <SummaryCard
             icon={<HiOutlineCalendar className="w-4 h-4" />}
-            label="HĐ hôm nay" value={summary.todayInvoiceCount}
+            label="HĐ COMPLETED" value={summary.completedInvoiceCount ?? summary.paidInvoiceCount}
             color="orange"
           />
           <SummaryCard
@@ -765,9 +796,11 @@ const InvoiceManagementPage: React.FC = () => {
             <table className="w-full text-left border-collapse min-w-300">
               <thead>
                 <tr className="bg-gray-50/60 border-b border-gray-100">
-                    {'Mã HĐ', 'Mã Booking', 'Khách hàng', 'Phòng', 'Ngày tạo',
+                  {[
+                    'Mã HĐ', 'Mã Booking', 'Khách hàng', 'Phòng', 'Ngày tạo',
                     'Tổng HĐ', 'Hoàn tiền', 'Doanh thu net', 'Đã TT', 'Còn TT',
-                    'TT HĐ', 'TT Thanh toán', 'Hành động'].map(h => (
+                    'TT HĐ', 'TT Thanh toán', 'Hành động',
+                  ].map(h => (
                     <th key={h} className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
                   ))}
                 </tr>

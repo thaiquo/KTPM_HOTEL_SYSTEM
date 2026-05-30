@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_room.controller;
 
+import iuh.fit.hotelsystem_room.dto.RoomResponseDto;
 import iuh.fit.hotelsystem_room.dto.RoomStatusUpdateRequest;
 import iuh.fit.hotelsystem_room.dto.StaffRoomSearchRequest;
 import iuh.fit.hotelsystem_room.entity.Room;
@@ -7,6 +8,7 @@ import iuh.fit.hotelsystem_room.entity.RoomStatusHistory;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
 import iuh.fit.hotelsystem_room.repository.RoomStatusHistoryRepository;
+import iuh.fit.hotelsystem_room.service.RoomDtoMapper;
 import iuh.fit.hotelsystem_room.service.RoomService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -32,6 +34,7 @@ public class StaffRoomController {
     private final RoomStatusHistoryRepository historyRepository;
     private final RoomService roomService;
     private final RestTemplate restTemplate;
+    private final RoomDtoMapper roomDtoMapper;
 
     @Value("${booking.service.url:http://booking-service:8084}")
     private String bookingServiceUrl;
@@ -39,18 +42,20 @@ public class StaffRoomController {
     public StaffRoomController(RoomRepository roomRepository,
                                RoomStatusHistoryRepository historyRepository,
                                RoomService roomService,
-                               RestTemplate restTemplate) {
+                               RestTemplate restTemplate,
+                               RoomDtoMapper roomDtoMapper) {
         this.roomRepository = roomRepository;
         this.historyRepository = historyRepository;
         this.roomService = roomService;
         this.restTemplate = restTemplate;
+        this.roomDtoMapper = roomDtoMapper;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // GET /staff/rooms/search — Tìm kiếm phòng với đầy đủ filter cho Staff
     // ─────────────────────────────────────────────────────────────────────────
     @GetMapping("/search")
-    public ResponseEntity<List<Room>> searchRooms(
+    public ResponseEntity<List<RoomResponseDto>> searchRooms(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer floor,
             @RequestParam(required = false) String roomType,
@@ -170,7 +175,7 @@ public class StaffRoomController {
                 break;
         }
 
-        return ResponseEntity.ok(rooms);
+        return ResponseEntity.ok(roomDtoMapper.toRoomResponses(rooms));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

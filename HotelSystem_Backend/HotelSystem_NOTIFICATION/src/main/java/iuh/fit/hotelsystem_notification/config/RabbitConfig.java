@@ -12,6 +12,10 @@ public class RabbitConfig {
     public static final String BOOKING_QUEUE = "notification.booking.queue";
     public static final String PAYMENT_QUEUE = "notification.payment.queue";
     public static final String REFUND_QUEUE = "notification.refund.queue";
+    public static final String DLX_EXCHANGE = "hotel.dlx";
+    public static final String BOOKING_DLQ = "notification.booking.dlq";
+    public static final String PAYMENT_DLQ = "notification.payment.dlq";
+    public static final String REFUND_DLQ = "notification.refund.dlq";
 
     @Bean
     public TopicExchange exchange() {
@@ -19,18 +23,47 @@ public class RabbitConfig {
     }
 
     @Bean
+    public TopicExchange deadLetterExchange() {
+        return new TopicExchange(DLX_EXCHANGE);
+    }
+
+    @Bean
     public Queue bookingQueue() {
-        return new Queue(BOOKING_QUEUE);
+        return QueueBuilder.durable(BOOKING_QUEUE)
+                .deadLetterExchange(DLX_EXCHANGE)
+                .deadLetterRoutingKey("dlq.notification.booking")
+                .build();
     }
 
     @Bean
     public Queue paymentQueue() {
-        return new Queue(PAYMENT_QUEUE);
+        return QueueBuilder.durable(PAYMENT_QUEUE)
+                .deadLetterExchange(DLX_EXCHANGE)
+                .deadLetterRoutingKey("dlq.notification.payment")
+                .build();
     }
 
     @Bean
     public Queue refundQueue() {
-        return new Queue(REFUND_QUEUE);
+        return QueueBuilder.durable(REFUND_QUEUE)
+                .deadLetterExchange(DLX_EXCHANGE)
+                .deadLetterRoutingKey("dlq.notification.refund")
+                .build();
+    }
+
+    @Bean
+    public Queue bookingDlq() {
+        return QueueBuilder.durable(BOOKING_DLQ).build();
+    }
+
+    @Bean
+    public Queue paymentDlq() {
+        return QueueBuilder.durable(PAYMENT_DLQ).build();
+    }
+
+    @Bean
+    public Queue refundDlq() {
+        return QueueBuilder.durable(REFUND_DLQ).build();
     }
 
     @Bean
@@ -52,6 +85,27 @@ public class RabbitConfig {
         return BindingBuilder.bind(refundQueue())
                 .to(exchange())
                 .with("refund.notification");
+    }
+
+    @Bean
+    public Binding bookingDlqBinding() {
+        return BindingBuilder.bind(bookingDlq())
+                .to(deadLetterExchange())
+                .with("dlq.notification.booking");
+    }
+
+    @Bean
+    public Binding paymentDlqBinding() {
+        return BindingBuilder.bind(paymentDlq())
+                .to(deadLetterExchange())
+                .with("dlq.notification.payment");
+    }
+
+    @Bean
+    public Binding refundDlqBinding() {
+        return BindingBuilder.bind(refundDlq())
+                .to(deadLetterExchange())
+                .with("dlq.notification.refund");
     }
 
     @Bean

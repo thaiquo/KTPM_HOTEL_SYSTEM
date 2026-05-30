@@ -109,6 +109,12 @@ public class BookingCheckoutBillingService {
         payload.put("paymentRequired", snapshot.paymentRequired);
         payload.put("refundRequired", snapshot.refundRequired);
         payload.put("checkoutType", snapshot.checkoutType);
+        payload.put("invoiceStatus", resolveInvoiceStatus(snapshot.booking));
+        payload.put("paymentStatus", resolvePaymentStatus(snapshot));
+        if (request != null && request.getStaffId() != null) {
+            payload.put("processedByStaffId", request.getStaffId());
+            payload.put("checkoutStaffId", request.getStaffId());
+        }
         payload.put("generatedAt", LocalDateTime.now(clock));
         return payload;
     }
@@ -270,7 +276,8 @@ public class BookingCheckoutBillingService {
 
         for (BookingItem room : invoiceRooms) {
             BookingRoomExtraFeeRequest extraFee = feeByRoom.get(room.getId());
-            boolean alreadyCheckedOut = room.getStatus() == BookingItemStatus.CHECKED_OUT;
+            boolean currentBatchRoom = selectedRoomIds.contains(room.getId());
+            boolean alreadyCheckedOut = room.getStatus() == BookingItemStatus.CHECKED_OUT && !currentBatchRoom;
             BigDecimal roomCharge = alreadyCheckedOut && room.getRoomCharge() != null ? room.getRoomCharge() : calculateRoomCharge(room);
             BigDecimal serviceCharge = alreadyCheckedOut ? money(room.getServiceCharge()) : money(extraFee != null ? extraFee.getServiceCharge() : null);
             BigDecimal damageFee = alreadyCheckedOut ? money(room.getDamageFee()) : money(extraFee != null ? extraFee.getDamageFee() : null);
@@ -368,7 +375,10 @@ public class BookingCheckoutBillingService {
             roomSummary.setManualSurcharge(manualSurcharge);
             roomSummary.setLateCheckoutFee(lateCheckoutFee);
             roomSummary.setTotalAmount(roomTotal);
+            roomSummary.setCheckInDate(room.getCheckIn() != null ? room.getCheckIn().atStartOfDay() : null);
+            roomSummary.setPlannedCheckOutDate(room.getCheckOut() != null ? room.getCheckOut().atStartOfDay() : null);
             roomSummary.setActualCheckOutAt(room.getActualCheckOutAt() != null ? room.getActualCheckOutAt() : actualCheckOutAt);
+            roomSummary.setRoomStatus("CHECKED_OUT");
             // per-room settlement
             roomSummary.setEarlyCheckoutRefund(roomEarlyRefund);
             roomSummary.setExtraCharges(roomExtraCharges);
@@ -684,6 +694,38 @@ public class BookingCheckoutBillingService {
         if (early) return "EARLY";
         if (late) return "LATE";
         return "NORMAL";
+    }
+
+    private String resolveInvoiceStatus(Booking booking) {
+        if (booking == null || booking.getItems() == null || booking.getItems().isEmpty()) {
+            return "DRAFT";
+        }
+        List<BookingItem> activeRooms = booking.getItems().stream()
+                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
+                .toList();
+        if (activeRooms.isEmpty()) {
+            return "CANCELLED";
+        }
+        if (activeRooms.stream().allMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
+            return "COMPLETED";
+        }
+        if (activeRooms.stream().anyMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
+            return "PARTIAL";
+        }
+        return "DRAFT";
+    }
+
+    private String resolvePaymentStatus(CheckoutSnapshot snapshot) {
+        if (snapshot == null || snapshot.amountPaid == null || snapshot.amountPaid.compareTo(BigDecimal.ZERO) == 0) {
+            return "UNPAID";
+        }
+        if (snapshot.refundRequired) {
+            return "PENDING_REFUND";
+        }
+        if (snapshot.remainingBalance != null && snapshot.remainingBalance.compareTo(BigDecimal.ZERO) > 0) {
+            return "PARTIALLY_PAID";
+        }
+        return "PAID";
     }
 
     /**

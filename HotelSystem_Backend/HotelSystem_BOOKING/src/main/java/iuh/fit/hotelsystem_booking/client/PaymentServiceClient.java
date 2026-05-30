@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.client;
 
 import iuh.fit.hotelsystem_booking.dto.LateCheckoutPaymentRequest;
+import iuh.fit.hotelsystem_booking.dto.PaymentTransactionDto;
 import iuh.fit.hotelsystem_booking.dto.PaymentStatusResponse;
 import iuh.fit.hotelsystem_booking.dto.RemainingPaymentRequest;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.Map;
+import java.util.List;
 
 @FeignClient(name = "payment-service", url = "${payment.service.url:http://localhost:8085}", fallbackFactory = PaymentServiceFallbackFactory.class)
 public interface PaymentServiceClient {
@@ -19,6 +21,10 @@ public interface PaymentServiceClient {
     @Retry(name = "paymentStatusApi")
     @GetMapping("/payments/invoices/booking/{bookingId}/status")
     PaymentStatusResponse getInvoiceStatus(@PathVariable("bookingId") Long bookingId);
+
+    @Retry(name = "paymentStatusApi")
+    @GetMapping("/payments/booking/{bookingId}")
+    List<PaymentTransactionDto> getPaymentsByBooking(@PathVariable("bookingId") Long bookingId);
 
     @PostMapping("/payments/bookings/{bookingId}/remaining-payment")
     @Retry(name = "paymentTransactionApi")

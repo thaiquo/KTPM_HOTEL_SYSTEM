@@ -1,6 +1,5 @@
 package iuh.fit.hotelsystem_booking.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.hotelsystem_booking.entity.OutboxEvent;
 import iuh.fit.hotelsystem_booking.repository.OutboxEventRepository;
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
@@ -13,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class OutboxPublisher {
@@ -21,7 +21,6 @@ public class OutboxPublisher {
 
     private final OutboxEventRepository outboxEventRepository;
     private final RabbitTemplate rabbitTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OutboxPublisher(OutboxEventRepository outboxEventRepository, RabbitTemplate rabbitTemplate) {
         this.outboxEventRepository = outboxEventRepository;
@@ -45,9 +44,9 @@ public class OutboxPublisher {
                 // simple routing: use type as routing key and exchange from RabbitConfig
                 String routingKey = e.getType();
                 // if headers present, attempt to propagate them
-                if (e.getHeaders() != null && !e.getHeaders().isBlank()) {
+                Map<String, Object> headers = e.getHeaders();
+                if (headers != null && !headers.isEmpty()) {
                     try {
-                        java.util.Map<String, Object> headers = objectMapper.readValue(e.getHeaders(), java.util.Map.class);
                         org.springframework.amqp.core.MessagePostProcessor mpp = msg -> {
                             org.springframework.amqp.core.MessageProperties props = msg.getMessageProperties();
                             headers.forEach((k, v) -> props.setHeader(k, v));

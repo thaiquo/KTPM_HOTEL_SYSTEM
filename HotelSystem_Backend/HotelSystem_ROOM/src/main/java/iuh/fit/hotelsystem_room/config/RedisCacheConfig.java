@@ -56,11 +56,17 @@ public class RedisCacheConfig {
 
         cacheConfigs.put("rooms:all",
                 defaultConfig.entryTtl(Duration.ofMinutes(30)));
+        cacheConfigs.put("rooms:all:v2",
+                defaultConfig.entryTtl(Duration.ofMinutes(30)));
 
         cacheConfigs.put("rooms:detail",
                 defaultConfig.entryTtl(Duration.ofMinutes(60)));
+        cacheConfigs.put("rooms:detail:v2",
+                defaultConfig.entryTtl(Duration.ofMinutes(60)));
 
         cacheConfigs.put("rooms:available",
+                defaultConfig.entryTtl(Duration.ofMinutes(10)));
+        cacheConfigs.put("rooms:available:v2",
                 defaultConfig.entryTtl(Duration.ofMinutes(10)));
 
         return RedisCacheManager.builder(connectionFactory)

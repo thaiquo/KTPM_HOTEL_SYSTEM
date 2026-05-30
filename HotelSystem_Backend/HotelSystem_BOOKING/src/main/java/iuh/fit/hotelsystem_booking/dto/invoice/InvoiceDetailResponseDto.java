@@ -12,7 +12,18 @@ public class InvoiceDetailResponseDto {
     private Long bookingId;
     private String bookingCode;
     private LocalDateTime createdAt;
+    private String invoiceStatus;
+    private String bookingStatus;
+    private String checkinStaffId;
+    private String checkinStaff;
+    private String checkinStaffName;
+    private String checkoutStaffId;
     private String checkoutStaff;
+    private String checkoutStaffName;
+    private String processedByStaffId;
+    private String processedBy;
+    private String processedByName;
+    private LocalDateTime checkoutTime;
     private String refundStatus;
     private String status;
     private String paymentStatus;
@@ -38,7 +49,11 @@ public class InvoiceDetailResponseDto {
     @Data
     public static class RoomBreakdownDto {
         private String roomName;
+        private String roomCode;
         private String roomType;
+        private LocalDateTime checkInDate;
+        private LocalDateTime plannedCheckoutDate;
+        private LocalDateTime actualCheckoutDate;
         private BigDecimal originalAmount;
         private BigDecimal usedAmount;
         private BigDecimal unusedAmount;
@@ -46,6 +61,7 @@ public class InvoiceDetailResponseDto {
         private BigDecimal hotelKeepAmount;
         private BigDecimal netRevenue;
         private BigDecimal allocatedPaidAmount;
+        private String roomStatus;
     }
 
     @Data
@@ -70,10 +86,19 @@ public class InvoiceDetailResponseDto {
 
     @Data
     public static class PaymentRecord {
+        private Long id;
         private LocalDateTime time;
+        private LocalDateTime paidAt;
         private BigDecimal amount;
         private String method; // VNPAY, CASH, TRANSFER
         private String status;
+        private String paymentType;
+        private String invoiceCategory;
+        private String transactionId;
+        private String paymentCode;
+        private String vnpTransactionNo;
+        private String payerName;
+        private String payerPhone;
     }
 
     @Data

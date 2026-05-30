@@ -1,10 +1,11 @@
 package iuh.fit.hotelsystem_room.service;
 
+import iuh.fit.hotelsystem_room.dto.RoomListCacheDto;
+import iuh.fit.hotelsystem_room.dto.RoomResponseDto;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.entity.RoomBedOverride;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.repository.RoomRepository;
-import iuh.fit.hotelsystem_room.repository.RoomTypeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,65 +29,77 @@ public class RoomService {
     private static final Logger log = LoggerFactory.getLogger(RoomService.class);
 
     private final RoomRepository roomRepository;
-    private final RoomTypeRepository roomTypeRepository;
     private final RestTemplate restTemplate;
+    private final RoomDtoMapper roomDtoMapper;
 
     @Value("${booking.service.url:http://booking-service:8084}")
     private String bookingServiceUrl;
 
-    public RoomService(RoomRepository roomRepository, RoomTypeRepository roomTypeRepository, RestTemplate restTemplate) {
+    public RoomService(RoomRepository roomRepository, RestTemplate restTemplate, RoomDtoMapper roomDtoMapper) {
         this.roomRepository = roomRepository;
-        this.roomTypeRepository = roomTypeRepository;
         this.restTemplate = restTemplate;
+        this.roomDtoMapper = roomDtoMapper;
     }
 
     /**
-     * Returns all rooms. Result is cached in Redis under "rooms:all".
-     * Cache is evicted by RoomListener when room status/data changes via RabbitMQ events.
+     * Returns DTOs so Redis never stores Hibernate entity proxies.
      */
-    @Cacheable(value = "rooms:all", unless = "#result == null || #result.isEmpty()")
-    public List<Room> getAllRooms() {
-        log.debug("[CACHE MISS] rooms:all — loading from database");
-        return roomRepository.findAllWithDetails();
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:all:v2", unless = "#result == null || #result.rooms == null || #result.rooms.isEmpty()")
+    public RoomListCacheDto getAllRooms() {
+        log.debug("[CACHE MISS] rooms:all:v2 - loading from database");
+        return RoomListCacheDto.builder()
+                .rooms(roomDtoMapper.toRoomResponses(roomRepository.findAllWithDetails()))
+                .build();
     }
 
     /**
-     * Returns a single room by ID. Cached under "rooms:detail" with the room ID as key.
-     * Cache is evicted by RoomListener on room update events.
+     * Returns a DTO so Redis never stores Hibernate entity proxies.
      */
-    @Cacheable(value = "rooms:detail", key = "#id", unless = "#result == null")
-    public Room getRoomById(Long id) {
-        log.debug("[CACHE MISS] rooms:detail:{} — loading from database", id);
-        return roomRepository.findByIdWithDetails(id).orElse(null);
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:detail:v2", key = "#id", unless = "#result == null")
+    public RoomResponseDto getRoomById(Long id) {
+        log.debug("[CACHE MISS] rooms:detail:v2:{} - loading from database", id);
+        return roomDtoMapper.toRoomResponse(roomRepository.findByIdWithDetails(id).orElse(null));
     }
 
-    public List<Room> getAvailableRoomsByStatus(RoomStatus status) {
-        return roomRepository.findByStatusWithDetails(status);
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:available:v2", key = "'status:' + #status", unless = "#result == null")
+    public RoomListCacheDto getAvailableRoomsByStatus(RoomStatus status) {
+        return RoomListCacheDto.builder()
+                .rooms(roomDtoMapper.toRoomResponses(roomRepository.findByStatusWithDetails(status)))
+                .build();
     }
 
-    public List<Room> getRoomsByRoomType(Long roomTypeId) {
+    @Transactional(readOnly = true)
+    @Cacheable(value = "rooms:available:v2", key = "'type:' + (#roomTypeId != null ? #roomTypeId : 'all')", unless = "#result == null")
+    public RoomListCacheDto getRoomsByRoomType(Long roomTypeId) {
         if (roomTypeId == null) {
-            return roomRepository.findByStatusWithDetails(RoomStatus.AVAILABLE);
+            return RoomListCacheDto.builder()
+                    .rooms(roomDtoMapper.toRoomResponses(roomRepository.findByStatusWithDetails(RoomStatus.AVAILABLE)))
+                    .build();
         }
-        return roomRepository.findByRoomTypeIdAndStatusWithDetails(roomTypeId, RoomStatus.AVAILABLE);
+        return RoomListCacheDto.builder()
+                .rooms(roomDtoMapper.toRoomResponses(roomRepository.findByRoomTypeIdAndStatusWithDetails(roomTypeId, RoomStatus.AVAILABLE)))
+                .build();
     }
 
     /**
      * Returns available rooms for a date range and optional room type.
-     * Cached under "rooms:available" with a composite key (roomTypeId + checkIn + checkOut).
-     * TTL is 10 minutes — shorter than full list because availability changes frequently.
+     * The cached value is a DTO list, not JPA entities.
      */
+    @Transactional(readOnly = true)
     @Cacheable(
-        value = "rooms:available",
+        value = "rooms:available:v2",
         key = "'type:' + (#roomTypeId != null ? #roomTypeId : 'all') + ':' + #checkIn + ':' + #checkOut",
         unless = "#result == null"
     )
-    public List<Room> getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
+    public RoomListCacheDto getAvailableRooms(Long roomTypeId, LocalDate checkIn, LocalDate checkOut) {
         if (checkIn == null || checkOut == null || !checkIn.isBefore(checkOut)) {
             throw new IllegalArgumentException("checkIn/checkOut invalid");
         }
 
-        log.debug("[CACHE MISS] rooms:available type={} {}~{} — computing from DB + booking-service",
+        log.debug("Computing available rooms type={} {}~{} from DB + booking-service",
                 roomTypeId, checkIn, checkOut);
 
         List<Room> inventory = roomRepository.findAllWithDetails().stream()
@@ -102,13 +115,22 @@ public class RoomService {
                 availableRooms.add(room);
             }
         }
-        return availableRooms;
+        return RoomListCacheDto.builder()
+                .rooms(roomDtoMapper.toRoomResponses(availableRooms))
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public Room getRoomEntityById(Long id) {
+        return roomRepository.findByIdWithDetails(id).orElse(null);
     }
 
     @Transactional
     @Caching(evict = {
         @CacheEvict(value = "rooms:all", allEntries = true),
-        @CacheEvict(value = "rooms:available", allEntries = true)
+        @CacheEvict(value = "rooms:all:v2", allEntries = true),
+        @CacheEvict(value = "rooms:available", allEntries = true),
+        @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public Room createRoom(Room room) {
         if (room.getBedOverrides() != null) {
@@ -122,8 +144,11 @@ public class RoomService {
     @Transactional
     @Caching(evict = {
         @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:all:v2", allEntries = true),
         @CacheEvict(value = "rooms:detail", key = "#id"),
-        @CacheEvict(value = "rooms:available", allEntries = true)
+        @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true),
+        @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public Room updateRoom(Long id, Room roomDetails) {
         return roomRepository.findById(id).map(room -> {
@@ -158,8 +183,11 @@ public class RoomService {
     @Transactional
     @Caching(evict = {
         @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:all:v2", allEntries = true),
         @CacheEvict(value = "rooms:detail", key = "#id"),
-        @CacheEvict(value = "rooms:available", allEntries = true)
+        @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true),
+        @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public Room updateRoomStatus(Long id, RoomStatus status) {
         return roomRepository.findById(id).map(room -> {
@@ -171,8 +199,11 @@ public class RoomService {
     @Transactional
     @Caching(evict = {
         @CacheEvict(value = "rooms:all", allEntries = true),
+        @CacheEvict(value = "rooms:all:v2", allEntries = true),
         @CacheEvict(value = "rooms:detail", key = "#id"),
-        @CacheEvict(value = "rooms:available", allEntries = true)
+        @CacheEvict(value = "rooms:detail:v2", key = "#id"),
+        @CacheEvict(value = "rooms:available", allEntries = true),
+        @CacheEvict(value = "rooms:available:v2", allEntries = true)
     })
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);

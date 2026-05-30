@@ -29,6 +29,12 @@ public class PaymentServiceFallbackFactory implements FallbackFactory<PaymentSer
             }
 
             @Override
+            public java.util.List<iuh.fit.hotelsystem_booking.dto.PaymentTransactionDto> getPaymentsByBooking(Long bookingId) {
+                log.error("payment-service unavailable for getPaymentsByBooking. bookingId={}, error={}", bookingId, cause.getMessage());
+                return java.util.Collections.emptyList();
+            }
+
+            @Override
             public Object collectRemainingPayment(Long bookingId, String idempotencyKey, RemainingPaymentRequest request) {
                 log.error("payment-service unavailable for collectRemainingPayment. bookingId={}, error={}", bookingId, cause.getMessage());
                 throw new RuntimeException("Payment service is temporarily unavailable. Please try again later.", cause);

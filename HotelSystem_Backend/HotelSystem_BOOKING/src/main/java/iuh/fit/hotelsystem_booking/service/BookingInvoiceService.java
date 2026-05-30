@@ -9,6 +9,7 @@ import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceSummaryDto;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingInvoice;
+import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStay;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
@@ -69,8 +70,11 @@ public class BookingInvoiceService {
             Map<String, Object> lines) {
         try {
             log.info("SAVE CHECKOUT INVOICE START bookingId={}, amount={}, currency={}", bookingId, amount, currency);
-            BookingInvoice invoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId)
-                    .orElseGet(BookingInvoice::new);
+            Optional<BookingInvoice> existingInvoice = invoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId);
+            if (existingInvoice.isPresent() && isMergeableCheckoutPayload(lines)) {
+                return mergeCheckoutInvoice(bookingId, amount, currency, lines);
+            }
+            BookingInvoice invoice = existingInvoice.orElseGet(BookingInvoice::new);
             if (invoice.getId() == null) {
                 invoice.setBookingId(bookingId);
                 invoice.setCreatedAt(LocalDateTime.now());
@@ -88,6 +92,7 @@ public class BookingInvoiceService {
                 invoice.setTotalRefundToCustomer(toBigDecimal(lines.get("totalRefundToCustomer")));
                 invoice.setRemainingBalance(toBigDecimal(lines.get("remainingBalance")));
             }
+            applyInvoiceMetadata(invoice, lines);
             BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
             log.info("SAVE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}", bookingId, saved.getId());
             return saved;
@@ -334,6 +339,7 @@ public class BookingInvoiceService {
             invoice.setRemainingBalance(remaining);
             invoice.setCurrency(currency != null ? currency : "VND");
             invoice.setLinesJson(objectMapper.writeValueAsString(merged));
+            applyInvoiceMetadata(invoice, merged);
             BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
             log.info("MERGE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}, grandTotal={}", bookingId, saved.getId(), grandTotal);
             return saved;
@@ -348,6 +354,111 @@ public class BookingInvoiceService {
         if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
         if (val instanceof String s) { try { return new BigDecimal(s); } catch (Exception ignored) {} }
         return BigDecimal.ZERO;
+    }
+
+    private boolean isMergeableCheckoutPayload(Map<String, Object> lines) {
+        return lines != null && (lines.get("invoiceItems") instanceof List<?> || lines.get("roomSummaries") instanceof List<?>);
+    }
+
+    private void applyInvoiceMetadata(BookingInvoice invoice, Map<String, Object> lines) {
+        if (invoice == null) {
+            return;
+        }
+        if (invoice.getId() != null) {
+            invoice.setInvoiceCode("INV-" + String.format("%06d", invoice.getId()));
+        }
+        invoice.setInvoiceStatus(resolveInvoiceStatus(invoice.getBookingId(), lines));
+        invoice.setPaymentStatus(resolvePaymentStatus(invoice.getBookingId(), lines));
+
+        try {
+            List<BookingGuest> guests = bookingGuestService.getGuests(invoice.getBookingId());
+            BookingGuest representative = pickRepresentativeGuest(guests);
+            if (representative != null) {
+                invoice.setCustomerName(representative.getFullName());
+                invoice.setCustomerPhone(representative.getPhone());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String resolveInvoiceStatus(Long bookingId, Map<String, Object> lines) {
+        if (lines != null && lines.get("invoiceStatus") != null) {
+            return normalizeInvoiceStatus(String.valueOf(lines.get("invoiceStatus")));
+        }
+        Optional<Booking> bookingOpt = bookingRepository.findByIdWithItems(bookingId);
+        if (bookingOpt.isEmpty()) {
+            return "DRAFT";
+        }
+        Booking booking = bookingOpt.get();
+        if (booking.getStatus() != null && booking.getStatus().name().contains("CANCEL")) {
+            return "CANCELLED";
+        }
+        if (booking.getItems() == null || booking.getItems().isEmpty()) {
+            return "DRAFT";
+        }
+        List<?> activeRooms = booking.getItems().stream()
+                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
+                .toList();
+        if (activeRooms.isEmpty()) {
+            return "CANCELLED";
+        }
+        boolean allCheckedOut = booking.getItems().stream()
+                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
+                .allMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT);
+        boolean anyCheckedOut = booking.getItems().stream()
+                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
+                .anyMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT);
+        if (allCheckedOut) {
+            return "COMPLETED";
+        }
+        if (anyCheckedOut) {
+            return "PARTIAL";
+        }
+        return "DRAFT";
+    }
+
+    private String normalizeInvoiceStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "DRAFT";
+        }
+        String normalized = status.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("PARTIAL_CHECKOUT".equals(normalized) || "PARTIALLY_CHECKED_OUT".equals(normalized)) {
+            return "PARTIAL";
+        }
+        if ("CHECKED_OUT".equals(normalized)) {
+            return "COMPLETED";
+        }
+        return normalized;
+    }
+
+    private String resolvePaymentStatus(Long bookingId, Map<String, Object> lines) {
+        if (lines != null && lines.get("paymentStatus") != null) {
+            return String.valueOf(lines.get("paymentStatus")).trim().toUpperCase(java.util.Locale.ROOT);
+        }
+        BigDecimal paid = lines != null ? firstNonZero(lines, "totalAllocatedPaidAmount", "amountPaid") : BigDecimal.ZERO;
+        BigDecimal remaining = lines != null ? toBigDecimal(lines.get("remainingBalance")) : BigDecimal.ZERO;
+        BigDecimal refund = lines != null
+                ? firstNonZero(lines, "totalRefundToCustomer", "refundSettlementAmount")
+                : BigDecimal.ZERO;
+        boolean hasPendingRefund = refundTransactionRepository.findFirstByBookingId(bookingId)
+                .map(refundTransaction -> refundTransaction.getStatus() != null
+                        && List.of(
+                                iuh.fit.hotelsystem_booking.entity.RefundStatus.PENDING,
+                                iuh.fit.hotelsystem_booking.entity.RefundStatus.ASSIGNED,
+                                iuh.fit.hotelsystem_booking.entity.RefundStatus.PROCESSING,
+                                iuh.fit.hotelsystem_booking.entity.RefundStatus.APPROVED)
+                        .contains(refundTransaction.getStatus()))
+                .orElse(false);
+        if (hasPendingRefund || refund.compareTo(BigDecimal.ZERO) > 0) {
+            return "PENDING_REFUND";
+        }
+        if (paid.compareTo(BigDecimal.ZERO) == 0) {
+            return "UNPAID";
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            return "PARTIALLY_PAID";
+        }
+        return "PAID";
     }
 
     private BigDecimal firstNonZero(Map<?, ?> map, String primaryKey, String fallbackKey) {

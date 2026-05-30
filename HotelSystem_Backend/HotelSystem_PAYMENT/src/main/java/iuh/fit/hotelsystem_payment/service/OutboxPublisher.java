@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class OutboxPublisher {
@@ -41,9 +42,9 @@ public class OutboxPublisher {
         for (OutboxEvent e : pending) {
             try {
                 String routingKey = e.getType();
-                if (e.getHeaders() != null && !e.getHeaders().isBlank()) {
+                Map<String, Object> headers = e.getHeaders();
+                if (headers != null && !headers.isEmpty()) {
                     try {
-                        java.util.Map<String, Object> headers = new com.fasterxml.jackson.databind.ObjectMapper().readValue(e.getHeaders(), java.util.Map.class);
                         org.springframework.amqp.core.MessagePostProcessor mpp = msg -> {
                             org.springframework.amqp.core.MessageProperties props = msg.getMessageProperties();
                             headers.forEach((k, v) -> props.setHeader(k, v));

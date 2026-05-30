@@ -283,9 +283,9 @@ public class BookingService {
                 try {
                     String correlation = MDC.get("X-Correlation-Id");
                     if (correlation != null && !correlation.isBlank()) {
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        java.util.Map<String, Object> headers = new java.util.HashMap<>();
                         headers.put("X-Correlation-Id", correlation);
-                        out.setHeaders(om.writeValueAsString(headers));
+                        out.setHeaders(headers);
                     }
                 } catch (Exception ignored) {}
                 outboxEventRepository.save(out);
@@ -307,8 +307,9 @@ public class BookingService {
 
     @Transactional
     public Booking createBooking(BookingCreateRequest request, String idempotencyKey) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            String idempotencyRedisKey = "idem:booking:create:" + idempotencyKey;
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey != null && redisTemplate != null) {
+            String idempotencyRedisKey = "idem:booking:create:" + normalizedIdempotencyKey;
             String cachedBookingId = redisTemplate.opsForValue().get(idempotencyRedisKey);
             if (cachedBookingId != null && !cachedBookingId.isBlank()) {
                 try {
@@ -319,16 +320,22 @@ public class BookingService {
             }
         }
 
-        List<String> lockKeys = request.getRooms() == null ? List.of() : request.getRooms().stream()
-                .map(BookingCreateRequest.RoomBookingRequest::getRoomId)
-                .filter(java.util.Objects::nonNull)
-                .distinct()
-                .sorted()
-                .map(roomId -> "lock:booking:room:" + roomId + ":" + request.getCheckIn() + ":" + request.getCheckOut())
+        if (request == null || request.getRooms() == null || request.getRooms().isEmpty()) {
+            throw new IllegalArgumentException("Booking must contain at least one room");
+        }
+        if (request.getCheckIn() == null || request.getCheckOut() == null) {
+            throw new IllegalArgumentException("checkIn and checkOut are required");
+        }
+
+        List<String> lockKeys = request.getRooms().stream()
+                .map(room -> buildBookingLockKey(room, request.getCheckIn(), request.getCheckOut()))
                 .toList();
 
         List<java.util.Map.Entry<String, String>> acquired = new java.util.ArrayList<>();
-        for (String lockKey : lockKeys) {
+        for (String lockKey : lockKeys.stream().distinct().sorted().toList()) {
+            if (redisLockService == null) {
+                throw new IllegalStateException("Redis distributed lock is not configured");
+            }
             String token = redisLockService.tryAcquire(
                     lockKey,
                     Duration.ofMillis(lockWaitMs),
@@ -399,8 +406,8 @@ public class BookingService {
         saved.setTotalGuests(savedGuests.size());
         Booking persisted = attachGuestsToItems(bookingRepository.save(saved));
 
-        if (idempotencyKey != null && !idempotencyKey.isBlank() && persisted.getId() != null) {
-            String idempotencyRedisKey = "idem:booking:create:" + idempotencyKey;
+        if (normalizedIdempotencyKey != null && redisTemplate != null && persisted.getId() != null) {
+            String idempotencyRedisKey = "idem:booking:create:" + normalizedIdempotencyKey;
             redisTemplate.opsForValue().set(
                     idempotencyRedisKey,
                     String.valueOf(persisted.getId()),
@@ -415,6 +422,19 @@ public class BookingService {
                 redisLockService.release(held.getKey(), held.getValue());
             }
         }
+    }
+
+    private String buildBookingLockKey(BookingCreateRequest.RoomBookingRequest room, LocalDate checkIn, LocalDate checkOut) {
+        if (room == null) {
+            throw new IllegalArgumentException("Room booking item is required");
+        }
+        if (room.getRoomId() != null) {
+            return "lock:booking:room:" + room.getRoomId() + ":" + checkIn + ":" + checkOut;
+        }
+        if (room.getRoomTypeId() != null) {
+            return "lock:booking:room-type:" + room.getRoomTypeId() + ":" + checkIn + ":" + checkOut;
+        }
+        throw new IllegalArgumentException("roomId or roomTypeId is required for booking lock");
     }
 
     public Booking getBooking(Long id) {
@@ -995,6 +1015,14 @@ public class BookingService {
         return value == null ? "" : value.trim();
     }
 
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null) {
+            return null;
+        }
+        String normalized = idempotencyKey.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
     private boolean isBookingPaidForCheckIn(Booking booking, PaymentStatusResponse paymentStatus) {
         if (booking == null || booking.getStatus() == null) {
             return false;
@@ -1107,9 +1135,9 @@ public class BookingService {
             try {
                 String correlation = MDC.get("X-Correlation-Id");
                 if (correlation != null && !correlation.isBlank()) {
-                    java.util.Map<String, String> headers = new java.util.HashMap<>();
+                    java.util.Map<String, Object> headers = new java.util.HashMap<>();
                     headers.put("X-Correlation-Id", correlation);
-                    out.setHeaders(om.writeValueAsString(headers));
+                    out.setHeaders(headers);
                 }
             } catch (Exception ignored) {}
             outboxEventRepository.save(out);

@@ -22,4 +22,6 @@ public class InvoiceSummaryDto {
     private long paidInvoiceCount;
     private long unpaidInvoiceCount;
     private long partiallyPaidInvoiceCount;
+    private long partialInvoiceCount;
+    private long completedInvoiceCount;
 }

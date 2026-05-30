@@ -23,7 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -58,19 +58,22 @@ public class VNPayService {
     private final BookingServiceClient bookingServiceClient;
     private final RestTemplate restTemplate;
     private final OutboxEventRepository outboxEventRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public VNPayService(PaymentRepository paymentRepository,
                         RabbitTemplate rabbitTemplate,
                         VNPayConfig vnPayConfig,
                         BookingServiceClient bookingServiceClient,
                         RestTemplateBuilder restTemplateBuilder,
-                        OutboxEventRepository outboxEventRepository) {
+                        OutboxEventRepository outboxEventRepository,
+                        TransactionTemplate transactionTemplate) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.vnPayConfig = vnPayConfig;
         this.bookingServiceClient = bookingServiceClient;
         this.restTemplate = restTemplateBuilder.build();
         this.outboxEventRepository = outboxEventRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     public VNPayRefundResult refund(String transactionRef,
@@ -260,14 +263,13 @@ public class VNPayService {
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {
-        return processCallback(inputParams, false);
+        return transactionTemplate.execute(status -> processCallback(inputParams, false));
     }
 
     public Map<String, String> handleIpn(Map<String, String> inputParams) {
-        return processCallback(inputParams, true);
+        return transactionTemplate.execute(status -> processCallback(inputParams, true));
     }
 
-    @Transactional
     private Map<String, String> processCallback(Map<String, String> inputParams, boolean ipnMode) {
         Map<String, String> response = new HashMap<>();
 
@@ -353,9 +355,9 @@ public class VNPayService {
                 try {
                     String correlation = org.slf4j.MDC.get("X-Correlation-Id");
                     if (correlation != null && !correlation.isBlank()) {
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        java.util.Map<String, Object> headers = new java.util.HashMap<>();
                         headers.put("X-Correlation-Id", correlation);
-                        out.setHeaders(om.writeValueAsString(headers));
+                        out.setHeaders(headers);
                     }
                 } catch (Exception ignored) {}
                 outboxEventRepository.save(out);
@@ -376,9 +378,9 @@ public class VNPayService {
                 try {
                     String correlation = org.slf4j.MDC.get("X-Correlation-Id");
                     if (correlation != null && !correlation.isBlank()) {
-                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        java.util.Map<String, Object> headers = new java.util.HashMap<>();
                         headers.put("X-Correlation-Id", correlation);
-                        out.setHeaders(om.writeValueAsString(headers));
+                        out.setHeaders(headers);
                     }
                 } catch (Exception ignored) {}
                 outboxEventRepository.save(out);

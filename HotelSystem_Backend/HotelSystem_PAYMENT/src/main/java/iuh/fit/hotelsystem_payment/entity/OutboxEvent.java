@@ -1,7 +1,11 @@
 package iuh.fit.hotelsystem_payment.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "outbox_event")
@@ -23,8 +27,9 @@ public class OutboxEvent {
     @Column(name = "payload", columnDefinition = "TEXT", nullable = false)
     private String payload;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "headers", columnDefinition = "jsonb")
-    private String headers;
+    private Map<String, Object> headers;
 
     @Column(name = "occurred_at", nullable = false)
     private LocalDateTime occurredAt = LocalDateTime.now();
@@ -47,8 +52,8 @@ public class OutboxEvent {
     public void setType(String type) { this.type = type; }
     public String getPayload() { return payload; }
     public void setPayload(String payload) { this.payload = payload; }
-    public String getHeaders() { return headers; }
-    public void setHeaders(String headers) { this.headers = headers; }
+    public Map<String, Object> getHeaders() { return headers; }
+    public void setHeaders(Map<String, Object> headers) { this.headers = headers; }
     public LocalDateTime getOccurredAt() { return occurredAt; }
     public void setOccurredAt(LocalDateTime occurredAt) { this.occurredAt = occurredAt; }
     public boolean isProcessed() { return processed; }

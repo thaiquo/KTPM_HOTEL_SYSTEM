@@ -21,8 +21,14 @@ public class BookingInvoice {
 
     private String currency;
 
-    @Lob
+    @Column(name = "lines_json", columnDefinition = "TEXT")
     private String linesJson;
+
+    private String invoiceCode;
+    private String invoiceStatus;
+    private String paymentStatus;
+    private String customerName;
+    private String customerPhone;
 
     // Denormalized aggregates for fast search/statistics (kept in sync when merging invoices)
     private BigDecimal totalOriginalAmount;
@@ -49,6 +55,21 @@ public class BookingInvoice {
 
     public String getLinesJson() { return linesJson; }
     public void setLinesJson(String linesJson) { this.linesJson = linesJson; }
+
+    public String getInvoiceCode() { return invoiceCode; }
+    public void setInvoiceCode(String invoiceCode) { this.invoiceCode = invoiceCode; }
+
+    public String getInvoiceStatus() { return invoiceStatus; }
+    public void setInvoiceStatus(String invoiceStatus) { this.invoiceStatus = invoiceStatus; }
+
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+
+    public String getCustomerName() { return customerName; }
+    public void setCustomerName(String customerName) { this.customerName = customerName; }
+
+    public String getCustomerPhone() { return customerPhone; }
+    public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
 
     public BigDecimal getTotalOriginalAmount() { return totalOriginalAmount; }
     public void setTotalOriginalAmount(BigDecimal totalOriginalAmount) { this.totalOriginalAmount = totalOriginalAmount; }

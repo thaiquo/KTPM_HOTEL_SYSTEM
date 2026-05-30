@@ -27,6 +27,8 @@ public class SchemaConstraintUpdater {
 
     @PostConstruct
     public void updateBookingStatusCheckConstraint() {
+        updateBookingInvoiceLinesJsonColumn();
+
         try {
             String allowed = Arrays.stream(BookingStatus.values())
                     .map(Enum::name)
@@ -51,6 +53,15 @@ public class SchemaConstraintUpdater {
             log.info("Updated refund_transactions_status_check with allowed statuses: {}", allowedRefundStatuses);
         } catch (Exception ex) {
             log.warn("Skip updating refund_transactions_status_check due to error: {}", ex.getMessage());
+        }
+    }
+
+    private void updateBookingInvoiceLinesJsonColumn() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS booking_invoices ALTER COLUMN lines_json TYPE TEXT USING lines_json::TEXT");
+            log.info("Updated booking_invoices.lines_json column to TEXT");
+        } catch (Exception ex) {
+            log.warn("Skip updating booking_invoices.lines_json column due to error: {}", ex.getMessage());
         }
     }
 }

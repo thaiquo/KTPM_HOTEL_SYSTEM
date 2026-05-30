@@ -16,7 +16,9 @@ import java.util.List;
     @Index(name = "idx_booking_items_room_type_id",  columnList = "roomTypeId"),
     @Index(name = "idx_booking_items_status",        columnList = "status"),
     @Index(name = "idx_booking_items_check_in",      columnList = "checkIn"),
-    @Index(name = "idx_booking_items_check_out",     columnList = "checkOut")
+    @Index(name = "idx_booking_items_check_out",     columnList = "checkOut"),
+    @Index(name = "idx_booking_items_room_dates",    columnList = "roomId, checkIn, checkOut"),
+    @Index(name = "idx_booking_items_type_dates",    columnList = "roomTypeId, checkIn, checkOut")
 })
 @Getter
 @Setter

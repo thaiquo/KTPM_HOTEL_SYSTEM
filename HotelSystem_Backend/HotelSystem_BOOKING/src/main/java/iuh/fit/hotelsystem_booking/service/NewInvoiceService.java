@@ -2,10 +2,18 @@ package iuh.fit.hotelsystem_booking.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
+import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
+import iuh.fit.hotelsystem_booking.client.UserServiceClient;
+import iuh.fit.hotelsystem_booking.dto.PaymentTransactionDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.*;
+import iuh.fit.hotelsystem_booking.dto.Room;
+import iuh.fit.hotelsystem_booking.dto.UserProfileDto;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingInvoice;
+import iuh.fit.hotelsystem_booking.entity.BookingItem;
+import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingGuestRepository;
@@ -39,6 +47,9 @@ public class NewInvoiceService {
     private final BookingRepository bookingRepository;
     private final BookingGuestRepository guestRepository;
     private final RefundTransactionRepository refundRepository;
+    private final PaymentServiceClient paymentServiceClient;
+    private final UserServiceClient userServiceClient;
+    private final RoomServiceClient roomServiceClient;
     private final ObjectMapper objectMapper;
     private final jakarta.persistence.EntityManager entityManager;
 
@@ -48,6 +59,7 @@ public class NewInvoiceService {
             LocalDate specificDate, LocalDate fromDate, LocalDate toDate,
             List<String> invoiceStatuses, String paymentStatus,
             int page, int size) {
+        invoiceStatuses = normalizeStatusFilters(invoiceStatuses);
 
         // 1. Resolve date range
         LocalDate effectiveFrom = specificDate != null ? specificDate : fromDate;
@@ -88,6 +100,7 @@ public class NewInvoiceService {
 
             if (finalInvoiceStatuses != null && !finalInvoiceStatuses.isEmpty() && !finalInvoiceStatuses.contains("ALL")) {
                 List<Predicate> invoiceStatusPredicates = new ArrayList<>();
+                invoiceStatusPredicates.add(root.get("invoiceStatus").in(finalInvoiceStatuses));
                 if (finalInvoiceStatuses.contains("CANCELLED")) {
                     List<Long> cancelledBookingIds = bookingRepository.findByStatusOrderByCheckInDesc(BookingStatus.CANCELLED)
                             .stream()
@@ -166,35 +179,7 @@ public class NewInvoiceService {
                 .map(inv -> mapToListDto(inv, bookingMap.get(inv.getBookingId()), guestMap.get(inv.getBookingId())))
                 .collect(Collectors.toList());
 
-        // 6. Aggregate summary across ALL matching invoices using Criteria API on denormalized columns
-        // (faster than loading JSON payloads for thousands of rows)
-        var cb = entityManager.getCriteriaBuilder();
-        var cq = cb.createTupleQuery();
-        var root = cq.from(BookingInvoice.class);
-        Predicate predicate = spec.toPredicate(root, cq, cb);
-        cq.multiselect(
-                cb.coalesce(cb.sum(root.get("totalOriginalAmount")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("totalAllocatedPaidAmount")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("totalActualRevenue")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("totalEarlyCheckoutRefund")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("totalRefundToCustomer")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("totalAdditionalCharge")), cb.literal(BigDecimal.ZERO)),
-                cb.coalesce(cb.sum(root.get("remainingBalance")), cb.literal(BigDecimal.ZERO)),
-                cb.count(root)
-        );
-        if (predicate != null) cq.where(predicate);
-        var tuple = entityManager.createQuery(cq).getSingleResult();
-
-        InvoiceSummaryDto summary = new InvoiceSummaryDto();
-        summary.setTotalInvoices(((Number) tuple.get(7)).intValue());
-        summary.setGrossInvoiceAmount((BigDecimal) tuple.get(0));
-        summary.setTotalPaidAmount((BigDecimal) tuple.get(1));
-        summary.setTotalActualRevenue((BigDecimal) tuple.get(2));
-        summary.setTotalEarlyCheckoutRefund((BigDecimal) tuple.get(3));
-        summary.setTotalRefundAmount((BigDecimal) tuple.get(4));
-        summary.setTotalAdditionalCharge((BigDecimal) tuple.get(5));
-        summary.setTotalRemainingAmount((BigDecimal) tuple.get(6));
-        summary.setTotalRemainingToPay((BigDecimal) tuple.get(6));
+        InvoiceSummaryDto summary = buildSummary(invoiceRepository.findAll(spec), bookingMap);
 
         InvoiceSearchResponseDto response = new InvoiceSearchResponseDto();
         response.setContent(content);
@@ -224,17 +209,11 @@ public class NewInvoiceService {
             dto.setCustomerPhone(g.getPhone());
         }
 
-        // Parse JSON safely
-        BigDecimal gross = BigDecimal.ZERO;
-        BigDecimal refunds = BigDecimal.ZERO;
-        BigDecimal paid = BigDecimal.ZERO;
+        InvoiceFinancials financials = readFinancials(inv);
 
         try {
             Map<String, Object> linesMap = objectMapper.readValue(inv.getLinesJson(), new TypeReference<>() {});
-            gross = getBd(linesMap, "totalOriginalAmount", inv.getAmount());
-            refunds = getBd(linesMap, "totalEarlyCheckoutRefund", getBd(linesMap, "earlyCheckoutRefund", BigDecimal.ZERO));
-            paid = getBd(linesMap, "amountPaid", inv.getAmount());
-            
+
             // Build room numbers string
             List<Map<String,Object>> roomSummaries = (List<Map<String,Object>>) linesMap.get("roomSummaries");
             if (roomSummaries != null) {
@@ -245,20 +224,16 @@ public class NewInvoiceService {
                 dto.setRoomNumbers(rooms);
             }
         } catch (Exception e) {
-            gross = inv.getAmount() != null ? inv.getAmount() : BigDecimal.ZERO;
-            paid = gross;
         }
 
-        BigDecimal net = gross.subtract(refunds).max(BigDecimal.ZERO);
-        BigDecimal remaining = net.subtract(paid).max(BigDecimal.ZERO);
-        
-        dto.setGrossInvoiceAmount(gross);
-        dto.setTotalRefundAmount(refunds);
-        dto.setNetRevenue(net);
-        dto.setPaidAmount(paid);
-        dto.setRemainingAmount(remaining);
-        dto.setInvoiceStatus(resolveInvoiceStatus(b, paid, remaining, refunds));
-        dto.setPaymentStatus(resolvePaymentStatus(paid, remaining, refunds));
+        dto.setGrossInvoiceAmount(financials.grossOriginal);
+        dto.setTotalRefundAmount(financials.refundToCustomer);
+        dto.setNetRevenue(financials.netRevenue);
+        dto.setPaidAmount(financials.paid);
+        dto.setRemainingAmount(financials.remainingToPay);
+        dto.setInvoiceStatus(resolveInvoiceStatus(inv, b));
+        dto.setStatus(b != null && b.getStatus() != null ? b.getStatus().name() : null);
+        dto.setPaymentStatus(resolvePaymentStatus(inv, financials));
 
         return dto;
     }
@@ -304,6 +279,164 @@ public class NewInvoiceService {
         } catch (Exception e) {
             return defaultVal;
         }
+    }
+
+    private List<String> normalizeStatusFilters(List<String> statuses) {
+        if (statuses == null || statuses.isEmpty()) {
+            return statuses;
+        }
+        return statuses.stream()
+                .filter(Objects::nonNull)
+                .flatMap(status -> Arrays.stream(status.split(",")))
+                .map(String::trim)
+                .filter(status -> !status.isBlank())
+                .map(status -> {
+                    String normalized = status.toUpperCase(Locale.ROOT);
+                    if ("PARTIAL_CHECKOUT".equals(normalized) || "PARTIALLY_CHECKED_OUT".equals(normalized)) {
+                        return "PARTIAL";
+                    }
+                    if ("CHECKED_OUT".equals(normalized)) {
+                        return "COMPLETED";
+                    }
+                    return normalized;
+                })
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private InvoiceFinancials readFinancials(BookingInvoice inv) {
+        InvoiceFinancials f = new InvoiceFinancials();
+        f.grossOriginal = safe(inv != null ? inv.getTotalOriginalAmount() : null);
+        f.paid = safe(inv != null ? inv.getTotalAllocatedPaidAmount() : null);
+        f.actualRoomRevenue = safe(inv != null ? inv.getTotalActualRevenue() : null);
+        f.earlyCheckoutRefund = safe(inv != null ? inv.getTotalEarlyCheckoutRefund() : null);
+        f.additionalCharge = safe(inv != null ? inv.getTotalAdditionalCharge() : null);
+        f.refundToCustomer = safe(inv != null ? inv.getTotalRefundToCustomer() : null);
+        f.remainingToPay = safe(inv != null ? inv.getRemainingBalance() : null).max(BigDecimal.ZERO);
+        f.netRevenue = safe(inv != null ? inv.getAmount() : null);
+
+        try {
+            Map<String, Object> m = objectMapper.readValue(inv.getLinesJson(), new TypeReference<>() {});
+            f.grossOriginal = firstNonZero(f.grossOriginal, getBd(m, "totalOriginalAmount", BigDecimal.ZERO), getBd(m, "roomCharge", BigDecimal.ZERO));
+            f.actualRoomRevenue = firstNonZero(f.actualRoomRevenue, getBd(m, "actualRoomCharge", BigDecimal.ZERO), getBd(m, "totalActualRevenue", BigDecimal.ZERO));
+            f.serviceTotal = getBd(m, "serviceTotal", BigDecimal.ZERO)
+                    .add(getBd(m, "roomServiceFeeTotal", getBd(m, "manualServiceTotal", BigDecimal.ZERO)));
+            f.damageTotal = getBd(m, "damageFeeTotal", BigDecimal.ZERO);
+            f.additionalCharge = firstNonZero(f.additionalCharge,
+                    getBd(m, "totalAdditionalCharge", BigDecimal.ZERO),
+                    getBd(m, "manualSurchargeTotal", BigDecimal.ZERO).add(getBd(m, "lateCheckoutFeeTotal", BigDecimal.ZERO)));
+            f.earlyCheckoutRefund = firstNonZero(f.earlyCheckoutRefund,
+                    getBd(m, "totalEarlyCheckoutRefund", BigDecimal.ZERO),
+                    getBd(m, "earlyCheckoutRefund", BigDecimal.ZERO));
+            f.refundToCustomer = firstNonZero(f.refundToCustomer,
+                    getBd(m, "totalRefundToCustomer", BigDecimal.ZERO),
+                    getBd(m, "refundSettlementAmount", BigDecimal.ZERO));
+            f.paid = firstNonZero(f.paid,
+                    getBd(m, "totalAllocatedPaidAmount", BigDecimal.ZERO),
+                    getBd(m, "amountPaid", BigDecimal.ZERO));
+            f.netRevenue = firstNonZero(f.netRevenue,
+                    getBd(m, "grandTotal", BigDecimal.ZERO),
+                    f.actualRoomRevenue.add(f.serviceTotal).add(f.damageTotal).add(f.additionalCharge));
+            f.remainingToPay = getBd(m, "remainingBalance", f.netRevenue.subtract(f.paid)).max(BigDecimal.ZERO);
+        } catch (Exception ignored) {
+        }
+        if (f.netRevenue.compareTo(BigDecimal.ZERO) == 0) {
+            f.netRevenue = f.grossOriginal.subtract(f.earlyCheckoutRefund).add(f.serviceTotal).add(f.damageTotal).add(f.additionalCharge).max(BigDecimal.ZERO);
+        }
+        return f;
+    }
+
+    private BigDecimal firstNonZero(BigDecimal... values) {
+        if (values == null) {
+            return BigDecimal.ZERO;
+        }
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) != 0) {
+                return value;
+            }
+        }
+        return values.length > 0 && values[0] != null ? values[0] : BigDecimal.ZERO;
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private InvoiceSummaryDto buildSummary(List<BookingInvoice> invoices, Map<Long, Booking> pageBookingMap) {
+        InvoiceSummaryDto summary = new InvoiceSummaryDto();
+        if (invoices == null || invoices.isEmpty()) {
+            return summary;
+        }
+        summary.setTotalInvoices(invoices.size());
+        for (BookingInvoice inv : invoices) {
+            InvoiceFinancials f = readFinancials(inv);
+            summary.setGrossInvoiceAmount(summary.getGrossInvoiceAmount().add(f.grossOriginal));
+            summary.setTotalPaidAmount(summary.getTotalPaidAmount().add(f.paid));
+            summary.setTotalActualRevenue(summary.getTotalActualRevenue().add(f.netRevenue));
+            summary.setNetRevenue(summary.getNetRevenue().add(f.netRevenue));
+            summary.setTotalEarlyCheckoutRefund(summary.getTotalEarlyCheckoutRefund().add(f.earlyCheckoutRefund));
+            summary.setTotalRefundAmount(summary.getTotalRefundAmount().add(f.refundToCustomer));
+            summary.setTotalAdditionalCharge(summary.getTotalAdditionalCharge().add(f.additionalCharge.add(f.damageTotal)));
+            summary.setTotalRemainingAmount(summary.getTotalRemainingAmount().add(f.remainingToPay));
+            summary.setTotalRemainingToPay(summary.getTotalRemainingToPay().add(f.remainingToPay));
+
+            RefundAmounts refunds = readRefundAmounts(inv.getBookingId());
+            summary.setTotalRefundedAmount(summary.getTotalRefundedAmount().add(refunds.completed));
+            summary.setTotalPendingRefundAmount(summary.getTotalPendingRefundAmount().add(refunds.pending));
+            if (refunds.completed.compareTo(BigDecimal.ZERO) > 0 || f.refundToCustomer.compareTo(BigDecimal.ZERO) > 0) {
+                summary.setRefundedInvoiceCount(summary.getRefundedInvoiceCount() + 1);
+            }
+            Booking booking = pageBookingMap != null ? pageBookingMap.get(inv.getBookingId()) : null;
+            String invoiceStatus = resolveInvoiceStatus(inv, booking);
+            if ("COMPLETED".equals(invoiceStatus)) {
+                summary.setPaidInvoiceCount(summary.getPaidInvoiceCount() + 1);
+                summary.setCompletedInvoiceCount(summary.getCompletedInvoiceCount() + 1);
+            } else if ("PARTIAL".equals(invoiceStatus)) {
+                summary.setPartiallyPaidInvoiceCount(summary.getPartiallyPaidInvoiceCount() + 1);
+                summary.setPartialInvoiceCount(summary.getPartialInvoiceCount() + 1);
+            } else if ("DRAFT".equals(invoiceStatus)) {
+                summary.setUnpaidInvoiceCount(summary.getUnpaidInvoiceCount() + 1);
+            }
+        }
+        return summary;
+    }
+
+    private RefundAmounts readRefundAmounts(Long bookingId) {
+        RefundAmounts amounts = new RefundAmounts();
+        if (bookingId == null) {
+            return amounts;
+        }
+        for (RefundTransaction refund : refundRepository.findByBookingIdOrderByCreatedAtDesc(bookingId)) {
+            BigDecimal amount = refund.getAmount() != null ? BigDecimal.valueOf(refund.getAmount()) : BigDecimal.ZERO;
+            if (refund.getStatus() == null) {
+                continue;
+            }
+            switch (refund.getStatus()) {
+                case COMPLETED, REFUNDED, SUCCESS -> amounts.completed = amounts.completed.add(amount);
+                case PENDING, ASSIGNED, PROCESSING, APPROVED -> amounts.pending = amounts.pending.add(amount);
+                default -> {
+                }
+            }
+        }
+        return amounts;
+    }
+
+    private static class InvoiceFinancials {
+        private BigDecimal grossOriginal = BigDecimal.ZERO;
+        private BigDecimal paid = BigDecimal.ZERO;
+        private BigDecimal actualRoomRevenue = BigDecimal.ZERO;
+        private BigDecimal serviceTotal = BigDecimal.ZERO;
+        private BigDecimal damageTotal = BigDecimal.ZERO;
+        private BigDecimal additionalCharge = BigDecimal.ZERO;
+        private BigDecimal earlyCheckoutRefund = BigDecimal.ZERO;
+        private BigDecimal refundToCustomer = BigDecimal.ZERO;
+        private BigDecimal remainingToPay = BigDecimal.ZERO;
+        private BigDecimal netRevenue = BigDecimal.ZERO;
+    }
+
+    private static class RefundAmounts {
+        private BigDecimal completed = BigDecimal.ZERO;
+        private BigDecimal pending = BigDecimal.ZERO;
     }
 
     private InvoiceSearchResponseDto emptySearchResponse(int page, int size) {
@@ -354,45 +487,50 @@ public class NewInvoiceService {
         return new ArrayList<>(ids);
     }
 
-    private boolean filterByInvoiceStatus(InvoiceListDto dto, List<String> invoiceStatuses, String paymentStatus) {
-        if (dto == null) {
-            return false;
+    private String resolveInvoiceStatus(BookingInvoice inv, Booking booking) {
+        if (inv != null && inv.getInvoiceStatus() != null && !inv.getInvoiceStatus().isBlank()) {
+            return normalizeStatusFilters(List.of(inv.getInvoiceStatus())).stream().findFirst().orElse("DRAFT");
         }
-        if (invoiceStatuses != null && !invoiceStatuses.isEmpty() && !invoiceStatuses.contains("ALL")) {
-            String actualInvoiceStatus = dto.getInvoiceStatus() != null ? dto.getInvoiceStatus() : "DRAFT";
-            if (!invoiceStatuses.contains(actualInvoiceStatus)) {
-                return false;
-            }
+        Booking effectiveBooking = booking;
+        if (effectiveBooking == null && inv != null && inv.getBookingId() != null) {
+            effectiveBooking = bookingRepository.findByIdWithItems(inv.getBookingId()).orElse(null);
         }
-        if (paymentStatus != null && !paymentStatus.isBlank() && !"ALL".equalsIgnoreCase(paymentStatus)) {
-            if (dto.getPaymentStatus() == null || !paymentStatus.equalsIgnoreCase(dto.getPaymentStatus())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private String resolveInvoiceStatus(Booking booking, BigDecimal paid, BigDecimal remaining, BigDecimal refundAmount) {
-        if (booking != null && booking.getStatus() != null && booking.getStatus().name().contains("CANCEL")) {
+        if (effectiveBooking != null && effectiveBooking.getStatus() != null && effectiveBooking.getStatus().name().contains("CANCEL")) {
             return "CANCELLED";
         }
-        if (paid.compareTo(BigDecimal.ZERO) == 0) {
+        if (effectiveBooking == null || effectiveBooking.getItems() == null || effectiveBooking.getItems().isEmpty()) {
             return "DRAFT";
         }
-        if (remaining.compareTo(BigDecimal.ZERO) > 0 || refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+        List<BookingItem> activeRooms = effectiveBooking.getItems().stream()
+                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
+                .toList();
+        if (activeRooms.isEmpty()) {
+            return "CANCELLED";
+        }
+        if (activeRooms.stream().allMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
+            return "COMPLETED";
+        }
+        if (activeRooms.stream().anyMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
             return "PARTIAL";
         }
-        return "COMPLETED";
+        return "DRAFT";
     }
 
-    private String resolvePaymentStatus(BigDecimal paid, BigDecimal remaining, BigDecimal refundAmount) {
-        if (refundAmount.compareTo(BigDecimal.ZERO) > 0 && remaining.compareTo(BigDecimal.ZERO) == 0 && paid.compareTo(BigDecimal.ZERO) > 0) {
+    private String resolvePaymentStatus(BookingInvoice inv, InvoiceFinancials financials) {
+        if (inv != null && inv.getPaymentStatus() != null && !inv.getPaymentStatus().isBlank()) {
+            return inv.getPaymentStatus();
+        }
+        RefundAmounts refunds = readRefundAmounts(inv != null ? inv.getBookingId() : null);
+        if (refunds.pending.compareTo(BigDecimal.ZERO) > 0 || financials.refundToCustomer.compareTo(BigDecimal.ZERO) > 0) {
+            return "PENDING_REFUND";
+        }
+        if (refunds.completed.compareTo(BigDecimal.ZERO) > 0) {
             return "REFUNDED";
         }
-        if (paid.compareTo(BigDecimal.ZERO) == 0) {
+        if (financials.paid.compareTo(BigDecimal.ZERO) == 0) {
             return "UNPAID";
         }
-        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+        if (financials.remainingToPay.compareTo(BigDecimal.ZERO) > 0) {
             return "PARTIALLY_PAID";
         }
         return "PAID";
@@ -403,7 +541,8 @@ public class NewInvoiceService {
         BookingInvoice inv = invoiceRepository.findById(invoiceId)
             .orElseThrow(() -> new RuntimeException("Invoice not found"));
             
-        Booking b = bookingRepository.findById(inv.getBookingId()).orElse(null);
+        Booking b = bookingRepository.findByIdWithItems(inv.getBookingId())
+                .orElseGet(() -> bookingRepository.findById(inv.getBookingId()).orElse(null));
         List<BookingGuest> guests = loadGuestsForBooking(inv.getBookingId());
 
         InvoiceDetailResponseDto dto = new InvoiceDetailResponseDto();
@@ -412,6 +551,11 @@ public class NewInvoiceService {
         dto.setBookingId(inv.getBookingId());
         if (b != null) dto.setBookingCode(b.getBookingCode());
         dto.setCreatedAt(inv.getCreatedAt());
+        dto.setInvoiceStatus(resolveInvoiceStatus(inv, b));
+        dto.setStatus(dto.getInvoiceStatus());
+        dto.setBookingStatus(b != null && b.getStatus() != null ? b.getStatus().name() : null);
+        InvoiceFinancials financials = readFinancials(inv);
+        dto.setPaymentStatus(resolvePaymentStatus(inv, financials));
 
         if (!guests.isEmpty()) {
             BookingGuest primary = guests.get(0);
@@ -422,7 +566,7 @@ public class NewInvoiceService {
             dto.setCustomer(c);
         }
 
-            BigDecimal paid = BigDecimal.ZERO;
+            BigDecimal paid = financials.paid;
         try {
             Map<String, Object> m = objectMapper.readValue(inv.getLinesJson(), new TypeReference<>() {});
             
@@ -433,7 +577,11 @@ public class NewInvoiceService {
                 for (Map<String,Object> rs : roomSummaries) {
                     InvoiceDetailResponseDto.RoomBreakdownDto r = new InvoiceDetailResponseDto.RoomBreakdownDto();
                     r.setRoomName("Phòng " + rs.get("roomNumber"));
-                    r.setRoomType((String) rs.get("roomType")); // or derived from another key
+                    r.setRoomCode(rs.get("roomNumber") != null ? String.valueOf(rs.get("roomNumber")) : null);
+                    r.setRoomType(rs.get("roomTypeName") != null ? String.valueOf(rs.get("roomTypeName")) : (String) rs.get("roomType"));
+                    r.setCheckInDate(toLocalDateTime(rs.get("checkInDate")));
+                    r.setPlannedCheckoutDate(toLocalDateTime(rs.get("plannedCheckOutDate")));
+                    r.setActualCheckoutDate(toLocalDateTime(rs.get("actualCheckOutAt")));
                     r.setOriginalAmount(getBd(rs, "roomOriginalAmount", getBd(rs, "roomCharge", BigDecimal.ZERO)));
                     r.setUsedAmount(getBd(rs, "usedRoomAmount", getBd(rs, "usedNightAmount", BigDecimal.ZERO)));
                     r.setUnusedAmount(getBd(rs, "unusedRoomAmount", getBd(rs, "unusedNightAmount", BigDecimal.ZERO)));
@@ -441,13 +589,18 @@ public class NewInvoiceService {
                     r.setHotelKeepAmount(getBd(rs, "hotelKeepAmount", getBd(rs, "hotelPenaltyAmount", BigDecimal.ZERO)));
                     r.setNetRevenue(getBd(rs, "actualRoomRevenue", r.getOriginalAmount().subtract(r.getEarlyCheckoutRefund()).max(BigDecimal.ZERO)));
                     r.setAllocatedPaidAmount(getBd(rs, "allocatedPaidAmount", getBd(rs, "paidAllocated", BigDecimal.ZERO)));
+                    r.setRoomStatus(rs.get("roomStatus") != null ? String.valueOf(rs.get("roomStatus")) : "CHECKED_OUT");
                     rDtoList.add(r);
                 }
             }
+            appendMissingBookingRooms(rDtoList, b, financials.paid);
             dto.setRooms(rDtoList);
 
             // Fetch generic invoice lines
-            List<Map<String,Object>> invoiceLines = (List<Map<String,Object>>) m.get("invoiceLines");
+            List<Map<String,Object>> invoiceLines = (List<Map<String,Object>>) m.get("invoiceItems");
+            if (invoiceLines == null) {
+                invoiceLines = (List<Map<String,Object>>) m.get("invoiceLines");
+            }
             List<InvoiceDetailResponseDto.ServiceChargeDto> svcList = new ArrayList<>();
             List<InvoiceDetailResponseDto.DamageChargeDto> dmgList = new ArrayList<>();
             
@@ -490,49 +643,58 @@ public class NewInvoiceService {
             // Prefer authoritative allocated paid amount stored in snapshot
             paid = getBd(m, "totalAllocatedPaidAmount", getBd(m, "amountPaid", inv.getAmount() != null ? inv.getAmount() : BigDecimal.ZERO));
             
-            rs.setTotalRoomAmount(totalActualRev);
-            rs.setTotalServiceAmount(serviceTotal.add(roomServiceFeeTotal).add(manualSurcharge));
-            rs.setTotalDamageAmount(damageTotal);
-            rs.setGrossInvoiceAmount(gross);
-            rs.setTotalEarlyCheckoutRefundAmount(refundEarly);
-            rs.setTotalActualRevenue(getBd(m, "totalActualRevenue", totalActualRev));
-            rs.setNetRevenue(gross.subtract(refundEarly).max(BigDecimal.ZERO));
-            rs.setRefundToCustomer(getBd(m, "totalRefundToCustomer", BigDecimal.ZERO));
+            rs.setTotalRoomAmount(financials.actualRoomRevenue);
+            rs.setTotalServiceAmount(financials.serviceTotal);
+            rs.setTotalDamageAmount(financials.damageTotal);
+            rs.setGrossInvoiceAmount(financials.grossOriginal);
+            rs.setTotalEarlyCheckoutRefundAmount(financials.earlyCheckoutRefund);
+            rs.setTotalActualRevenue(financials.netRevenue);
+            rs.setNetRevenue(financials.netRevenue);
+            rs.setRefundToCustomer(financials.refundToCustomer);
             rs.setTotalPaidAmount(paid);
-            rs.setTotalAllocatedPaidAmount(getBd(m, "totalAllocatedPaidAmount", paid));
-            rs.setRemainingAmount(rs.getNetRevenue().subtract(paid).max(BigDecimal.ZERO));
-            rs.setAdditionalRefundAmount(getBd(m, "additionalRefundAmount", getBd(m, "refundSettlementAmount", BigDecimal.ZERO)));
-            rs.setAdditionalChargeAmount(getBd(m, "totalAdditionalCharge", BigDecimal.ZERO));
-            rs.setRemainingToPay(rs.getNetRevenue().subtract(paid).max(BigDecimal.ZERO));
+            rs.setTotalAllocatedPaidAmount(paid);
+            rs.setRemainingAmount(financials.remainingToPay);
+            rs.setAdditionalRefundAmount(getBd(m, "additionalRefundAmount", getBd(m, "refundSettlementAmount", financials.refundToCustomer)));
+            rs.setAdditionalChargeAmount(financials.additionalCharge.add(financials.damageTotal));
+            rs.setRemainingToPay(financials.remainingToPay);
 
             dto.setRevenueSummary(rs);
 
             // Try to read checkout staff / processedBy from snapshot JSON if available
             String checkoutStaff = null;
+            Long checkoutStaffId = toLong(m.get("checkoutStaffId"));
+            Long processedByStaffId = toLong(m.get("processedByStaffId"));
+            if (checkoutStaffId != null) {
+                String checkoutStaffName = resolveUserName(checkoutStaffId);
+                dto.setCheckoutStaffId(String.valueOf(checkoutStaffId));
+                dto.setCheckoutStaffName(checkoutStaffName);
+                checkoutStaff = checkoutStaffName != null ? checkoutStaffName : String.valueOf(checkoutStaffId);
+            }
+            if (processedByStaffId != null) {
+                String processedByName = resolveUserName(processedByStaffId);
+                dto.setProcessedByStaffId(String.valueOf(processedByStaffId));
+                dto.setProcessedByName(processedByName);
+                dto.setProcessedBy(processedByName != null ? processedByName : String.valueOf(processedByStaffId));
+            }
             if (m.containsKey("processedBy")) {
                 checkoutStaff = String.valueOf(m.get("processedBy"));
+                dto.setProcessedBy(checkoutStaff);
             } else if (m.containsKey("checkoutStaff")) {
                 checkoutStaff = String.valueOf(m.get("checkoutStaff"));
-            }
-            if ((checkoutStaff == null || checkoutStaff.isBlank()) && b != null && b.getCreatedBy() != null) {
-                checkoutStaff = b.getCreatedBy();
             }
             if (checkoutStaff != null && !checkoutStaff.isBlank()) dto.setCheckoutStaff(checkoutStaff);
             
         } catch (Exception ignored) {
             log.error("Failed to parse invoice json", ignored);
         }
-
-        // Fetch Payments (For now omitted as there is no local Payment entity, mapped from booking.getPaidAmount())
-        List<InvoiceDetailResponseDto.PaymentRecord> pRecords = new ArrayList<>();
-        if (paid.compareTo(BigDecimal.ZERO) > 0) {
-            InvoiceDetailResponseDto.PaymentRecord pr = new InvoiceDetailResponseDto.PaymentRecord();
-            pr.setTime(inv.getCreatedAt()); // approximate
-            pr.setAmount(paid);
-            pr.setMethod(b != null && b.getPaymentType() != null ? b.getPaymentType() : "CASH/TRANSFER");
-            pr.setStatus("SUCCESS");
-            pRecords.add(pr);
+        if (dto.getRooms() == null) {
+            List<InvoiceDetailResponseDto.RoomBreakdownDto> rooms = new ArrayList<>();
+            appendMissingBookingRooms(rooms, b, financials.paid);
+            dto.setRooms(rooms);
         }
+        applyStaffFields(dto, b);
+
+        List<InvoiceDetailResponseDto.PaymentRecord> pRecords = loadPaymentRecords(inv.getBookingId());
         InvoiceDetailResponseDto.PaymentHistorySection phs = new InvoiceDetailResponseDto.PaymentHistorySection();
         phs.setRecords(pRecords);
         dto.setPaymentHistory(phs);
@@ -550,8 +712,17 @@ public class NewInvoiceService {
             java.math.BigDecimal amt = r.getAmount() != null ? java.math.BigDecimal.valueOf(r.getAmount()) : java.math.BigDecimal.ZERO;
             rr.setAmount(amt);
             rr.setReason(r.getReason());
-            rr.setStaff(r.getProcessedBy() != null ? r.getProcessedBy() : "-");
+            String refundStaffName = resolveUserName(r.getProcessedByStaffId());
+            rr.setStaff(refundStaffName != null ? refundStaffName : (r.getProcessedBy() != null ? r.getProcessedBy() : "-"));
             rRecords.add(rr);
+
+            if (dto.getProcessedByStaffId() == null && r.getProcessedByStaffId() != null) {
+                dto.setProcessedByStaffId(String.valueOf(r.getProcessedByStaffId()));
+                dto.setProcessedByName(refundStaffName);
+                dto.setProcessedBy(refundStaffName != null ? refundStaffName : r.getProcessedBy());
+            } else if (dto.getProcessedBy() == null && r.getProcessedBy() != null) {
+                dto.setProcessedBy(r.getProcessedBy());
+            }
 
             if (r.getStatus() != null) {
                 switch (r.getStatus()) {
@@ -585,13 +756,234 @@ public class NewInvoiceService {
             rsSec.setRemainingToPay(rsSec.getRemainingToPay() != null ? rsSec.getRemainingToPay() : rsSec.getRemainingAmount());
             // set top-level fields
             dto.setRefundStatus(refundStatus);
-            if (b != null) {
-                dto.setStatus(b.getStatus() != null ? b.getStatus().name() : null);
-                dto.setPaymentStatus(b.getPaymentStatus());
-            }
         }
 
         return dto;
+    }
+
+    private List<InvoiceDetailResponseDto.PaymentRecord> loadPaymentRecords(Long bookingId) {
+        if (bookingId == null || paymentServiceClient == null) {
+            return Collections.emptyList();
+        }
+        try {
+            List<PaymentTransactionDto> payments = paymentServiceClient.getPaymentsByBooking(bookingId);
+            if (payments == null || payments.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return payments.stream()
+                    .sorted((left, right) -> {
+                        LocalDateTime leftTime = left.getPaidAt() != null ? left.getPaidAt() : left.getCreatedAt();
+                        LocalDateTime rightTime = right.getPaidAt() != null ? right.getPaidAt() : right.getCreatedAt();
+                        if (leftTime == null && rightTime == null) return 0;
+                        if (leftTime == null) return 1;
+                        if (rightTime == null) return -1;
+                        return rightTime.compareTo(leftTime);
+                    })
+                    .map(this::toPaymentRecord)
+                    .collect(Collectors.toList());
+        } catch (Exception ex) {
+            log.warn("Could not load payment history for bookingId={}: {}", bookingId, ex.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private InvoiceDetailResponseDto.PaymentRecord toPaymentRecord(PaymentTransactionDto payment) {
+        InvoiceDetailResponseDto.PaymentRecord record = new InvoiceDetailResponseDto.PaymentRecord();
+        record.setId(payment.getId());
+        record.setTime(payment.getCreatedAt());
+        record.setPaidAt(payment.getPaidAt());
+        BigDecimal amount = BigDecimal.ZERO;
+        if (payment.getPaidAmount() != null && payment.getPaidAmount() > 0) {
+            amount = BigDecimal.valueOf(payment.getPaidAmount());
+        } else if (payment.getAmount() != null) {
+            amount = BigDecimal.valueOf(payment.getAmount());
+        } else if (payment.getTotalAmount() != null) {
+            amount = BigDecimal.valueOf(payment.getTotalAmount());
+        }
+        record.setAmount(amount);
+        record.setMethod(payment.getMethod());
+        record.setStatus(payment.getStatus());
+        record.setPaymentType(payment.getPaymentType());
+        record.setInvoiceCategory(payment.getInvoiceCategory());
+        record.setTransactionId(payment.getTransactionId());
+        record.setPaymentCode(payment.getPaymentCode());
+        record.setVnpTransactionNo(payment.getVnpTransactionNo());
+        record.setPayerName(payment.getPayerName());
+        record.setPayerPhone(payment.getPayerPhone());
+        return record;
+    }
+
+    private void appendMissingBookingRooms(List<InvoiceDetailResponseDto.RoomBreakdownDto> rooms,
+                                           Booking booking,
+                                           BigDecimal totalPaid) {
+        if (rooms == null || booking == null || booking.getItems() == null) {
+            return;
+        }
+        Set<String> existingRoomCodes = rooms.stream()
+                .map(InvoiceDetailResponseDto.RoomBreakdownDto::getRoomCode)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        BigDecimal bookingOriginalTotal = booking.getItems().stream()
+                .filter(item -> item != null && item.getStatus() != BookingItemStatus.CANCELLED)
+                .map(this::calculateRoomOriginalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (BookingItem item : booking.getItems()) {
+            if (item == null || item.getStatus() == BookingItemStatus.CANCELLED) {
+                continue;
+            }
+            Room room = safeRoom(item.getRoomId());
+            String roomCode = room != null ? room.getRoomNumber() : String.valueOf(item.getRoomId());
+            if (existingRoomCodes.contains(roomCode)) {
+                continue;
+            }
+            BigDecimal original = calculateRoomOriginalAmount(item);
+            BigDecimal allocated = bookingOriginalTotal.compareTo(BigDecimal.ZERO) > 0
+                    ? safe(totalPaid).multiply(original).divide(bookingOriginalTotal, 8, java.math.RoundingMode.HALF_UP).setScale(0, java.math.RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            InvoiceDetailResponseDto.RoomBreakdownDto dto = new InvoiceDetailResponseDto.RoomBreakdownDto();
+            dto.setRoomCode(roomCode);
+            dto.setRoomName("Phòng " + roomCode);
+            dto.setRoomType(room != null && room.getRoomType() != null ? room.getRoomType().getType() : null);
+            dto.setCheckInDate(item.getCheckIn() != null ? item.getCheckIn().atStartOfDay() : null);
+            dto.setPlannedCheckoutDate(item.getCheckOut() != null ? item.getCheckOut().atStartOfDay() : null);
+            dto.setActualCheckoutDate(item.getActualCheckOutAt());
+            dto.setOriginalAmount(original);
+            dto.setUsedAmount(BigDecimal.ZERO);
+            dto.setUnusedAmount(BigDecimal.ZERO);
+            dto.setEarlyCheckoutRefund(BigDecimal.ZERO);
+            dto.setHotelKeepAmount(BigDecimal.ZERO);
+            dto.setAllocatedPaidAmount(allocated);
+            dto.setNetRevenue(item.getStatus() == BookingItemStatus.CHECKED_OUT
+                    ? safe(item.getFinalAmount()).max(BigDecimal.ZERO)
+                    : BigDecimal.ZERO);
+            dto.setRoomStatus(item.getStatus() != null ? item.getStatus().name() : null);
+            rooms.add(dto);
+        }
+    }
+
+    private void applyStaffFields(InvoiceDetailResponseDto dto, Booking booking) {
+        if (dto == null || booking == null || booking.getItems() == null) {
+            return;
+        }
+        Set<Long> checkinStaffIds = new LinkedHashSet<>();
+        Set<Long> checkoutStaffIds = new LinkedHashSet<>();
+        LocalDateTime lastCheckoutAt = null;
+        for (BookingItem item : booking.getItems()) {
+            if (item.getCheckedInByStaffId() != null) {
+                checkinStaffIds.add(item.getCheckedInByStaffId());
+            }
+            if (item.getCheckedOutByStaffId() != null) {
+                checkoutStaffIds.add(item.getCheckedOutByStaffId());
+            }
+            if (item.getActualCheckOutAt() != null
+                    && (lastCheckoutAt == null || item.getActualCheckOutAt().isAfter(lastCheckoutAt))) {
+                lastCheckoutAt = item.getActualCheckOutAt();
+            }
+        }
+        if (!checkinStaffIds.isEmpty()) {
+            if (checkinStaffIds.size() == 1) {
+                Long staffId = checkinStaffIds.iterator().next();
+                String staffName = resolveUserName(staffId);
+                dto.setCheckinStaffId(String.valueOf(staffId));
+                dto.setCheckinStaffName(staffName);
+                dto.setCheckinStaff(staffName != null ? staffName : String.valueOf(staffId));
+            } else {
+                dto.setCheckinStaff("MULTIPLE");
+            }
+        }
+        if (!checkoutStaffIds.isEmpty()) {
+            if (checkoutStaffIds.size() == 1) {
+                Long staffId = checkoutStaffIds.iterator().next();
+                String staffName = resolveUserName(staffId);
+                dto.setCheckoutStaffId(String.valueOf(staffId));
+                dto.setCheckoutStaffName(staffName);
+                if (dto.getCheckoutStaff() == null) {
+                    dto.setCheckoutStaff(staffName != null ? staffName : String.valueOf(staffId));
+                }
+            } else {
+                if (dto.getCheckoutStaff() == null) {
+                    dto.setCheckoutStaff("MULTIPLE");
+                }
+            }
+        }
+        dto.setCheckoutTime(lastCheckoutAt);
+    }
+
+    private String resolveUserName(Long userId) {
+        UserProfileDto profile = resolveUserProfile(userId);
+        return profile != null && profile.getName() != null && !profile.getName().isBlank()
+                ? profile.getName()
+                : null;
+    }
+
+    private UserProfileDto resolveUserProfile(Long userId) {
+        if (userId == null || userServiceClient == null) {
+            return null;
+        }
+        try {
+            return userServiceClient.getProfile(userId);
+        } catch (Exception ex) {
+            log.warn("Could not resolve user profile userId={}: {}", userId, ex.getMessage());
+            return null;
+        }
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime time) {
+            return time;
+        }
+        try {
+            return LocalDateTime.parse(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            String text = String.valueOf(value).trim();
+            return text.isBlank() ? null : Long.parseLong(text);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private BigDecimal calculateRoomOriginalAmount(BookingItem item) {
+        if (item == null) {
+            return BigDecimal.ZERO;
+        }
+        if (item.getRoomCharge() != null && item.getRoomCharge().compareTo(BigDecimal.ZERO) > 0) {
+            return item.getRoomCharge();
+        }
+        if (item.getFinalAmount() != null && item.getFinalAmount().compareTo(BigDecimal.ZERO) > 0) {
+            return item.getFinalAmount();
+        }
+        if (item.getFinalPrice() != null && item.getFinalPrice() > 0) {
+            return BigDecimal.valueOf(item.getFinalPrice());
+        }
+        BigDecimal nightly = BigDecimal.valueOf(item.getPriceSnapshot() != null ? item.getPriceSnapshot() : 0.0);
+        int nights = item.getNights() != null && item.getNights() > 0 ? item.getNights() : 1;
+        return nightly.multiply(BigDecimal.valueOf(nights)).setScale(0, java.math.RoundingMode.HALF_UP);
+    }
+
+    private Room safeRoom(Long roomId) {
+        if (roomId == null || roomServiceClient == null) {
+            return null;
+        }
+        try {
+            return roomServiceClient.getRoomById(roomId);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)

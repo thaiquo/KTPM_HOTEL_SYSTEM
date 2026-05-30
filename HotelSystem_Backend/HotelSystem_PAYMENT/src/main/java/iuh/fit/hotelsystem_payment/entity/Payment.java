@@ -13,6 +13,9 @@ import java.time.LocalDateTime;
     @Index(name = "idx_payments_status",          columnList = "status"),
     @Index(name = "idx_payments_transaction_id",  columnList = "transactionId"),
     @Index(name = "idx_payments_payment_code",    columnList = "paymentCode"),
+    @Index(name = "idx_payments_vnp_transaction", columnList = "vnpTransactionNo"),
+    @Index(name = "idx_payments_idempotency_key", columnList = "idempotencyKey"),
+    @Index(name = "idx_payments_payment_type",    columnList = "paymentType"),
     @Index(name = "idx_payments_created_at",      columnList = "createdAt"),
     @Index(name = "idx_payments_booking_status",  columnList = "bookingId, status")
 })

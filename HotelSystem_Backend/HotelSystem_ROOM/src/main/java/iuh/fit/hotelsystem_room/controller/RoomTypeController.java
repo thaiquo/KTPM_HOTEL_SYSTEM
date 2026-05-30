@@ -1,7 +1,9 @@
 package iuh.fit.hotelsystem_room.controller;
 
+import iuh.fit.hotelsystem_room.dto.RoomTypeDto;
 import iuh.fit.hotelsystem_room.entity.RoomType;
 import iuh.fit.hotelsystem_room.repository.RoomTypeRepository;
+import iuh.fit.hotelsystem_room.service.RoomDtoMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,19 +14,22 @@ import java.util.List;
 public class RoomTypeController {
 
     private final RoomTypeRepository roomTypeRepository;
+    private final RoomDtoMapper roomDtoMapper;
 
-    public RoomTypeController(RoomTypeRepository roomTypeRepository) {
+    public RoomTypeController(RoomTypeRepository roomTypeRepository, RoomDtoMapper roomDtoMapper) {
         this.roomTypeRepository = roomTypeRepository;
+        this.roomDtoMapper = roomDtoMapper;
     }
 
     @GetMapping
-    public List<RoomType> getAllRoomTypes() {
-        return roomTypeRepository.findAllWithDetails();
+    public List<RoomTypeDto> getAllRoomTypes() {
+        return roomDtoMapper.toRoomTypeDtos(roomTypeRepository.findAllWithDetails());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<RoomType> getRoomTypeById(@PathVariable Long id) {
+    public ResponseEntity<RoomTypeDto> getRoomTypeById(@PathVariable Long id) {
         return roomTypeRepository.findByIdWithDetails(id)
+                .map(roomDtoMapper::toRoomTypeDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

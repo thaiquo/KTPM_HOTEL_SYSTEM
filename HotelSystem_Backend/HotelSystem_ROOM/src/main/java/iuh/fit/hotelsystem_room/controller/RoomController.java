@@ -5,6 +5,7 @@ import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.service.RoomService;
 import iuh.fit.hotelsystem_room.service.PriceCalculatorService;
 import iuh.fit.hotelsystem_room.dto.RoomPriceResponse;
+import iuh.fit.hotelsystem_room.dto.RoomResponseDto;
 import iuh.fit.hotelsystem_room.dto.RoomStatusUpdateRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -29,16 +30,16 @@ public class RoomController {
     // GET ALL ROOMS
     // =========================
     @GetMapping
-    public List<Room> getAllRooms() {
-        return roomService.getAllRooms();
+    public List<RoomResponseDto> getAllRooms() {
+        return roomService.getAllRooms().getRooms();
     }
 
     // =========================
     // GET ROOM BY ID
     // =========================
     @GetMapping("/{id}")
-    public ResponseEntity<Room> getRoomById(@PathVariable Long id) {
-        Room room = roomService.getRoomById(id);
+    public ResponseEntity<RoomResponseDto> getRoomById(@PathVariable Long id) {
+        RoomResponseDto room = roomService.getRoomById(id);
 
         if (room == null) {
             return ResponseEntity.notFound().build();
@@ -51,7 +52,7 @@ public class RoomController {
     // AVAILABLE ROOMS (SAFE VERSION)
     // =========================
     @GetMapping("/available")
-    public ResponseEntity<List<Room>> getAvailableRooms(
+    public ResponseEntity<List<RoomResponseDto>> getAvailableRooms(
             @RequestParam(required = false) Long roomTypeId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
@@ -62,17 +63,17 @@ public class RoomController {
             // có roomTypeId
             if (roomTypeId != null) {
                 return ResponseEntity.ok(
-                        roomService.getRoomsByRoomType(roomTypeId));
+                        roomService.getRoomsByRoomType(roomTypeId).getRooms());
             }
 
             // không có gì -> trả tất cả available
             return ResponseEntity.ok(
-                    roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE));
+                    roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE).getRooms());
         }
 
         // CASE 2: có full filter
         return ResponseEntity.ok(
-                roomService.getAvailableRooms(roomTypeId, checkIn, checkOut));
+                roomService.getAvailableRooms(roomTypeId, checkIn, checkOut).getRooms());
     }
 
     // =========================
@@ -142,7 +143,7 @@ public class RoomController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
 
-        Room room = roomService.getRoomById(id);
+        Room room = roomService.getRoomEntityById(id);
         if (room == null) return ResponseEntity.notFound().build();
 
         RoomPriceResponse resp = priceCalculatorService.calculate(room, checkIn, checkOut);

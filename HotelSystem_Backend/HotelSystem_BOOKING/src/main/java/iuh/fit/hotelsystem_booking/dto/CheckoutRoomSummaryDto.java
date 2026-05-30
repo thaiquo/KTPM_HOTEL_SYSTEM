@@ -20,7 +20,10 @@ public class CheckoutRoomSummaryDto {
     private BigDecimal manualSurcharge;
     private BigDecimal lateCheckoutFee;
     private BigDecimal totalAmount;
+    private LocalDateTime checkInDate;
+    private LocalDateTime plannedCheckOutDate;
     private LocalDateTime actualCheckOutAt;
+    private String roomStatus;
 
     private BigDecimal usedNightAmount = BigDecimal.ZERO;
     private BigDecimal unusedNightAmount = BigDecimal.ZERO;
@@ -91,8 +94,17 @@ public class CheckoutRoomSummaryDto {
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
 
+    public LocalDateTime getCheckInDate() { return checkInDate; }
+    public void setCheckInDate(LocalDateTime checkInDate) { this.checkInDate = checkInDate; }
+
+    public LocalDateTime getPlannedCheckOutDate() { return plannedCheckOutDate; }
+    public void setPlannedCheckOutDate(LocalDateTime plannedCheckOutDate) { this.plannedCheckOutDate = plannedCheckOutDate; }
+
     public LocalDateTime getActualCheckOutAt() { return actualCheckOutAt; }
     public void setActualCheckOutAt(LocalDateTime actualCheckOutAt) { this.actualCheckOutAt = actualCheckOutAt; }
+
+    public String getRoomStatus() { return roomStatus; }
+    public void setRoomStatus(String roomStatus) { this.roomStatus = roomStatus; }
 
     public BigDecimal getEarlyCheckoutRefund() { return earlyCheckoutRefund; }
     public void setEarlyCheckoutRefund(BigDecimal earlyCheckoutRefund) { this.earlyCheckoutRefund = earlyCheckoutRefund; }

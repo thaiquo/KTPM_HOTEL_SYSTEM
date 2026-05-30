@@ -17,7 +17,10 @@ import java.util.List;
     @Index(name = "idx_bookings_created_at",     columnList = "createdAt"),
     @Index(name = "idx_bookings_check_in",       columnList = "checkIn"),
     @Index(name = "idx_bookings_check_out",      columnList = "checkOut"),
-    @Index(name = "idx_bookings_user_status",    columnList = "userId, status")
+    @Index(name = "idx_bookings_hold_expires_at", columnList = "holdExpiresAt"),
+    @Index(name = "idx_bookings_payment_status", columnList = "paymentStatus"),
+    @Index(name = "idx_bookings_user_status",    columnList = "userId, status"),
+    @Index(name = "idx_bookings_status_hold",    columnList = "status, holdExpiresAt")
 })
 public class Booking {
 

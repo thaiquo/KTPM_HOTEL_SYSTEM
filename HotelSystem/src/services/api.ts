@@ -2167,6 +2167,8 @@ export interface InvoiceSummaryV2 {
   paidInvoiceCount: number;
   unpaidInvoiceCount: number;
   partiallyPaidInvoiceCount: number;
+  partialInvoiceCount?: number;
+  completedInvoiceCount?: number;
 }
 
 export interface InvoiceSearchResponse {
@@ -2185,12 +2187,27 @@ export interface InvoiceDetailResponse {
   bookingCode: string;
   createdAt: string;
   checkoutStaff: string;
+  checkoutStaffId?: string;
+  checkoutStaffName?: string;
+  checkinStaff?: string;
+  checkinStaffId?: string;
+  checkinStaffName?: string;
+  processedByStaffId?: string;
+  processedBy?: string;
+  processedByName?: string;
+  checkoutTime?: string;
+  invoiceStatus?: string;
+  bookingStatus?: string;
   status?: string;
   paymentStatus?: string;
   customer: { fullName: string; phone: string; cccd: string } | null;
   rooms: Array<{
     roomName: string;
+    roomCode?: string;
     roomType: string;
+    checkInDate?: string;
+    plannedCheckoutDate?: string;
+    actualCheckoutDate?: string;
     originalAmount: number;
     usedAmount: number;
     unusedAmount: number;
@@ -2198,10 +2215,27 @@ export interface InvoiceDetailResponse {
     hotelKeepAmount: number;
     netRevenue: number;
     allocatedPaidAmount: number;
+    roomStatus?: string;
   }>;
   serviceCharges: Array<{ category: string; itemName: string; amount: number; quantity: number }>;
   damageCharges: Array<{ itemName: string; amount: number; note: string }>;
-  paymentHistory: { records: Array<{ time: string; amount: number; method: string; status: string }> };
+  paymentHistory: {
+    records: Array<{
+      id?: number;
+      time: string;
+      paidAt?: string;
+      amount: number;
+      method: string;
+      status: string;
+      paymentType?: string;
+      invoiceCategory?: string;
+      transactionId?: string;
+      paymentCode?: string;
+      vnpTransactionNo?: string;
+      payerName?: string;
+      payerPhone?: string;
+    }>;
+  };
   refundHistory: { records: Array<{ time: string; amount: number; reason: string; staff: string }> };
   revenueSummary: {
     totalRoomAmount: number;
@@ -2266,6 +2300,8 @@ export const newInvoiceApi = {
       data.summary.totalPendingRefundAmount = norm(data.summary.totalPendingRefundAmount);
       data.summary.totalAdditionalCharge = norm(data.summary.totalAdditionalCharge);
       data.summary.totalRemainingToPay = norm(data.summary.totalRemainingToPay);
+      data.summary.partialInvoiceCount = norm(data.summary.partialInvoiceCount);
+      data.summary.completedInvoiceCount = norm(data.summary.completedInvoiceCount);
     }
     if (data.content) {
       data.content = data.content.map(inv => ({
@@ -2304,6 +2340,9 @@ export const newInvoiceApi = {
       rs.remainingToPay = norm(rs.remainingToPay);
     }
     if (d.rooms) d.rooms = d.rooms.map(r => ({ ...r, originalAmount: norm(r.originalAmount), usedAmount: norm(r.usedAmount), unusedAmount: norm(r.unusedAmount), earlyCheckoutRefund: norm(r.earlyCheckoutRefund), hotelKeepAmount: norm(r.hotelKeepAmount), netRevenue: norm(r.netRevenue), allocatedPaidAmount: norm(r.allocatedPaidAmount) }));
+    if (d.paymentHistory?.records) {
+      d.paymentHistory.records = d.paymentHistory.records.map(p => ({ ...p, amount: norm(p.amount) }));
+    }
     return d;
   },
 };

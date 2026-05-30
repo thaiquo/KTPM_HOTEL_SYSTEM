@@ -14,9 +14,18 @@ public class UserServiceFallbackFactory implements FallbackFactory<UserServiceCl
 
     @Override
     public UserServiceClient create(Throwable cause) {
-        return staffId -> {
-            log.warn("user-service unavailable for isStaffOrAdmin. staffId={}, error={}", staffId, cause.getMessage());
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service is temporarily unavailable.", cause);
+        return new UserServiceClient() {
+            @Override
+            public Boolean isStaffOrAdmin(Long staffId) {
+                log.warn("user-service unavailable for isStaffOrAdmin. staffId={}, error={}", staffId, cause.getMessage());
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "User service is temporarily unavailable.", cause);
+            }
+
+            @Override
+            public iuh.fit.hotelsystem_booking.dto.UserProfileDto getProfile(Long userId) {
+                log.warn("user-service unavailable for getProfile. userId={}, error={}", userId, cause.getMessage());
+                return null;
+            }
         };
     }
 }

@@ -15,7 +15,7 @@ import iuh.fit.hotelsystem_payment.entity.OutboxEvent;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
@@ -43,17 +43,20 @@ public class MoMoService {
     private final BookingServiceClient bookingServiceClient;
     private final HttpClient httpClient;
     private final OutboxEventRepository outboxEventRepository;
+    private final TransactionTemplate transactionTemplate;
 
         public MoMoService(PaymentRepository paymentRepository,
                    RabbitTemplate rabbitTemplate,
                    MoMoConfig moMoConfig,
                    BookingServiceClient bookingServiceClient,
-                   OutboxEventRepository outboxEventRepository) {
+                   OutboxEventRepository outboxEventRepository,
+                   TransactionTemplate transactionTemplate) {
         this.paymentRepository = paymentRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.moMoConfig = moMoConfig;
         this.bookingServiceClient = bookingServiceClient;
         this.outboxEventRepository = outboxEventRepository;
+        this.transactionTemplate = transactionTemplate;
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -179,11 +182,11 @@ public class MoMoService {
     }
 
     public Map<String, String> handleReturn(Map<String, String> inputParams) {
-        return processCallback(inputParams, false);
+        return transactionTemplate.execute(status -> processCallback(inputParams, false));
     }
 
     public Map<String, String> handleIpn(Map<String, String> inputParams) {
-        return processCallback(inputParams, true);
+        return transactionTemplate.execute(status -> processCallback(inputParams, true));
     }
 
     private MoMoResponse createAndRequestMoMo(Long bookingId,
@@ -264,7 +267,6 @@ public class MoMoService {
         }
     }
 
-    @Transactional
     private Map<String, String> processCallback(Map<String, String> inputParams, boolean ipnMode) {
         String orderId = inputParams.get("orderId");
         if (orderId == null || orderId.isBlank()) {
@@ -319,9 +321,9 @@ public class MoMoService {
             try {
                 String correlation = org.slf4j.MDC.get("X-Correlation-Id");
                 if (correlation != null && !correlation.isBlank()) {
-                    java.util.Map<String, String> headers = new java.util.HashMap<>();
+                    java.util.Map<String, Object> headers = new java.util.HashMap<>();
                     headers.put("X-Correlation-Id", correlation);
-                    out.setHeaders(om.writeValueAsString(headers));
+                    out.setHeaders(headers);
                 }
             } catch (Exception ignored) {}
             outboxEventRepository.save(out);

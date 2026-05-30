@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_booking.client;
 
+import iuh.fit.hotelsystem_booking.dto.UserProfileDto;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,4 +12,8 @@ public interface UserServiceClient {
     @Retry(name = "userServiceApi")
     @GetMapping("/api/users/{staffId}/staff-or-admin")
     Boolean isStaffOrAdmin(@PathVariable("staffId") Long staffId);
+
+    @Retry(name = "userServiceApi")
+    @GetMapping("/api/users/profile/{userId}")
+    UserProfileDto getProfile(@PathVariable("userId") Long userId);
 }

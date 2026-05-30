@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_room.controller;
 
 import iuh.fit.hotelsystem_room.dto.RoomPriceResponse;
+import iuh.fit.hotelsystem_room.dto.RoomResponseDto;
 import iuh.fit.hotelsystem_room.entity.Room;
 import iuh.fit.hotelsystem_room.entity.enums.RoomStatus;
 import iuh.fit.hotelsystem_room.service.PriceCalculatorService;
@@ -25,58 +26,58 @@ public class PublicRoomController {
     }
 
     @GetMapping("/rooms")
-    public List<Room> getAllRooms() {
-        return roomService.getAllRooms();
+    public List<RoomResponseDto> getAllRooms() {
+        return roomService.getAllRooms().getRooms();
     }
 
     @GetMapping("/inventory")
-    public List<Room> getInventory() {
+    public List<RoomResponseDto> getInventory() {
         System.out.println(">>> Public inventory endpoint reached");
-        return roomService.getAllRooms();
+        return roomService.getAllRooms().getRooms();
     }
 
     @GetMapping("/rooms/{id}")
-    public ResponseEntity<Room> getRoomById(@PathVariable Long id) {
-        Room room = roomService.getRoomById(id);
+    public ResponseEntity<RoomResponseDto> getRoomById(@PathVariable Long id) {
+        RoomResponseDto room = roomService.getRoomById(id);
         return room == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(room);
     }
 
     @GetMapping("/inventory/{id}")
-    public ResponseEntity<Room> getInventoryById(@PathVariable Long id) {
-        Room room = roomService.getRoomById(id);
+    public ResponseEntity<RoomResponseDto> getInventoryById(@PathVariable Long id) {
+        RoomResponseDto room = roomService.getRoomById(id);
         return room == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(room);
     }
 
     @GetMapping("/rooms/available")
-    public ResponseEntity<List<Room>> getAvailableRooms(
+    public ResponseEntity<List<RoomResponseDto>> getAvailableRooms(
             @RequestParam(required = false) Long roomTypeId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
 
         if (checkIn == null || checkOut == null) {
             if (roomTypeId != null) {
-                return ResponseEntity.ok(roomService.getRoomsByRoomType(roomTypeId));
+                return ResponseEntity.ok(roomService.getRoomsByRoomType(roomTypeId).getRooms());
             }
-            return ResponseEntity.ok(roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE));
+            return ResponseEntity.ok(roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE).getRooms());
         }
 
-        return ResponseEntity.ok(roomService.getAvailableRooms(roomTypeId, checkIn, checkOut));
+        return ResponseEntity.ok(roomService.getAvailableRooms(roomTypeId, checkIn, checkOut).getRooms());
     }
 
     @GetMapping("/inventory/available")
-    public ResponseEntity<List<Room>> getInventoryAvailable(
+    public ResponseEntity<List<RoomResponseDto>> getInventoryAvailable(
             @RequestParam(required = false) Long roomTypeId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
 
         if (checkIn == null || checkOut == null) {
             if (roomTypeId != null) {
-                return ResponseEntity.ok(roomService.getRoomsByRoomType(roomTypeId));
+                return ResponseEntity.ok(roomService.getRoomsByRoomType(roomTypeId).getRooms());
             }
-            return ResponseEntity.ok(roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE));
+            return ResponseEntity.ok(roomService.getAvailableRoomsByStatus(RoomStatus.AVAILABLE).getRooms());
         }
 
-        return ResponseEntity.ok(roomService.getAvailableRooms(roomTypeId, checkIn, checkOut));
+        return ResponseEntity.ok(roomService.getAvailableRooms(roomTypeId, checkIn, checkOut).getRooms());
     }
 
     @GetMapping("/rooms/{id}/price")
@@ -85,7 +86,7 @@ public class PublicRoomController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
 
-        Room room = roomService.getRoomById(id);
+        Room room = roomService.getRoomEntityById(id);
         if (room == null) {
             return ResponseEntity.notFound().build();
         }
@@ -99,7 +100,7 @@ public class PublicRoomController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut) {
 
-        Room room = roomService.getRoomById(id);
+        Room room = roomService.getRoomEntityById(id);
         if (room == null) {
             return ResponseEntity.notFound().build();
         }
