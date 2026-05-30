@@ -10,8 +10,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -445,6 +447,17 @@ public class PaymentService {
 
     @Transactional
     public Payment recordRemainingPayment(Long bookingId, OperationalPaymentRequest request) {
+        return recordRemainingPayment(bookingId, request, null);
+    }
+
+    @Transactional
+    public Payment recordRemainingPayment(Long bookingId, OperationalPaymentRequest request, String idempotencyKey) {
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+        Optional<Payment> existing = findExistingByIdempotencyKey(normalizedKey, bookingId, PaymentType.REMAINING, request.getAmount());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Payment payment = new Payment();
         payment.setBookingId(bookingId);
         payment.setUserId(request.getUserId());
@@ -459,11 +472,23 @@ public class PaymentService {
         payment.setPayerName(request.getPayerName());
         payment.setPayerPhone(request.getPayerPhone());
         payment.setCreatedAt(nowVi());
+        payment.setIdempotencyKey(normalizedKey);
         return paymentRepository.save(payment);
     }
 
     @Transactional
     public Payment createLateCheckoutFee(Long bookingId, OperationalPaymentRequest request) {
+        return createLateCheckoutFee(bookingId, request, null);
+    }
+
+    @Transactional
+    public Payment createLateCheckoutFee(Long bookingId, OperationalPaymentRequest request, String idempotencyKey) {
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+        Optional<Payment> existingByKey = findExistingByIdempotencyKey(normalizedKey, bookingId, PaymentType.LATE_CHECKOUT_FEE, request.getAmount());
+        if (existingByKey.isPresent()) {
+            return existingByKey.get();
+        }
+
         List<Payment> pendingFees = paymentRepository.findByBookingId(bookingId).stream()
                 .filter(p -> p.getPaymentType() == PaymentType.LATE_CHECKOUT_FEE)
                 .filter(p -> p.getStatus() == PaymentStatus.PENDING)
@@ -482,6 +507,9 @@ public class PaymentService {
             existing.setInvoiceCategory(InvoiceCategory.CHECKOUT);
             existing.setMethod("PENDING");
             existing.setExpiredAt(nowVi().plusMinutes(30));
+            if (existing.getIdempotencyKey() == null || existing.getIdempotencyKey().isBlank()) {
+                existing.setIdempotencyKey(normalizedKey);
+            }
             return paymentRepository.save(existing);
         }
 
@@ -499,11 +527,23 @@ public class PaymentService {
         LocalDateTime now = nowVi();
         payment.setCreatedAt(now);
         payment.setExpiredAt(now.plusMinutes(30));
+        payment.setIdempotencyKey(normalizedKey);
         return paymentRepository.save(payment);
     }
 
     @Transactional
     public Payment createEarlyCheckinFee(Long bookingId, OperationalPaymentRequest request) {
+        return createEarlyCheckinFee(bookingId, request, null);
+    }
+
+    @Transactional
+    public Payment createEarlyCheckinFee(Long bookingId, OperationalPaymentRequest request, String idempotencyKey) {
+        String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
+        Optional<Payment> existing = findExistingByIdempotencyKey(normalizedKey, bookingId, PaymentType.EARLY_CHECKIN_FEE, request.getAmount());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Payment payment = new Payment();
         payment.setBookingId(bookingId);
         payment.setUserId(request.getUserId());
@@ -518,7 +558,44 @@ public class PaymentService {
         LocalDateTime now = nowVi();
         payment.setCreatedAt(now);
         payment.setExpiredAt(now.plusMinutes(30));
+        payment.setIdempotencyKey(normalizedKey);
         return paymentRepository.save(payment);
+    }
+
+    private Optional<Payment> findExistingByIdempotencyKey(String idempotencyKey,
+                                                           Long bookingId,
+                                                           PaymentType expectedType,
+                                                           Double expectedAmount) {
+        if (idempotencyKey == null) {
+            return Optional.empty();
+        }
+        return paymentRepository.findByIdempotencyKey(idempotencyKey)
+                .map(existing -> {
+                    validateExistingPaymentMatches(existing, bookingId, expectedType, expectedAmount);
+                    return existing;
+                });
+    }
+
+    private void validateExistingPaymentMatches(Payment existing,
+                                                Long bookingId,
+                                                PaymentType expectedType,
+                                                Double expectedAmount) {
+        boolean sameBooking = Objects.equals(existing.getBookingId(), bookingId);
+        boolean sameType = existing.getPaymentType() == expectedType
+                || (expectedType == PaymentType.REFUND && existing.getInvoiceCategory() == InvoiceCategory.REFUND);
+        boolean sameAmount = Math.round(valueOrZero(existing.getAmount())) == Math.round(valueOrZero(expectedAmount));
+
+        if (!sameBooking || !sameType || !sameAmount) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Idempotency-Key is already used for a different payment request");
+        }
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        return idempotencyKey.trim();
     }
 
     @Transactional
@@ -661,6 +738,11 @@ public class PaymentService {
 
     @Transactional
     public Payment createRefundPayment(RefundPaymentRequest request) {
+        return createRefundPayment(request, null);
+    }
+
+    @Transactional
+    public Payment createRefundPayment(RefundPaymentRequest request, String externalIdempotencyKey) {
         if (request == null || request.getBookingId() == null) {
             throw new IllegalArgumentException("bookingId is required");
         }
@@ -668,11 +750,15 @@ public class PaymentService {
             throw new IllegalArgumentException("amount must be greater than zero");
         }
 
-        String idempotencyKey = request.getRefundRequestId() != null
+        String idempotencyKey = normalizeIdempotencyKey(externalIdempotencyKey);
+        if (idempotencyKey == null) {
+            idempotencyKey = request.getRefundRequestId() != null
                 ? "REFUND_REQUEST_" + request.getRefundRequestId()
                 : "REFUND_BOOKING_" + request.getBookingId() + "_" + Math.round(request.getAmount());
+        }
         Optional<Payment> existingRefund = paymentRepository.findByIdempotencyKey(idempotencyKey);
         if (existingRefund.isPresent()) {
+            validateExistingPaymentMatches(existingRefund.get(), request.getBookingId(), PaymentType.REFUND, request.getAmount());
             return existingRefund.get();
         }
         Optional<Payment> existingSuccessfulInvoice = findExistingSuccessfulRefundInvoice(

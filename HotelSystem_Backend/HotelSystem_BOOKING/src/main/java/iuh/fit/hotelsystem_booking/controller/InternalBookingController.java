@@ -4,6 +4,7 @@ import iuh.fit.hotelsystem_booking.dto.ConfirmCheckinPaymentRequest;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.service.BookingService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,6 +23,7 @@ public class InternalBookingController {
     @PostMapping("/{bookingId}/confirm-checkin-payment")
     public ResponseEntity<Booking> confirmCheckinPayment(
             @PathVariable Long bookingId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody ConfirmCheckinPaymentRequest request) {
         return ResponseEntity.ok(bookingService.confirmCheckinPayment(bookingId, request));
     }

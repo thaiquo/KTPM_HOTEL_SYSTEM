@@ -845,6 +845,7 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      PAYMENT_CALLBACK_ALLOWED_IPS: ${PAYMENT_CALLBACK_ALLOWED_IPS:-}
     logging: *default-logging
 
   # ========================

@@ -5,6 +5,7 @@ import { Search } from 'lucide-react';
 import { roomApi } from '../../../services/roomApi';
 import type { Room, RoomType } from '../../../types';
 import Spinner from '../../../shared/components/ui/Spinner';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 // ─── Helpers ─────────────────────────────────────────────
 const VIEW_BONUS: Record<string, number> = {
@@ -276,6 +277,14 @@ export default function RoomsPage() {
     s          = sort,
   ) => {
     if (!ci || !co) return;
+    if (loading) return;
+
+    const searchKey = `room-search:${targetPage}:${ci}:${co}:${g}:${t}:${f.join(',')}:${s}`;
+    const limit = consumeClientRateLimit(searchKey, 1200);
+    if (!limit.allowed) {
+      setError(`Bạn tìm kiếm quá nhanh. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+      return;
+    }
 
     setLoading(true);
     setError('');

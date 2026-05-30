@@ -125,22 +125,25 @@ public class PaymentController {
     @PostMapping("/bookings/{bookingId}/remaining-payment")
     public ResponseEntity<Payment> remainingPayment(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody OperationalPaymentRequest request) {
-        return ResponseEntity.ok(paymentService.recordRemainingPayment(bookingId, request));
+        return ResponseEntity.ok(paymentService.recordRemainingPayment(bookingId, request, idempotencyKey));
     }
 
     @PostMapping("/bookings/{bookingId}/late-checkout-fee")
     public ResponseEntity<Payment> lateCheckoutFee(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody OperationalPaymentRequest request) {
-        return ResponseEntity.ok(paymentService.createLateCheckoutFee(bookingId, request));
+        return ResponseEntity.ok(paymentService.createLateCheckoutFee(bookingId, request, idempotencyKey));
     }
 
     @PostMapping("/bookings/{bookingId}/early-checkin-fee")
     public ResponseEntity<Payment> earlyCheckinFee(
             @org.springframework.web.bind.annotation.PathVariable Long bookingId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody OperationalPaymentRequest request) {
-        return ResponseEntity.ok(paymentService.createEarlyCheckinFee(bookingId, request));
+        return ResponseEntity.ok(paymentService.createEarlyCheckinFee(bookingId, request, idempotencyKey));
     }
 
     @PostMapping("/bookings/{bookingId}/early-checkin-fee/paid")
@@ -191,9 +194,10 @@ public class PaymentController {
     @PostMapping("/refunds/{refundRequestId}")
     public ResponseEntity<Payment> createRefund(
             @org.springframework.web.bind.annotation.PathVariable Long refundRequestId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody RefundPaymentRequest request) {
         request.setRefundRequestId(refundRequestId);
-        return ResponseEntity.ok(paymentService.createRefundPayment(request));
+        return ResponseEntity.ok(paymentService.createRefundPayment(request, idempotencyKey));
     }
     
     @PostMapping("/checkin-qr")

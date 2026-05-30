@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 class RefundServiceTest {
@@ -195,13 +197,13 @@ class RefundServiceTest {
         when(refundRepository.findByIdForUpdate(5L)).thenReturn(Optional.of(refund));
         when(bookingRepository.findById(37L)).thenReturn(Optional.of(booking));
         when(refundRepository.save(any(RefundTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(paymentServiceClient.processRefund(eq(5L), any())).thenReturn(Map.of("status", "SUCCESS"));
+        when(paymentServiceClient.processRefund(eq(5L),anyString(), any())).thenReturn(Map.of("status", "SUCCESS"));
 
         RefundTransaction result = refundService.approveRefundByStaff(5L, 2L);
 
         assertEquals(RefundStatus.REFUNDED, result.getStatus());
         assertNotNull(result.getCompletedAt());
-        verify(paymentServiceClient).processRefund(eq(5L), any());
+        verify(paymentServiceClient).processRefund(eq(5L),anyString(), any());
         verify(auditService).log(eq(5L), eq("APPROVED"), eq(RefundStatus.ASSIGNED), eq(RefundStatus.PROCESSING), eq("2"), eq("REFUND_STAFF"), any());
         verify(auditService).log(eq(5L), eq("REFUNDED"), eq(RefundStatus.PROCESSING), eq(RefundStatus.REFUNDED), eq("2"), eq("SYSTEM"), any());
         verify(notificationService).notifyApproved(refund);

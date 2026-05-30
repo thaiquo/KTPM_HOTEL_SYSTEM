@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { paymentApi, type CheckinPaymentStatus } from '../../../services/api';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 const formatCurrency = (value: number) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}d`;
 
@@ -29,6 +30,14 @@ const PaymentConfirmPage: React.FC = () => {
 
   const confirmPayment = async () => {
     if (!paymentCode) return;
+    if (confirming) return;
+
+    const limit = consumeClientRateLimit(`payment-confirm:${paymentCode}`, 5000);
+    if (!limit.allowed) {
+      toast.error(`Vui lòng thử lại sau ${limit.retryAfterSeconds} giây`);
+      return;
+    }
+
     try {
       setConfirming(true);
       const result = payment?.paymentType === 'LATE_CHECKOUT_FEE'

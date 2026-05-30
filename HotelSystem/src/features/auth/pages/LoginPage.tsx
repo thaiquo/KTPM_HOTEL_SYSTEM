@@ -8,6 +8,7 @@ import Card from '../../../shared/components/ui/Card';
 import Alert from '../../../shared/components/ui/Alert';
 import Button from '../../../shared/components/ui/Button';
 import { getManagementHomeByRole } from '../../../shared/lib/roleRoute';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -42,6 +43,12 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
+      const limit = consumeClientRateLimit(`auth-login:${formData.email}`, 3000);
+      if (!limit.allowed) {
+        setError(`Bạn thao tác quá nhanh. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+        return;
+      }
+
       const loggedInUser = await login(formData.email, formData.password);
       const roleHome = getManagementHomeByRole(loggedInUser?.role);
       const redirect = searchParams.get('redirect');
@@ -54,11 +61,22 @@ const LoginPage = () => {
       }
       navigate(redirectTarget, { replace: true });
     } catch (err: unknown) {
-      const message = isAxiosError<{ message?: string }>(err)
-        ? err.response?.data?.message
-        : undefined;
+      if (isAxiosError<{ message?: string }>(err)) {
+        const status = err.response?.status;
+        const message = err.response?.data?.message;
 
-      setError(message || 'Đăng nhập thất bại');
+        if (status === 401) {
+          setError('Email hoặc mật khẩu không đúng');
+        } else if (status === 429) {
+          setError('Bạn đăng nhập quá nhiều lần. Vui lòng thử lại sau.');
+        } else if (status === 503) {
+          setError('Dịch vụ đăng nhập đang tạm thời gián đoạn. Vui lòng thử lại sau.');
+        } else {
+          setError(message || 'Đăng nhập thất bại');
+        }
+      } else {
+        setError('Đăng nhập thất bại');
+      }
     } finally {
       setLoading(false);
     }

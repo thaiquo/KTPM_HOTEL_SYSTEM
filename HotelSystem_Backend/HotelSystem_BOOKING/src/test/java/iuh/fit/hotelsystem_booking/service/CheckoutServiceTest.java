@@ -74,7 +74,7 @@ class CheckoutServiceTest {
         assertEquals(BookingStatus.COMPLETED.name(), response.getBookingStatus());
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
         assertFalse(response.isEarlyCheckout());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
         verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
 
         verify(rabbitTemplate, never()).convertAndSend(eq(RabbitConfig.EXCHANGE), eq("room.checkout"), any(Object.class));
@@ -224,7 +224,7 @@ class CheckoutServiceTest {
         assertEquals(new BigDecimal("2400.00"), response.getRefundAmount());
         assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
         verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     @Test
@@ -268,7 +268,7 @@ class CheckoutServiceTest {
 
         assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
         assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
-        verify(paymentClient).requestLateCheckoutFeePayment(eq(1L), any());
+        verify(paymentClient).requestLateCheckoutFeePayment(eq(1L), anyString(), any());
     }
 
     @Test
@@ -317,7 +317,7 @@ class CheckoutServiceTest {
         assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
         assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
         assertTrue(response.isPaymentRequired());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     @Test
@@ -363,7 +363,7 @@ class CheckoutServiceTest {
         assertEquals(210, response.getLateMinutes());
         assertEquals(new BigDecimal("500.00"), response.getLateCheckoutFee());
         assertEquals(LocalDateTime.of(2026, 5, 1, 15, 30), response.getActualCheckoutAt());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     @Test
@@ -408,7 +408,7 @@ class CheckoutServiceTest {
 
         assertEquals(677, response.getLateMinutes());
         assertEquals(new BigDecimal("1000.00"), response.getLateCheckoutFee());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     @Test
@@ -521,7 +521,7 @@ class CheckoutServiceTest {
 
         assertEquals(BookingStatus.CHECKOUT_PENDING_PAYMENT.name(), response.getBookingStatus());
         assertEquals(new BigDecimal("200.00"), response.getLateCheckoutFee());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     @Test
@@ -570,7 +570,7 @@ class CheckoutServiceTest {
         assertEquals(0, response.getLateCheckoutFee().compareTo(BigDecimal.ZERO));
         assertEquals(BookingConstants.PAYMENT_STATUS_REFUND_PENDING, booking.getPaymentStatus());
         verify(paymentClient, never()).requestEarlyCheckoutRefund(anyLong(), any());
-        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), any());
+        verify(paymentClient, never()).requestLateCheckoutFeePayment(anyLong(), anyString(), any());
     }
 
     private Booking booking(LocalDate checkIn, LocalDate checkOut, int nights, double pricePerNight) {

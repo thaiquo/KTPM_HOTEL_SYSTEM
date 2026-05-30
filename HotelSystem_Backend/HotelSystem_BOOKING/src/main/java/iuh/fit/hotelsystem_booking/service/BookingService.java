@@ -495,7 +495,20 @@ public class BookingService {
 
     @Transactional
     public Booking collectRemainingPayment(Long bookingId, RemainingPaymentRequest request) {
+
         throw new IllegalStateException("Remaining payment is no longer collected at check-in. The unpaid balance is settled at checkout.");
+    }
+
+    private String remainingPaymentIdempotencyKey(Long bookingId, RemainingPaymentRequest request) {
+        String transaction = request.getTransactionId();
+        if (transaction != null && !transaction.isBlank()) {
+            return "booking:" + bookingId + ":remaining:" + transaction.trim();
+        }
+        long amount = Math.round(valueOrZero(request.getAmount()));
+        String method = request.getMethod() != null && !request.getMethod().isBlank()
+                ? request.getMethod().trim().toUpperCase()
+                : "CASH";
+        return "booking:" + bookingId + ":remaining:" + amount + ":" + method;
     }
 
     @Transactional

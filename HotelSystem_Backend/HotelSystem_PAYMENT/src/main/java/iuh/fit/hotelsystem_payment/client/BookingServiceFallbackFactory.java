@@ -19,13 +19,13 @@ public class BookingServiceFallbackFactory implements FallbackFactory<BookingSer
             @Override
             public Map<String, Object> getBooking(Long bookingId) {
                 log.error("booking-service unavailable for getBooking. bookingId={}, error={}", bookingId, cause.getMessage());
-                throw new RuntimeException("Booking service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Booking service is temporarily unavailable. Please try again later.", cause);
             }
 
             @Override
-            public Map<String, Object> confirmCheckinPayment(Long bookingId, CheckinBookingConfirmRequest request) {
+            public Map<String, Object> confirmCheckinPayment(Long bookingId, String idempotencyKey, CheckinBookingConfirmRequest request) {
                 log.error("booking-service unavailable for confirmCheckinPayment. bookingId={}, error={}", bookingId, cause.getMessage());
-                throw new RuntimeException("Booking service is temporarily unavailable. Please try again later.");
+                throw new RuntimeException("Booking service is temporarily unavailable. Please try again later.", cause);
             }
         };
     }

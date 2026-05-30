@@ -9,6 +9,7 @@ import type { PaymentType } from '../../../services/api';
 import Alert from '../../../shared/components/ui/Alert';
 import { CHECK_IN_TIME_LABEL, CHECK_OUT_TIME_LABEL, calculateStayPricing } from '../../../shared/lib/bookingPricing';
 import { normalizeDateInputValue } from '../../../shared/lib/date';
+import { consumeClientRateLimit } from '../../../shared/lib/clientRateLimiter';
 
 type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 type RoomGuest = {
@@ -283,9 +284,18 @@ export default function BookingInfoPage() {
 
   const handleCreateBooking = async () => {
     if (!orderSummary || !user || !checkIn || !checkOut) return;
+    if (submitting) return;
+
     const validationError = validate();
     setError(validationError);
     if (validationError) return;
+
+    const roomKey = orderSummary.items.map((item) => item.room.id).join(',');
+    const limit = consumeClientRateLimit(`booking-create:${user.id}:${checkIn}:${checkOut}:${roomKey}`, 8000);
+    if (!limit.allowed) {
+      setError(`Yêu cầu đặt phòng đang được xử lý. Vui lòng thử lại sau ${limit.retryAfterSeconds} giây.`);
+      return;
+    }
 
     setSubmitting(true);
     try {

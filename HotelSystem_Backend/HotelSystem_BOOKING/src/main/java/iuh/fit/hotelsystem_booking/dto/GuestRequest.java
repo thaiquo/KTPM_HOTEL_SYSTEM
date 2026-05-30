@@ -29,6 +29,9 @@ public class GuestRequest {
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
 
+    public String getPhoneNumber() { return phone; }
+    public void setPhoneNumber(String phoneNumber) { this.phone = phoneNumber; }
+
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
 
