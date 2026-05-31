@@ -64,6 +64,7 @@ public class DataSeeder {
             }
 
             List<CustomerSeed> customers = List.of(
+                    new CustomerSeed("nguyenvana@gmail.com", "Nguyễn Văn A", "0901234567", "15/07/1990", true, "Quận 1, TP. Hồ Chí Minh"),
                     new CustomerSeed("nguyentanthinh@gmail.com", "Nguyễn Tấn Thịnh", "0397994524", "06/11/2004", true, "Quận 1, TP. Hồ Chí Minh"),
                     new CustomerSeed("minhchau@gmail.com", "Trần Minh Châu", "0397994525", "18/02/2001", false, "Quận 3, TP. Hồ Chí Minh"),
                     new CustomerSeed("quanghuy@gmail.com", "Lê Quang Huy", "0397994526", "24/09/1999", true, "Thủ Đức, TP. Hồ Chí Minh"),

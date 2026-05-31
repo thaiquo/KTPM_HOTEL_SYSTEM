@@ -28,6 +28,8 @@ public class SchemaConstraintUpdater {
     @PostConstruct
     public void updateBookingStatusCheckConstraint() {
         updateBookingInvoiceLinesJsonColumn();
+        updateOutboxEventColumns();
+        ensureOutboxDlqTable();
 
         try {
             String allowed = Arrays.stream(BookingStatus.values())
@@ -53,6 +55,37 @@ public class SchemaConstraintUpdater {
             log.info("Updated refund_transactions_status_check with allowed statuses: {}", allowedRefundStatuses);
         } catch (Exception ex) {
             log.warn("Skip updating refund_transactions_status_check due to error: {}", ex.getMessage());
+        }
+    }
+
+    private void updateOutboxEventColumns() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS outbox_event ADD COLUMN IF NOT EXISTS attempts integer DEFAULT 0");
+            jdbcTemplate.execute("ALTER TABLE IF EXISTS outbox_event ADD COLUMN IF NOT EXISTS last_error text");
+            log.info("Ensured outbox_event attempts and last_error columns exist");
+        } catch (Exception ex) {
+            log.warn("Skip updating outbox_event columns due to error: {}", ex.getMessage());
+        }
+    }
+
+    private void ensureOutboxDlqTable() {
+        try {
+            String sql = "CREATE TABLE IF NOT EXISTS outbox_event_dlq ("
+                    + "id serial PRIMARY KEY,"
+                    + "aggregate_type varchar(100),"
+                    + "aggregate_id varchar(100),"
+                    + "type varchar(200),"
+                    + "payload text,"
+                    + "headers jsonb,"
+                    + "occurred_at timestamp,"
+                    + "attempts integer,"
+                    + "last_error text,"
+                    + "moved_at timestamp DEFAULT now()"
+                    + ")";
+            jdbcTemplate.execute(sql);
+            log.info("Ensured outbox_event_dlq table exists");
+        } catch (Exception ex) {
+            log.warn("Skip creating outbox_event_dlq due to error: {}", ex.getMessage());
         }
     }
 

@@ -1,0 +1,1 @@
+{"timestamp":"2026-05-31T03:13:03.640649347","status":409,"error":"Conflict","message":"Booking can only be checked in when status is CONFIRMED, DEPOSIT_PAID or BOOKED","path":"/bookings/18/check-in"}

@@ -2,11 +2,14 @@ package iuh.fit.hotelsystem_booking.config;
 
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
+import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingItemStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingLockStatus;
 import iuh.fit.hotelsystem_booking.entity.BookingStatus;
+import iuh.fit.hotelsystem_booking.entity.OutboxEvent;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.OutboxEventRepository;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,11 +22,11 @@ import java.util.List;
 public class BookingScheduler {
 
     private final BookingRepository bookingRepository;
-    private final RabbitTemplate rabbitTemplate;
+    private final OutboxEventRepository outboxEventRepository;
 
-    public BookingScheduler(BookingRepository bookingRepository, RabbitTemplate rabbitTemplate) {
+    public BookingScheduler(BookingRepository bookingRepository, OutboxEventRepository outboxEventRepository) {
         this.bookingRepository = bookingRepository;
-        this.rabbitTemplate = rabbitTemplate;
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     /**
@@ -41,23 +44,36 @@ public class BookingScheduler {
     private void expireBooking(Booking booking) {
         booking.setStatus(BookingStatus.CANCELLED);
         booking.setLockStatus(BookingLockStatus.EXPIRED);
-        booking.setCancellationReason("Payment hold expired (11 minutes)");
+        booking.setCancellationReason("Payment hold expired (" + BookingConstants.HOLD_MINUTES + " minutes)");
         booking.setCancelledAt(LocalDateTime.now());
         bookingRepository.save(booking);
 
         // 1. Giải phóng tất cả các phòng trong đơn đặt
-    for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
-        item.setStatus(BookingItemStatus.CANCELLED);
-        RoomMessage roomMsg = new RoomMessage();
+        for (iuh.fit.hotelsystem_booking.entity.BookingItem item : booking.getItems()) {
+            item.setStatus(BookingItemStatus.CANCELLED);
+            RoomMessage roomMsg = new RoomMessage();
             roomMsg.setBookingId(booking.getId());
             roomMsg.setRoomId(item.getRoomId());
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "room.release", roomMsg);
+            enqueueOutbox("Booking", String.valueOf(booking.getId()), "room.release", roomMsg);
         }
         
         // 2. Gửi thông báo hết hạn
         BookingEvent event = new BookingEvent(booking.getId(), booking.getUserId(), "EXPIRED");
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, "booking.expired", event);
+        enqueueOutbox("Booking", String.valueOf(booking.getId()), "booking.expired", event);
 
         System.out.println("Auto-expired booking: " + booking.getId());
+    }
+
+    private void enqueueOutbox(String aggregateType, String aggregateId, String type, Object payload) {
+        OutboxEvent event = new OutboxEvent();
+        event.setAggregateType(aggregateType);
+        event.setAggregateId(aggregateId);
+        event.setType(type);
+        try {
+            event.setPayload(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload));
+        } catch (Exception ex) {
+            event.setPayload("{}");
+        }
+        outboxEventRepository.save(event);
     }
 }

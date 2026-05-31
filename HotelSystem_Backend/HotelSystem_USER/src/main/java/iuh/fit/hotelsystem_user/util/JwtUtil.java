@@ -15,7 +15,7 @@ import java.security.NoSuchAlgorithmException;
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret:QuocThaiKey12345678901234567890123456789012}")
+    @Value("${jwt.secret}")
     private String secret;
 
     private SecretKey getKey() {

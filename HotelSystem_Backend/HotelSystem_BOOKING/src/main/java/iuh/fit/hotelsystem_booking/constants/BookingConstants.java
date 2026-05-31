@@ -22,10 +22,9 @@ public final class BookingConstants {
     // ============================================================
     /**
      * Thời gian giữ phòng (phút) sau khi tạo booking.
-     * = VNPAY expire (10 phút) + 1 phút buffer để callback kịp xử lý.
      * Giữ đồng bộ với vnpay.expireMinutes trong PAYMENT service.
      */
-    public static final int HOLD_MINUTES = 11;
+    public static final int HOLD_MINUTES = 10;
 
     /** VNPAY expire tham chiếu (phút) — chỉ để document, không dùng trực tiếp */
     public static final int VNPAY_EXPIRE_MINUTES = 10;

@@ -115,9 +115,9 @@ graph TD
 - **Hạ tầng quản lý & Giám sát**:
   - **Eureka Discovery Dashboard**: [http://localhost:8761](http://localhost:8761)
   - **Zipkin Distributed Tracing**: [http://localhost:9411](http://localhost:9411) (Theo dõi luồng request và độ trễ liên service)
-  - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (Mặc định: `thaiquoc` / `123456`)
+  - **RabbitMQ Management**: [http://localhost:15672](http://localhost:15672) (dùng `RABBIT_USERNAME` / `RABBIT_PASSWORD` trong `.env`)
   - **Redis Console**: Cổng `6379`
-  - **pgAdmin DB UI**: [http://localhost:5050](http://localhost:5050) (Mặc định: `admin@gmail.com` / `123456`)
+  - **pgAdmin DB UI**: [http://localhost:5050](http://localhost:5050) (dùng `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` trong `.env`)
 
 ### Chi tiết cổng nội bộ & Cơ sở dữ liệu của Microservices
 
@@ -147,11 +147,13 @@ copy .env.example .env
 Nội dung cơ bản bao gồm:
 
 ```env
-VNP_TMN_CODE=E6BOARWZ
-VNP_HASH_SECRET=O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ
+VNP_TMN_CODE=
+VNP_HASH_SECRET=
 VNP_PAY_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
 VNP_RETURN_URL=http://localhost:8085/payments/vnpay-return
 VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
+PAYMENT_PUBLIC_APP_ORIGIN=http://localhost:3000
+VITE_FRONTEND_URL=http://localhost:3000
 ```
 
 ### 2) Khởi chạy bằng Docker Compose
@@ -160,7 +162,7 @@ VNP_FRONTEND_RETURN_URL=http://localhost:3000/payment-result
 
 ```bash
 # Khởi động toàn bộ stack dev, bao gồm frontend
-docker compose -f docker-compose.dev.yml run --rm frontend npm install (khởi động lần đầu)
+docker compose -f docker-compose.dev.yml run --rm frontend npm install
 docker compose -f docker-compose.dev.yml up -d
 
 # Xem trạng thái hoạt động của các service
@@ -200,22 +202,22 @@ Các biến cần chú ý:
 
 ```env
 # .env ở thư mục gốc
-PAYMENT_PUBLIC_APP_ORIGIN=http://192.168.1.23:3000
+PAYMENT_PUBLIC_APP_ORIGIN=http://localhost:3000
 
 # HotelSystem/.env
-VITE_FRONTEND_URL=http://192.168.1.23:3000
+VITE_FRONTEND_URL=http://localhost:3000
 ```
 
 Trong `docker-compose.dev.yml`, kiểm tra dòng này đang lấy đúng biến:
 
 ```yaml
-PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://192.168.1.23:3000}/payment/confirm
+PAYMENT_CHECKIN_CONFIRM_URL: ${PAYMENT_PUBLIC_APP_ORIGIN:-http://localhost:3000}/payment/confirm
 ```
 
 Trong `HotelSystem_Backend/HotelSystem_PAYMENT/src/main/resources/application.properties`, fallback nên đổi theo IP hiện tại nếu cần:
 
 ```properties
-payment.checkin.confirm-url=${PAYMENT_CHECKIN_CONFIRM_URL:http://192.168.1.23:3000/payment/confirm}
+payment.checkin.confirm-url=${PAYMENT_CHECKIN_CONFIRM_URL:http://localhost:3000/payment/confirm}
 ```
 
 Sau khi đổi IP, chạy lại:
@@ -228,7 +230,7 @@ docker compose -f docker-compose.dev.yml up -d --force-recreate payment-service 
 Ghi chú:
 
 - `VNP_RETURN_URL` và `VNP_FRONTEND_RETURN_URL` nên giữ `127.0.0.1` nếu thanh toán VNPay trên chính trình duyệt máy tính.
-- `PAYMENT_PUBLIC_APP_ORIGIN` phải là IP LAN nếu điện thoại quét QR.
+- `PAYMENT_PUBLIC_APP_ORIGIN` có thể là `localhost` khi test trên máy; đổi sang IP LAN nếu điện thoại quét QR.
 - Điện thoại và máy tính phải cùng WiFi, và firewall Windows phải cho phép truy cập cổng `3000`.
 
 Nếu muốn build lại từ đầu hoặc chạy bản Production hoàn chỉnh:
@@ -293,6 +295,7 @@ Hệ thống triển khai chặt chẽ bộ quy tắc vận hành khách sạn t
   - Trễ **từ 12:00 đến 14:00**: Phụ thu **20%** giá 1 đêm phòng.
   - Trễ **từ 14:00 đến 18:00**: Phụ thu **50%** giá 1 đêm phòng.
   - Trễ **sau 18:00**: Phụ thu **100%** giá 1 đêm phòng.
+
 ### 4. Quy định Rời phòng sớm (Early Check-out Policy)
 
 - Áp dụng khi khách rút ngắn kỳ lưu trú thực tế:

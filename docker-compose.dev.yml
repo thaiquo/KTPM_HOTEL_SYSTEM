@@ -630,6 +630,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      JWT_SECRET: ${JWT_SECRET}
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
@@ -659,6 +660,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      JWT_SECRET: ${JWT_SECRET}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       EUREKA_URL: http://eureka-server:8761/eureka/
     logging: *default-logging
@@ -690,6 +692,7 @@ services:
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       ROOM_SEED_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET}
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
@@ -723,6 +726,7 @@ services:
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
       ROOM_SEED_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET}
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
@@ -754,6 +758,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      JWT_SECRET: ${JWT_SECRET}
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456
@@ -793,6 +798,7 @@ services:
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
       DB_PASSWORD: quocthai
+      JWT_SECRET: ${JWT_SECRET}
       RABBIT_HOST: rabbitmq
       RABBIT_USERNAME: thaiquoc
       RABBIT_PASSWORD: 123456

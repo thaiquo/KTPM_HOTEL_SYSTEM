@@ -1,0 +1,1 @@
+﻿{ "userId":1, "checkIn":"2026-06-01", "checkOut":"2026-06-02", "rooms":[{"roomId":1,"roomTypeId":1,"priceSnapshot":500000}], "primaryGuest":{"fullName":"Test User","dateOfBirth":"1990-01-01","phone":"0123456789","cccd":"123456789012"}}

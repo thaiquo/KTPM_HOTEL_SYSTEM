@@ -1,0 +1,1 @@
+{"paymentCode":"PAY-20260531-589bf89c","amount":250000.0,"confirmUrl":"http://localhost:3000/payment/confirm?code=PAY-20260531-589bf89c","expiredAt":"2026-05-31T10:20:22.531895987"}

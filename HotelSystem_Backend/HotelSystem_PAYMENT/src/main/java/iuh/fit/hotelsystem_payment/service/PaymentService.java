@@ -38,7 +38,7 @@ public class PaymentService {
     private final PaymentSocketService paymentSocketService;
     private final VNPayService vnPayService;
 
-    @Value("${PAYMENT_CHECKIN_CONFIRM_URL:http://192.168.1.8:3000/payment/confirm}")
+    @Value("${PAYMENT_CHECKIN_CONFIRM_URL:http://localhost:3000/payment/confirm}")
     private String checkinConfirmUrl;
 
     public PaymentService(PaymentRepository paymentRepository,

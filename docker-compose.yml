@@ -19,7 +19,6 @@ services:
   # ========================
   redis:
     image: redis:7-alpine
-    container_name: redis
     ports:
       - "6379:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -29,7 +28,6 @@ services:
   # ========================
   zipkin:
     image: openzipkin/zipkin
-    container_name: zipkin
     ports:
       - "9411:9411"
 
@@ -40,25 +38,23 @@ services:
   # ========================
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: thaiquoc
-      RABBITMQ_DEFAULT_PASS: 123456
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD}
 
   # ========================
   # PGADMIN (UI quan ly DB)
   # ========================
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
     ports:
       - "5050:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: 123456
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     depends_on:
       - postgres-auth
     volumes:
@@ -74,7 +70,7 @@ services:
     environment:
       POSTGRES_DB: hotel_auth
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - auth_data:/var/lib/postgresql/data
@@ -89,12 +85,15 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-auth:5432/hotel_auth
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
-      VNP_TMN_CODE: ${VNP_TMN_CODE:-E6BOARWZ}
-      VNP_HASH_SECRET: ${VNP_HASH_SECRET:-O6OOMFFZPBLYQM9EGHLRTZEJUMPGCQZJ}
+      RABBIT_USERNAME: ${RABBIT_USERNAME}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
+      VNP_TMN_CODE: ${VNP_TMN_CODE}
+      VNP_HASH_SECRET: ${VNP_HASH_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
       VNP_PAY_URL: ${VNP_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNP_RETURN_URL: ${VNP_RETURN_URL:-http://localhost:8085/payments/vnpay-return}
       VNP_FRONTEND_RETURN_URL: ${VNP_FRONTEND_RETURN_URL:-http://localhost:3000/payment-result}
@@ -109,7 +108,7 @@ services:
     environment:
       POSTGRES_DB: hotel_user
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - user_data:/var/lib/postgresql/data
@@ -123,7 +122,7 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-user:5432/hotel_user
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       EUREKA_URL: http://eureka-server:8761/eureka/
       TZ: Asia/Ho_Chi_Minh
 
@@ -140,7 +139,7 @@ services:
     environment:
       POSTGRES_DB: hotel_room
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - ./HotelSystem_Backend/HotelSystem_ROOM/pg_hba.conf.dev:/var/lib/postgresql/data/pg_hba.conf
@@ -156,12 +155,12 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-room:5432/hotel_room
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local-access-key}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local-secret-key}
+      RABBIT_USERNAME: ${RABBIT_USERNAME}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ap-southeast-2
 
       AWS_S3_BUCKET: ktpmbtl-s3-bucket
@@ -181,7 +180,7 @@ services:
     environment:
       POSTGRES_DB: hotel_booking
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - booking_data:/var/lib/postgresql/data
@@ -196,10 +195,10 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-booking:5432/hotel_booking
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
+      RABBIT_USERNAME: ${RABBIT_USERNAME}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
       EUREKA_URL: http://eureka-server:8761/eureka/
       TZ: Asia/Ho_Chi_Minh
 
@@ -214,7 +213,7 @@ services:
     environment:
       POSTGRES_DB: hotel_payment
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - payment_data:/var/lib/postgresql/data
@@ -229,10 +228,10 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-payment:5432/hotel_payment
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
+      RABBIT_USERNAME: ${RABBIT_USERNAME}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
       PAYMENT_CHECKIN_CONFIRM_URL: ${VITE_PUBLIC_APP_ORIGIN:-http://localhost:3000}/payment/confirm
       EUREKA_URL: http://eureka-server:8761/eureka/
       TZ: Asia/Ho_Chi_Minh
@@ -248,7 +247,7 @@ services:
     environment:
       POSTGRES_DB: hotel_notification
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: quocthai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - notification_data:/var/lib/postgresql/data
@@ -263,10 +262,10 @@ services:
     environment:
       DB_URL: jdbc:postgresql://postgres-notification:5432/hotel_notification
       DB_USERNAME: postgres
-      DB_PASSWORD: quocthai
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       RABBIT_HOST: rabbitmq
-      RABBIT_USERNAME: thaiquoc
-      RABBIT_PASSWORD: 123456
+      RABBIT_USERNAME: ${RABBIT_USERNAME}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
       EUREKA_URL: http://eureka-server:8761/eureka/
       TZ: Asia/Ho_Chi_Minh
 

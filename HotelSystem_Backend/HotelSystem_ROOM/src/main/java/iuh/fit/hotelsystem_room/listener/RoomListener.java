@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.cache.CacheManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 public class RoomListener {
@@ -21,17 +23,22 @@ public class RoomListener {
     private final RoomRepository roomRepository;
     private final RabbitTemplate rabbitTemplate;
     private final CacheManager cacheManager;
+    private final ObjectMapper objectMapper;
 
+    @Autowired
     public RoomListener(RoomRepository roomRepository,
                         RabbitTemplate rabbitTemplate,
-                        CacheManager cacheManager) {
+                        CacheManager cacheManager,
+                        ObjectMapper objectMapper) {
         this.roomRepository = roomRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.cacheManager = cacheManager;
+        this.objectMapper = objectMapper;
     }
 
     @RabbitListener(queues = RabbitConfig.ROOM_HOLD_QUEUE)
-    public void holdRoom(RoomMessage msg) {
+    public void holdRoom(Object rawMessage) {
+        RoomMessage msg = convert(rawMessage, RoomMessage.class);
 
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
 
@@ -53,7 +60,8 @@ public class RoomListener {
     }
 
     @RabbitListener(queues = RabbitConfig.ROOM_CONFIRM_QUEUE)
-    public void confirmRoom(RoomMessage msg) {
+    public void confirmRoom(Object rawMessage) {
+        RoomMessage msg = convert(rawMessage, RoomMessage.class);
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
         if (room.getStatus() == RoomStatus.AVAILABLE) {
             room.setStatus(RoomStatus.RESERVED);
@@ -63,7 +71,8 @@ public class RoomListener {
     }
 
     @RabbitListener(queues = RabbitConfig.ROOM_RELEASE_QUEUE)
-    public void releaseRoom(RoomMessage msg) {
+    public void releaseRoom(Object rawMessage) {
+        RoomMessage msg = convert(rawMessage, RoomMessage.class);
         Room room = roomRepository.findById(msg.getRoomId()).orElseThrow();
         if (room.getStatus() == RoomStatus.RESERVED) {
             room.setStatus(RoomStatus.AVAILABLE);
@@ -118,5 +127,19 @@ public class RoomListener {
         return status == RoomStatus.MAINTENANCE
                 || status == RoomStatus.OUT_OF_SERVICE
                 || status == RoomStatus.BLOCKED;
+    }
+
+    private <T> T convert(Object rawMessage, Class<T> targetType) {
+        try {
+            if (targetType.isInstance(rawMessage)) {
+                return targetType.cast(rawMessage);
+            }
+            if (rawMessage instanceof String text) {
+                return objectMapper.readValue(text, targetType);
+            }
+            return objectMapper.convertValue(rawMessage, targetType);
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Unable to parse Rabbit message into " + targetType.getSimpleName(), ex);
+        }
     }
 }
