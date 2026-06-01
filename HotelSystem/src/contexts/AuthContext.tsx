@@ -75,6 +75,10 @@ const mergeProfileIntoUser = (current: User | null, profile: { fullName?: string
   };
 };
 
+const clearUserScopedUiState = () => {
+  sessionStorage.removeItem('rooms_search_cache');
+};
+
 /**
  * Returns true if the error means the token is invalid/user not found in DB.
  * - Any HTTP response error (4xx, 5xx) = credentials are invalid → force logout.
@@ -222,6 +226,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     authApi.logout();
     tokenStorage.clear();
+    clearUserScopedUiState();
     setUser(null);
   };
 

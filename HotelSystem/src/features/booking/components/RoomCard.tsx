@@ -90,7 +90,7 @@ export default function RoomCard({ booking, room }: RoomCardProps) {
           </div>
           <div className="rounded-2xl border border-slate-200 px-4 py-3">
             <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Giá phòng</div>
-            <div className="mt-1 text-sm font-bold text-slate-900">{formatCurrency(room.roomType.basePrice)}</div>
+            <div className="mt-1 text-sm font-bold text-slate-900">{formatCurrency(pricing.roomTotal)}</div>
           </div>
           <div className="rounded-2xl border border-slate-200 px-4 py-3">
             <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Thành tiền</div>

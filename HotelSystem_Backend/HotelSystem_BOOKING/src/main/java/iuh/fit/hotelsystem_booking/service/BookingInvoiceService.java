@@ -2,7 +2,9 @@ package iuh.fit.hotelsystem_booking.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
+import iuh.fit.hotelsystem_booking.client.UserServiceClient;
 import iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto;
+import iuh.fit.hotelsystem_booking.dto.UserProfileDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceDetailResponseDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceListDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceSearchResponseDto;
@@ -19,6 +21,7 @@ import iuh.fit.hotelsystem_booking.repository.BookingStayRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -50,6 +53,8 @@ public class BookingInvoiceService {
     private final ObjectMapper objectMapper;
     private final jakarta.persistence.EntityManager entityManager;
     private final CqrsOutboxEventService cqrsOutboxEventService;
+    private InvoiceStatusResolver invoiceStatusResolver;
+    private UserServiceClient userServiceClient;
 
     public BookingInvoiceService(BookingInvoiceRepository invoiceRepository,
             BookingRepository bookingRepository,
@@ -67,6 +72,16 @@ public class BookingInvoiceService {
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
         this.cqrsOutboxEventService = cqrsOutboxEventService;
+    }
+
+    @Autowired(required = false)
+    public void setUserServiceClient(UserServiceClient userServiceClient) {
+        this.userServiceClient = userServiceClient;
+    }
+
+    @Autowired(required = false)
+    public void setInvoiceStatusResolver(InvoiceStatusResolver invoiceStatusResolver) {
+        this.invoiceStatusResolver = invoiceStatusResolver;
     }
 
     @Transactional
@@ -162,7 +177,7 @@ public class BookingInvoiceService {
                     Object brid = m.get("bookingRoomId");
                     Object type = m.get("itemType");
                     if (brid != null && type != null) {
-                        existingRoomLineKeys.add(brid + "::" + type);
+                        existingRoomLineKeys.add(normalizeMergeKey(brid) + "::" + type);
                     }
                 }
             }
@@ -173,7 +188,7 @@ public class BookingInvoiceService {
                     Map<?, ?> m = (Map<?, ?>) item;
                     Object brid = m.get("bookingRoomId");
                     Object type = m.get("itemType");
-                    String key = brid + "::" + type;
+                    String key = normalizeMergeKey(brid) + "::" + type;
                     // SERVICE / ADJUSTMENT không có bookingRoomId cố định → luôn thêm
                     boolean isRoomLine = "ROOM".equals(m.get("category"));
                     if (isRoomLine && existingRoomLineKeys.contains(key)) {
@@ -192,7 +207,7 @@ public class BookingInvoiceService {
             for (Object s : existingSummaries) {
                 if (s instanceof Map) {
                     Map<?, ?> m = (Map<?, ?>) s;
-                    existingRoomSummaryIds.add(m.get("bookingRoomId"));
+                    existingRoomSummaryIds.add(normalizeMergeKey(m.get("bookingRoomId")));
                 }
             }
             List<Object> newSummaries = newPayload.get("roomSummaries") instanceof List
@@ -201,9 +216,10 @@ public class BookingInvoiceService {
             for (Object s : newSummaries) {
                 if (s instanceof Map) {
                     Map<?, ?> m = (Map<?, ?>) s;
-                    if (!existingRoomSummaryIds.contains(m.get("bookingRoomId"))) {
+                    String roomKey = normalizeMergeKey(m.get("bookingRoomId"));
+                    if (!existingRoomSummaryIds.contains(roomKey)) {
                         existingSummaries.add(s);
-                        existingRoomSummaryIds.add(m.get("bookingRoomId"));
+                        existingRoomSummaryIds.add(roomKey);
                     }
                 }
             }
@@ -366,6 +382,16 @@ public class BookingInvoiceService {
         return lines != null && (lines.get("invoiceItems") instanceof List<?> || lines.get("roomSummaries") instanceof List<?>);
     }
 
+    private String normalizeMergeKey(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof Number number) {
+            return String.valueOf(number.longValue());
+        }
+        return String.valueOf(value);
+    }
+
     private void applyInvoiceMetadata(BookingInvoice invoice, Map<String, Object> lines) {
         if (invoice == null) {
             return;
@@ -388,8 +414,8 @@ public class BookingInvoiceService {
     }
 
     private String resolveInvoiceStatus(Long bookingId, Map<String, Object> lines) {
-        if (lines != null && lines.get("invoiceStatus") != null) {
-            return normalizeInvoiceStatus(String.valueOf(lines.get("invoiceStatus")));
+        if (invoiceStatusResolver != null) {
+            return invoiceStatusResolver.resolve(bookingId);
         }
         Optional<Booking> bookingOpt = bookingRepository.findByIdWithItems(bookingId);
         if (bookingOpt.isEmpty()) {
@@ -424,6 +450,9 @@ public class BookingInvoiceService {
     }
 
     private String normalizeInvoiceStatus(String status) {
+        if (invoiceStatusResolver != null) {
+            return invoiceStatusResolver.normalize(status);
+        }
         if (status == null || status.isBlank()) {
             return "DRAFT";
         }
@@ -438,25 +467,50 @@ public class BookingInvoiceService {
     }
 
     private String resolvePaymentStatus(Long bookingId, Map<String, Object> lines) {
-        if (lines != null && lines.get("paymentStatus") != null) {
-            return String.valueOf(lines.get("paymentStatus")).trim().toUpperCase(java.util.Locale.ROOT);
+        if (invoiceStatusResolver != null) {
+            String invoiceStatus = invoiceStatusResolver.resolve(bookingId);
+            if ("PENDING_REFUND".equals(invoiceStatus) || "REFUNDED".equals(invoiceStatus)) {
+                return invoiceStatus;
+            }
         }
         BigDecimal paid = lines != null ? firstNonZero(lines, "totalAllocatedPaidAmount", "amountPaid") : BigDecimal.ZERO;
         BigDecimal remaining = lines != null ? toBigDecimal(lines.get("remainingBalance")) : BigDecimal.ZERO;
         BigDecimal refund = lines != null
                 ? firstNonZero(lines, "totalRefundToCustomer", "refundSettlementAmount")
                 : BigDecimal.ZERO;
-        boolean hasPendingRefund = refundTransactionRepository.findFirstByBookingId(bookingId)
-                .map(refundTransaction -> refundTransaction.getStatus() != null
-                        && List.of(
-                                iuh.fit.hotelsystem_booking.entity.RefundStatus.PENDING,
-                                iuh.fit.hotelsystem_booking.entity.RefundStatus.ASSIGNED,
-                                iuh.fit.hotelsystem_booking.entity.RefundStatus.PROCESSING,
-                                iuh.fit.hotelsystem_booking.entity.RefundStatus.APPROVED)
-                        .contains(refundTransaction.getStatus()))
-                .orElse(false);
-        if (hasPendingRefund || refund.compareTo(BigDecimal.ZERO) > 0) {
+        boolean hasPendingRefund = false;
+        boolean hasCompletedRefund = false;
+        for (RefundTransaction refundTransaction : refundTransactionRepository.findByBookingIdOrderByCreatedAtDesc(bookingId)) {
+            if (refundTransaction.getStatus() == null) {
+                continue;
+            }
+            if (List.of(
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.PENDING,
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.ASSIGNED,
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.PROCESSING,
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.APPROVED)
+                    .contains(refundTransaction.getStatus())) {
+                hasPendingRefund = true;
+            }
+            if (List.of(
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.COMPLETED,
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.REFUNDED,
+                    iuh.fit.hotelsystem_booking.entity.RefundStatus.SUCCESS)
+                    .contains(refundTransaction.getStatus())) {
+                hasCompletedRefund = true;
+            }
+        }
+        if (hasPendingRefund) {
             return "PENDING_REFUND";
+        }
+        if (hasCompletedRefund) {
+            return "REFUNDED";
+        }
+        if (refund.compareTo(BigDecimal.ZERO) > 0) {
+            return "PENDING_REFUND";
+        }
+        if (lines != null && lines.get("paymentStatus") != null) {
+            return String.valueOf(lines.get("paymentStatus")).trim().toUpperCase(java.util.Locale.ROOT);
         }
         if (paid.compareTo(BigDecimal.ZERO) == 0) {
             return "UNPAID";
@@ -626,6 +680,7 @@ public class BookingInvoiceService {
         BookingInvoiceDto dto = new BookingInvoiceDto();
         dto.setId(invoice.getId());
         dto.setBookingId(invoice.getBookingId());
+        dto.setInvoiceStatus(invoice.getInvoiceStatus());
         dto.setAmount(invoice.getAmount());
         dto.setPaidAmount(invoice.getAmount());
         dto.setTotalAmount(invoice.getAmount());
@@ -713,12 +768,24 @@ public class BookingInvoiceService {
             }
         }
         if (!checkinStaffIds.isEmpty()) {
-            dto.setCheckinStaffId(
-                    checkinStaffIds.size() == 1 ? String.valueOf(checkinStaffIds.iterator().next()) : "MULTIPLE");
+            if (checkinStaffIds.size() == 1) {
+                Long staffId = checkinStaffIds.iterator().next();
+                dto.setCheckinStaffId(String.valueOf(staffId));
+                dto.setCheckinStaffName(resolveUserName(staffId));
+            } else {
+                dto.setCheckinStaffId("MULTIPLE");
+                dto.setCheckinStaffName("Nhiều nhân viên");
+            }
         }
         if (!checkoutStaffIds.isEmpty()) {
-            dto.setCheckoutStaffId(
-                    checkoutStaffIds.size() == 1 ? String.valueOf(checkoutStaffIds.iterator().next()) : "MULTIPLE");
+            if (checkoutStaffIds.size() == 1) {
+                Long staffId = checkoutStaffIds.iterator().next();
+                dto.setCheckoutStaffId(String.valueOf(staffId));
+                dto.setCheckoutStaffName(resolveUserName(staffId));
+            } else {
+                dto.setCheckoutStaffId("MULTIPLE");
+                dto.setCheckoutStaffName("Nhiều nhân viên");
+            }
         }
         if (firstCheckinAt != null) {
             dto.setCheckedInAt(firstCheckinAt);
@@ -737,6 +804,7 @@ public class BookingInvoiceService {
         Object createdByStaffId = lines.get("createdByStaffId");
         if ((dto.getCheckoutStaffId() == null || dto.getCheckoutStaffId().isBlank()) && createdByStaffId != null) {
             dto.setCheckoutStaffId(String.valueOf(createdByStaffId));
+            dto.setCheckoutStaffName(resolveUserName(toLong(createdByStaffId)));
         }
     }
 
@@ -744,10 +812,12 @@ public class BookingInvoiceService {
         if ((dto.getCheckinStaffId() == null || dto.getCheckinStaffId().isBlank())
                 && stay.getCheckedInByStaffId() != null) {
             dto.setCheckinStaffId(String.valueOf(stay.getCheckedInByStaffId()));
+            dto.setCheckinStaffName(resolveUserName(stay.getCheckedInByStaffId()));
         }
         if ((dto.getCheckoutStaffId() == null || dto.getCheckoutStaffId().isBlank())
                 && stay.getCheckedOutByStaffId() != null) {
             dto.setCheckoutStaffId(String.valueOf(stay.getCheckedOutByStaffId()));
+            dto.setCheckoutStaffName(resolveUserName(stay.getCheckedOutByStaffId()));
         }
         if (dto.getCheckedInAt() == null) {
             dto.setCheckedInAt(stay.getActualCheckInAt());
@@ -779,6 +849,36 @@ public class BookingInvoiceService {
             }
         }
         return primary != null ? primary : first;
+    }
+
+    private String resolveUserName(Long userId) {
+        if (userId == null || userServiceClient == null) {
+            return null;
+        }
+        try {
+            UserProfileDto profile = userServiceClient.getProfile(userId);
+            return profile != null && profile.getName() != null && !profile.getName().isBlank()
+                    ? profile.getName()
+                    : null;
+        } catch (Exception ex) {
+            log.warn("Could not resolve invoice staff profile userId={}: {}", userId, ex.getMessage());
+            return null;
+        }
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            String text = String.valueOf(value).trim();
+            return text.isBlank() ? null : Long.parseLong(text);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private void projectInvoice(BookingInvoice invoice) {

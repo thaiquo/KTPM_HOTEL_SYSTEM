@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import type { Room } from '../types';
 
@@ -23,7 +23,9 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const cartKey = `hotel_cart_v2_${user?.email || 'guest'}`;
+  const userKey = user?.id || user?.email || 'guest';
+  const cartKey = `hotel_cart_v2_${userKey}`;
+  const activeCartKeyRef = useRef(cartKey);
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem(cartKey);
@@ -38,8 +40,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
+    if (activeCartKeyRef.current !== cartKey) {
+      activeCartKeyRef.current = cartKey;
+      return;
+    }
     localStorage.setItem(cartKey, JSON.stringify(cartItems));
   }, [cartItems, cartKey]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(cartKey);
+    setCartItems(saved ? JSON.parse(saved) : []);
+    setCheckInState(localStorage.getItem(`${cartKey}_checkIn`));
+    setCheckOutState(localStorage.getItem(`${cartKey}_checkOut`));
+  }, [cartKey]);
 
   const setDates = useCallback((inDate: string, outDate: string) => {
     setCheckInState(inDate);

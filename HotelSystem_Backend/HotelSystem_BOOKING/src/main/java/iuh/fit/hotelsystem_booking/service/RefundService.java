@@ -15,6 +15,7 @@ import iuh.fit.hotelsystem_booking.entity.RefundPaymentTransactionStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
+import iuh.fit.hotelsystem_booking.repository.BookingInvoiceRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import iuh.fit.hotelsystem_booking.client.PaymentServiceClient;
@@ -29,6 +30,7 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.math.BigDecimal;
 
@@ -46,6 +48,8 @@ public class RefundService {
     private final RefundAuditService refundAuditService;
     private final RefundNotificationService refundNotificationService;
     private final PaymentServiceClient paymentServiceClient;
+    private BookingInvoiceRepository bookingInvoiceRepository;
+    private InvoiceStatusResolver invoiceStatusResolver;
     private RabbitTemplate rabbitTemplate;
     private CqrsOutboxEventService cqrsOutboxEventService;
 
@@ -77,6 +81,16 @@ public class RefundService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
         this.cqrsOutboxEventService = cqrsOutboxEventService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setBookingInvoiceRepository(BookingInvoiceRepository bookingInvoiceRepository) {
+        this.bookingInvoiceRepository = bookingInvoiceRepository;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setInvoiceStatusResolver(InvoiceStatusResolver invoiceStatusResolver) {
+        this.invoiceStatusResolver = invoiceStatusResolver;
     }
 
     @Transactional
@@ -241,6 +255,11 @@ public class RefundService {
 
     @Transactional
     public synchronized RefundTransaction createAssignedEarlyCheckoutRefundTransaction(Booking booking, BigDecimal settlementAmount, Long staffId) {
+        return createAssignedEarlyCheckoutRefundTransaction(booking, settlementAmount, staffId, null);
+    }
+
+    @Transactional
+    public synchronized RefundTransaction createAssignedEarlyCheckoutRefundTransaction(Booking booking, BigDecimal settlementAmount, Long staffId, List<Long> bookingRoomIds) {
         if (booking == null) {
             throw new IllegalArgumentException("booking must not be null");
         }
@@ -249,7 +268,7 @@ public class RefundService {
             return null;
         }
 
-        String idempotencyKey = buildEarlyCheckoutIdempotencyKey(booking);
+        String idempotencyKey = buildEarlyCheckoutIdempotencyKey(booking, bookingRoomIds);
         LocalDateTime now = nowVi();
         RefundTransaction refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(RefundTransaction::new);
         refund.setBookingId(booking.getId());
@@ -617,6 +636,7 @@ public class RefundService {
     }
 
     private void projectRefund(RefundTransaction refund) {
+        refreshInvoiceStatus(refund != null ? refund.getBookingId() : null);
         if (cqrsOutboxEventService == null) {
             return;
         }
@@ -632,12 +652,44 @@ public class RefundService {
         }
     }
 
+    private void refreshInvoiceStatus(Long bookingId) {
+        if (bookingId == null || bookingInvoiceRepository == null || invoiceStatusResolver == null) {
+            return;
+        }
+        try {
+            bookingInvoiceRepository.findFirstByBookingIdOrderByCreatedAtDesc(bookingId).ifPresent(invoice -> {
+                String status = invoiceStatusResolver.resolve(bookingId);
+                invoice.setInvoiceStatus(status);
+                if ("PENDING_REFUND".equals(status) || "REFUNDED".equals(status)) {
+                    invoice.setPaymentStatus(status);
+                }
+                bookingInvoiceRepository.save(invoice);
+            });
+        } catch (Exception ex) {
+            log.warn("Unable to refresh invoice status after refund change. bookingId={}", bookingId, ex);
+        }
+    }
+
     private String buildIdempotencyKey(Booking booking) {
         return BookingConstants.REFUND_IDEMPOTENCY_PREFIX + booking.getId();
     }
 
     private String buildEarlyCheckoutIdempotencyKey(Booking booking) {
         return BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX + booking.getId();
+    }
+
+    private String buildEarlyCheckoutIdempotencyKey(Booking booking, List<Long> bookingRoomIds) {
+        if (bookingRoomIds == null || bookingRoomIds.isEmpty()) {
+            return buildEarlyCheckoutIdempotencyKey(booking);
+        }
+        String roomKey = bookingRoomIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .map(String::valueOf)
+                .reduce((left, right) -> left + "-" + right)
+                .orElse("booking");
+        return BookingConstants.EARLY_CHECKOUT_REFUND_IDEMPOTENCY_PREFIX + booking.getId() + "_rooms_" + roomKey;
     }
 
     private boolean isNonCancellationRefund(RefundTransaction refund) {

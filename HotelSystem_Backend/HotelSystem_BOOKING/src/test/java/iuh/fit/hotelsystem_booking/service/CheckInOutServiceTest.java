@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.entity.Booking;
+import iuh.fit.hotelsystem_booking.entity.BookingItem;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -45,6 +46,18 @@ class CheckInOutServiceTest {
         Booking booking = booking();
 
         double fee = checkInOutService.calculateEarlyCheckInFee(booking, checkinAt(12, 0));
+
+        assertEquals(0.0, fee);
+    }
+
+    @Test
+    void itemCheckinAfterScheduledCheckinDateIsNotEarly() {
+        BookingItem item = new BookingItem();
+        item.setCheckIn(LocalDate.of(2026, 6, 1));
+        item.setActualCheckInAt(LocalDateTime.of(2026, 6, 2, 10, 0));
+        item.setPriceSnapshot(800000.0);
+
+        double fee = checkInOutService.calculateEarlyCheckInFee(item);
 
         assertEquals(0.0, fee);
     }

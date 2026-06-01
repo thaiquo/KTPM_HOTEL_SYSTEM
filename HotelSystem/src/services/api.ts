@@ -293,7 +293,9 @@ export type BookingInvoiceRecord = {
   id: string;
   bookingId: string;
   bookingCode?: string;
+  invoiceStatus?: string;
   bookingStatus?: string;
+  paymentStatus?: string;
   customerUserId?: string;
   customerName?: string;
   representativeName?: string;
@@ -303,7 +305,9 @@ export type BookingInvoiceRecord = {
   checkOutDate?: string;
   totalRooms?: number;
   checkoutStaffId?: string;
+  checkoutStaffName?: string;
   checkinStaffId?: string;
+  checkinStaffName?: string;
   checkedInAt?: string;
   checkedOutAt?: string;
   refundTransactionId?: string;
@@ -1526,7 +1530,7 @@ function mapCheckoutResponse(data: Record<string, unknown>, bookingId: string): 
     totalUnusedRoomAmount: data?.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
     totalHotelKeepAmount: data?.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
     totalAllocatedPaidAmount: data?.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
-    totalActualRevenue: data?.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
+    totalActualRevenue: data?.totalActualRevenue != null ? Number(data.totalActualRevenue) : data?.netRevenue != null ? Number(data.netRevenue) : undefined,
     totalRefundToCustomer: data?.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
     totalAdditionalCharge: data?.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
     paymentStatus: data?.paymentStatus != null ? String(data.paymentStatus) : undefined,
@@ -1565,7 +1569,9 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     id: String(data?.id ?? ''),
     bookingId: String(data?.bookingId ?? ''),
     bookingCode: data?.bookingCode != null ? String(data.bookingCode) : undefined,
+    invoiceStatus: data?.invoiceStatus != null ? String(data.invoiceStatus) : data?.status != null ? String(data.status) : undefined,
     bookingStatus: data?.bookingStatus != null ? String(data.bookingStatus) : data?.status != null ? String(data.status) : undefined,
+    paymentStatus: data?.paymentStatus != null ? String(data.paymentStatus) : undefined,
     customerUserId: data?.customerUserId != null ? String(data.customerUserId) : undefined,
     customerName: data?.customerName != null ? String(data.customerName) : undefined,
     representativeName: data?.representativeName != null ? String(data.representativeName) : undefined,
@@ -1575,7 +1581,9 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     checkOutDate: data?.checkOutDate != null ? String(data.checkOutDate) : undefined,
     totalRooms: data?.totalRooms != null ? Number(data.totalRooms) : undefined,
     checkoutStaffId: data?.checkoutStaffId != null ? String(data.checkoutStaffId) : undefined,
+    checkoutStaffName: data?.checkoutStaffName != null ? String(data.checkoutStaffName) : undefined,
     checkinStaffId: data?.checkinStaffId != null ? String(data.checkinStaffId) : undefined,
+    checkinStaffName: data?.checkinStaffName != null ? String(data.checkinStaffName) : undefined,
     checkedInAt: data?.checkedInAt != null ? String(data.checkedInAt) : undefined,
     checkedOutAt: data?.checkedOutAt != null ? String(data.checkedOutAt) : undefined,
     refundTransactionId: data?.refundTransactionId != null ? String(data.refundTransactionId) : undefined,
@@ -1596,9 +1604,9 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     manualSurchargeTotal: data?.manualSurchargeTotal != null ? Number(data.manualSurchargeTotal) : undefined,
     lateCheckoutFeeTotal: data?.lateCheckoutFeeTotal != null ? Number(data.lateCheckoutFeeTotal) : undefined,
     earlyCheckinFeeTotal: data?.earlyCheckinFeeTotal != null ? Number(data.earlyCheckinFeeTotal) : undefined,
-    totalAmount: data?.totalAmount != null ? Number(data.totalAmount) : data?.grossInvoiceAmount != null ? Number(data.grossInvoiceAmount) : undefined,
+    totalAmount: data?.totalAmount != null ? Number(data.totalAmount) : data?.netRevenue != null ? Number(data.netRevenue) : data?.grossInvoiceAmount != null ? Number(data.grossInvoiceAmount) : undefined,
     paidAmount: data?.paidAmount != null ? Number(data.paidAmount) : undefined,
-    amount: Number(data?.amount ?? data?.grossInvoiceAmount ?? data?.netRevenue ?? 0),
+    amount: Number(data?.amount ?? data?.netRevenue ?? data?.totalActualRevenue ?? data?.grossInvoiceAmount ?? 0),
     currency: data?.currency != null ? String(data.currency) : undefined,
     lines: data?.lines,
     createdAt: data?.createdAt != null ? String(data.createdAt) : undefined,
@@ -2028,8 +2036,10 @@ export const staffBookingApi = {
     return Array.isArray(payload) ? payload.map(mapBookingInvoiceRecord) : [];
   },
 
-  searchInvoices: async (params: { page?: number; size?: number; invoiceCode?: string; bookingCode?: string; customerName?: string; date?: string; fromDate?: string; toDate?: string; status?: string[] }): Promise<{ content: BookingInvoiceRecord[]; totalElements: number; totalPages: number }> => {
-    const response = await api.get<any>(`/api/staff/invoices/search`, { params });
+  searchInvoices: async (params: { page?: number; size?: number; invoiceCode?: string; bookingCode?: string; customerName?: string; date?: string; fromDate?: string; toDate?: string; status?: string[]; paymentStatus?: string }): Promise<{ content: BookingInvoiceRecord[]; totalElements: number; totalPages: number }> => {
+    const requestParams = { ...params, invoiceStatus: params.status };
+    delete (requestParams as any).status;
+    const response = await api.get<any>(`/api/staff/invoices/search`, { params: requestParams });
     const data = response.data;
     return {
       content: Array.isArray(data?.content) ? data.content.map(mapBookingInvoiceRecord) : [],

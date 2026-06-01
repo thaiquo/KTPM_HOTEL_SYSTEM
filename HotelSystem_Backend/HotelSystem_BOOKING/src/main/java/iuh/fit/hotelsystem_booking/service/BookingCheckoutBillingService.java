@@ -41,6 +41,7 @@ public class BookingCheckoutBillingService {
     private final BookingRepository bookingRepository;
     private final BookingServiceLineRepository bookingServiceLineRepository;
     private final BookingInvoiceService bookingInvoiceService;
+    private final InvoiceStatusResolver invoiceStatusResolver;
     private final RefundCalculationService refundCalculationService;
     private final CheckInOutService checkInOutService;
     private final RoomServiceClient roomServiceClient;
@@ -49,6 +50,7 @@ public class BookingCheckoutBillingService {
     public BookingCheckoutBillingService(BookingRepository bookingRepository,
                                          BookingServiceLineRepository bookingServiceLineRepository,
                                          BookingInvoiceService bookingInvoiceService,
+                                         InvoiceStatusResolver invoiceStatusResolver,
                                          RefundCalculationService refundCalculationService,
                                          CheckInOutService checkInOutService,
                                          RoomServiceClient roomServiceClient,
@@ -56,6 +58,7 @@ public class BookingCheckoutBillingService {
         this.bookingRepository = bookingRepository;
         this.bookingServiceLineRepository = bookingServiceLineRepository;
         this.bookingInvoiceService = bookingInvoiceService;
+        this.invoiceStatusResolver = invoiceStatusResolver;
         this.refundCalculationService = refundCalculationService;
         this.checkInOutService = checkInOutService;
         this.roomServiceClient = roomServiceClient;
@@ -697,6 +700,9 @@ public class BookingCheckoutBillingService {
     }
 
     private String resolveInvoiceStatus(Booking booking) {
+        if (invoiceStatusResolver != null) {
+            return invoiceStatusResolver.resolve(booking);
+        }
         if (booking == null || booking.getItems() == null || booking.getItems().isEmpty()) {
             return "DRAFT";
         }

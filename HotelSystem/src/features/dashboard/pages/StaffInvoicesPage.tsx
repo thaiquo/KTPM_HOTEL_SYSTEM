@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   HiOutlineCalendar,
@@ -26,6 +26,17 @@ const formatDateTime = (value?: string) => {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+  });
+};
+
+const formatDateOnly = (value?: string) => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   });
 };
 
@@ -71,17 +82,17 @@ const normalizeInvoiceLines = (lines: any): NormalizedInvoiceLine[] => {
   if (!lines || typeof lines !== 'object') return [];
   const result: NormalizedInvoiceLine[] = [];
   const push = (key: string, label: string, amount: number) => {
-    if (amount !== 0) result.push({ key, roomKey: 'summary', roomName: 'Tong ket', label, amount });
+    if (amount !== 0) result.push({ key, roomKey: 'summary', roomName: 'Tổng kết', label, amount });
   };
   const appendSettlementLines = () => {
     const originalAmount = Number(lines.totalOriginalAmount ?? lines.roomTotal ?? 0);
     const actualRevenue = Number(lines.totalActualRevenue ?? lines.actualRoomCharge ?? lines.grandTotal ?? 0);
     const earlyRefund = Number(lines.totalEarlyCheckoutRefund ?? lines.earlyCheckoutAdjustment ?? 0);
     const paidAmount = Number(lines.totalPaidAmount ?? lines.paidAmount ?? 0);
-    if (!Array.isArray(lines.invoiceItems)) push('roomTotal', 'Tien phong goc', originalAmount);
-    push('earlyCheckoutRefund', 'Hoan tra checkout som', earlyRefund > 0 ? -earlyRefund : 0);
-    push('actualRevenue', 'Doanh thu thuc thu', actualRevenue);
-    push('paidAmount', 'Da thanh toan/coc', paidAmount > 0 ? -paidAmount : 0);
+    if (!Array.isArray(lines.invoiceItems)) push('roomTotal', 'Tiền phòng gốc', originalAmount);
+    push('earlyCheckoutRefund', 'Hoàn trả checkout sớm', earlyRefund > 0 ? -earlyRefund : 0);
+    push('actualRevenue', 'Doanh thu thực thu', actualRevenue);
+    push('paidAmount', 'Đã thanh toán/cọc', paidAmount > 0 ? -paidAmount : 0);
   };
   if (Array.isArray(lines.invoiceItems)) {
     lines.invoiceItems.forEach((line: any, index: number) => {
@@ -145,16 +156,17 @@ const groupInvoiceLinesByRoom = (lines: NormalizedInvoiceLine[]) => {
 };
 
 const getInvoiceStatus = (invoice: BookingInvoiceRecord) => {
-  if (invoice.refundStatus === 'REFUNDED' || invoice.refundStatus === 'SUCCESS') return 'REFUNDED';
-  if (invoice.refundStatus === 'ASSIGNED' || invoice.refundStatus === 'PENDING' || invoice.refundStatus === 'PROCESSING') return 'REFUND_PENDING';
-  return invoice.bookingStatus || 'COMPLETED';
+  return String(invoice.invoiceStatus || 'COMPLETED').toUpperCase();
 };
 
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
     case 'REFUNDED': return 'border-cyan-200 bg-cyan-50 text-cyan-700';
+    case 'PENDING_REFUND': return 'border-amber-200 bg-amber-50 text-amber-700';
     case 'REFUND_PENDING': return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'PARTIAL': return 'border-sky-200 bg-sky-50 text-sky-700';
     case 'COMPLETED': return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'CHECKED_OUT': return 'border-emerald-200 bg-emerald-50 text-emerald-700';
     default: return 'border-slate-200 bg-slate-50 text-slate-700';
   }
 };
@@ -162,8 +174,11 @@ const getStatusBadgeClass = (status: string) => {
 const getStatusLabel = (status: string) => {
   switch (status) {
     case 'REFUNDED': return 'Đã hoàn tiền';
+    case 'PENDING_REFUND': return 'Chờ hoàn tiền';
     case 'REFUND_PENDING': return 'Chờ hoàn tiền';
+    case 'PARTIAL': return 'Checkout một phần';
     case 'COMPLETED': return 'Đã checkout';
+    case 'CHECKED_OUT': return 'Đã checkout';
     default: return status;
   }
 };
@@ -173,6 +188,23 @@ const staffName = (id?: string, names?: Record<string, string>) => {
   if (id === 'MULTIPLE') return 'Nhiều nhân viên';
   return names?.[id] || `Nhân viên #${id}`;
 };
+
+const staffDisplay = (name?: string, id?: string, names?: Record<string, string>) => {
+  const resolvedName = name && !/^\d+$/.test(name.trim()) ? name : undefined;
+  return resolvedName || staffName(id, names);
+};
+
+const refundReasonLabel = (reason?: string) => {
+  const normalized = String(reason || '').trim().toUpperCase();
+  if (normalized === 'EARLY_CHECKOUT_REFUND') return 'Ho\u00e0n ti\u1ec1n checkout s\u1edbm';
+  if (normalized === 'CANCELLATION_REFUND') return 'Ho\u00e0n ti\u1ec1n h\u1ee7y booking';
+  if (normalized === 'MANUAL_REFUND') return 'Ho\u00e0n ti\u1ec1n th\u1ee7 c\u00f4ng';
+  if (!reason) return 'Ho\u00e0n ti\u1ec1n';
+  return reason;
+};
+
+const invoiceRevenueAmount = (invoice: BookingInvoiceRecord) =>
+  Number(invoice.totalActualRevenue || invoice.amount || invoice.totalAmount || 0);
 
 const getBookingRoomIds = (booking?: Booking | null) => {
   if (!booking) return [];
@@ -249,8 +281,8 @@ const StaffInvoicesPage: React.FC = () => {
 
       if (statusFilter !== 'ALL') {
         if (statusFilter === 'COMPLETED') params.status = ['COMPLETED'];
-        if (statusFilter === 'REFUND_PENDING') params.status = ['ASSIGNED', 'PENDING', 'PROCESSING'];
-        if (statusFilter === 'REFUNDED') params.status = ['REFUNDED', 'SUCCESS'];
+        if (statusFilter === 'REFUND_PENDING') params.status = ['PENDING_REFUND'];
+        if (statusFilter === 'REFUNDED') params.status = ['REFUNDED'];
       }
 
       const { fromDate, toDate } = getDateRange(dateRange, customFrom, customTo);
@@ -315,6 +347,13 @@ const StaffInvoicesPage: React.FC = () => {
   useEffect(() => {
     const ids = Array.from(new Set(
       invoices.flatMap((invoice) => [invoice.customerUserId, invoice.checkoutStaffId, invoice.checkinStaffId])
+        .concat([
+          invoiceDetail?.checkinStaffId,
+          invoiceDetail?.checkoutStaffId,
+          invoiceDetail?.processedByStaffId,
+          selectedInvoice?.checkinStaffId,
+          selectedInvoice?.checkoutStaffId,
+        ])
         .filter((id): id is string => Boolean(id) && id !== 'MULTIPLE'),
     ));
     ids.forEach(async (id) => {
@@ -332,7 +371,7 @@ const StaffInvoicesPage: React.FC = () => {
         setUserNames((prev) => ({ ...prev, [id]: `User #${id}` }));
       }
     });
-  }, [invoices, userNames]);
+  }, [invoices, invoiceDetail, selectedInvoice, userNames]);
 
   const filteredInvoices = invoices;
 
@@ -366,11 +405,11 @@ const StaffInvoicesPage: React.FC = () => {
   };
 
   const totalInvoiceAmount = useMemo(
-    () => filteredInvoices.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
+    () => filteredInvoices.reduce((sum, invoice) => sum + invoiceRevenueAmount(invoice), 0),
     [filteredInvoices],
   );
 
-  const refundPendingCount = filteredInvoices.filter((inv) => getInvoiceStatus(inv) === 'REFUND_PENDING').length;
+  const refundPendingCount = filteredInvoices.filter((inv) => getInvoiceStatus(inv) === 'PENDING_REFUND').length;
   const detailSummary = invoiceDetail?.revenueSummary;
   const detailCustomer = invoiceDetail?.customer;
   const detailRooms = invoiceDetail?.rooms || [];
@@ -386,19 +425,16 @@ const StaffInvoicesPage: React.FC = () => {
     additionalChargeAmount: detailSummary?.additionalChargeAmount,
     remainingBalance: detailSummary?.remainingToPay ?? detailSummary?.remainingAmount,
   } : selectedInvoice?.lines;
-  const detailStatus = invoiceDetail?.refundStatus === 'PENDING'
-    ? 'REFUND_PENDING'
-    : invoiceDetail?.refundStatus === 'COMPLETED'
-      ? 'REFUNDED'
-      : selectedInvoice
-        ? getInvoiceStatus(selectedInvoice)
-        : 'COMPLETED';
+  const detailStatus = invoiceDetail?.invoiceStatus
+    || selectedInvoice?.invoiceStatus
+    || 'COMPLETED';
   const detailCheckinStaff = invoiceDetail?.checkinStaffName
-    || invoiceDetail?.checkinStaff
-    || staffName(invoiceDetail?.checkinStaffId || selectedInvoice?.checkinStaffId, userNames);
+    || staffDisplay(invoiceDetail?.checkinStaff, invoiceDetail?.checkinStaffId || selectedInvoice?.checkinStaffId, userNames);
   const detailCheckoutStaff = invoiceDetail?.checkoutStaffName
-    || invoiceDetail?.checkoutStaff
-    || staffName(invoiceDetail?.checkoutStaffId || selectedInvoice?.checkoutStaffId, userNames);
+    || staffDisplay(invoiceDetail?.checkoutStaff, invoiceDetail?.checkoutStaffId || selectedInvoice?.checkoutStaffId, userNames);
+  const detailActualCheckoutAt = invoiceDetail?.checkoutTime
+    || detailRooms.find((room) => room.actualCheckoutDate)?.actualCheckoutDate
+    || selectedInvoice?.checkedOutAt;
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -426,7 +462,7 @@ const StaffInvoicesPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-600"><HiOutlineCalendar className="h-6 w-6" /></div>
               <div>
-                <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Tổng giá trị</div>
+                <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Doanh thu thực thu</div>
                 <div className="mt-1 text-2xl font-black text-gray-900">{formatCurrency(totalInvoiceAmount)}</div>
               </div>
             </div>
@@ -562,7 +598,7 @@ const StaffInvoicesPage: React.FC = () => {
           </div>
         ) : !isSearched ? (
           <div className="py-28 text-center">
-            <div className="text-5xl mb-4">🔍</div>
+            <HiOutlineSearch className="mx-auto mb-4 h-12 w-12 text-slate-300" />
             <div className="text-lg font-bold text-gray-600">Nhập tiêu chí và nhấn Tìm kiếm để xem hóa đơn</div>
             <div className="text-sm text-gray-400 mt-2">Hoặc chọn bộ lọc thời gian nhanh bên trên để tìm kiếm ngay.</div>
           </div>
@@ -604,11 +640,11 @@ const StaffInvoicesPage: React.FC = () => {
                           <div className="text-xs font-medium text-slate-500">{invoice.representativePhone || userNames[invoice.customerUserId || ''] || '-'}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="font-black text-slate-900">{staffName(invoice.checkoutStaffId, userNames)}</div>
+                          <div className="font-black text-slate-900">{staffDisplay(invoice.checkoutStaffName, invoice.checkoutStaffId, userNames)}</div>
                           <div className="text-xs font-medium text-slate-500">ID: {invoice.checkoutStaffId || '-'}</div>
                         </td>
                         <td className="px-6 py-4 text-sm font-medium text-slate-600">{formatDateTime(invoice.createdAt)}</td>
-                        <td className="px-6 py-4 font-black text-slate-900">{formatCurrency(invoice.amount || 0)}</td>
+                        <td className="px-6 py-4 font-black text-slate-900">{formatCurrency(invoiceRevenueAmount(invoice))}</td>
                         <td className="px-6 py-4">
                           <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${getStatusBadgeClass(status)}`}>
                             {getStatusLabel(status)}
@@ -694,11 +730,15 @@ const StaffInvoicesPage: React.FC = () => {
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Ngày nhận phòng</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkInDate || detailRooms[0]?.checkInDate || bookingDetails?.checkIn || '-'}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateOnly(selectedInvoice.checkInDate || detailRooms[0]?.checkInDate || bookingDetails?.checkIn)}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Ngày trả phòng</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkOutDate || detailRooms[0]?.plannedCheckoutDate || bookingDetails?.checkOut || '-'}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateOnly(selectedInvoice.checkOutDate || detailRooms[0]?.plannedCheckoutDate || bookingDetails?.checkOut)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-400">{'Tr\u1ea3 ph\u00f2ng th\u1ef1c t\u1ebf'}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(detailActualCheckoutAt)}</div>
                         </div>
                       </div>
                     </div>
@@ -763,7 +803,7 @@ const StaffInvoicesPage: React.FC = () => {
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Thời gian check-out</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(invoiceDetail?.checkoutTime || selectedInvoice.checkedOutAt)}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(detailActualCheckoutAt)}</div>
                         </div>
                       </div>
                     </div>
@@ -853,10 +893,11 @@ const StaffInvoicesPage: React.FC = () => {
                         {/* Refund transaction */}
                         {(invoiceDetail?.refundHistory.records.length || selectedInvoice.refundTransactionId) ? (
                           <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
+                            <div className="mb-2 text-[11px] font-black uppercase tracking-widest text-cyan-700">{"L\u1ecbch s\u1eed ho\u00e0n ti\u1ec1n"}</div>
                             {invoiceDetail?.refundHistory.records.length
                               ? invoiceDetail.refundHistory.records.map((refund, index) => (
                                 <div key={`${refund.time || 'refund'}-${index}`} className="flex items-center justify-between gap-3">
-                                  <span>{refund.reason || 'Hoàn tiền checkout sớm'} · {formatDateTime(refund.time)}</span>
+                                  <span>{refundReasonLabel(refund.reason)} {'\u00b7'} {formatDateTime(refund.time)}</span>
                                   <span>{formatCurrency(refund.amount)}</span>
                                 </div>
                               ))

@@ -116,6 +116,8 @@ function RoomCard({ room, checkIn, checkOut, guests, connectedRoomLookup }: {
   const { base, viewBonus, bathtubBonus, total } = calcPrice(room);
   const bedLabel = getBedLabel(room);
   const amenities = getAmenities(room);
+  const numberOfNights = checkIn && checkOut ? Math.max(1, getDatesInRange(checkIn, checkOut).length) : 1;
+  const totalStayPrice = total * numberOfNights;
   const weekendNightCount = getWeekendNightCount(checkIn, checkOut);
   const connectedRoomLabel = getConnectedRoomLabel(room, connectedRoomLookup);
   const thumbnail = room.roomType?.images?.find(i => i.isThumbnail)?.imageUrl
@@ -185,6 +187,11 @@ function RoomCard({ room, checkIn, checkOut, guests, connectedRoomLookup }: {
               {total.toLocaleString('vi-VN')}đ
               <span className="text-xs font-medium text-[#888] ml-1">/đêm</span>
             </div>
+            {checkIn && checkOut && (
+              <div className="mt-1 text-sm font-black text-indigo-700">
+                Tổng {numberOfNights} đêm: {totalStayPrice.toLocaleString('vi-VN')}đ
+              </div>
+            )}
             {(viewBonus > 0 || bathtubBonus > 0) && (
               <div className="text-[10px] text-[#aaa] mt-0.5">
                 Gốc {base.toLocaleString('vi-VN')}đ

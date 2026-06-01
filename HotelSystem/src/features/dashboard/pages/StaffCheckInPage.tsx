@@ -72,6 +72,11 @@ const roomNameLabel = (room?: Room, fallbackId?: string | number) => {
   return `Phòng #${fallbackId || 'chưa xếp'}`;
 };
 
+const roomForBookingItem = (booking: Booking, item: BookingItem) => {
+  const rooms = (booking as Booking & { rooms?: Room[] }).rooms || [];
+  return rooms.find((room) => normalizeId(room.id) === normalizeId(item.roomId));
+};
+
 const paymentLabel = (booking?: Booking) => {
   const status = (booking?.paymentStatus || '').toUpperCase();
   if (status === 'PAID') return 'Đã thanh toán';
@@ -628,9 +633,16 @@ export default function StaffCheckInPage() {
         staffBookingApi.getBooking(booking.id),
         staffBookingApi.getGuests(booking.id).catch(() => []),
       ]);
+      const roomIds = Array.from(new Set((detail.items || []).map((item) => item.roomId).filter(Boolean)));
+      const fetchedRooms = await Promise.all(roomIds.map((roomId) => roomApi.getById(roomId).catch(() => undefined)));
+      const roomById = new Map(roomIds.map((roomId, index) => [roomId, fetchedRooms[index]] as const));
       setBookingDetail({
         ...detail,
-        items: attachGuestsToRooms((detail.items || []) as BookingRoomRow[], guests),
+        items: attachGuestsToRooms((detail.items || []) as BookingRoomRow[], guests).map((item) => ({
+          ...item,
+          room: item.room || roomById.get(item.roomId),
+        })),
+        rooms: fetchedRooms.filter(Boolean) as Room[],
       });
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Không thể tải chi tiết booking');
@@ -925,7 +937,7 @@ function RoomTable(props: {
                   </td>
                   <td className="px-5 py-4 font-black text-slate-900">{row.booking?.bookingCode || row.bookingCode || `#${row.booking?.id || row.bookingId || '-'}`}</td>
                   <td className="px-5 py-4">
-                    <div className="font-black text-slate-900">{row.room?.roomNumber || row.roomId}</div>
+                    <div className="font-black text-slate-900">{roomNameLabel(row.room, row.roomId)}</div>
                     <div className="text-xs font-semibold text-slate-500">{row.room?.roomType?.type || '-'}</div>
                   </td>
                   <td className="px-5 py-4">
@@ -998,7 +1010,7 @@ function CheckoutModal(props: {
         <div className="flex items-start justify-between border-b border-slate-100 bg-slate-950 p-6 text-white">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Checkout BookingRoom</p>
-            <h2 className="mt-2 text-3xl font-black">{props.rows.length === 1 ? `Phòng ${first?.room?.roomNumber || first?.roomId}` : `${props.rows.length} phòng được chọn`}</h2>
+            <h2 className="mt-2 text-3xl font-black">{props.rows.length === 1 ? roomNameLabel(first?.room, first?.roomId) : `${props.rows.length} phòng được chọn`}</h2>
             <div className="mt-2 text-sm font-bold text-slate-300">Tính phí riêng từng phòng, thao tác nhiều phòng chỉ là bulk action.</div>
           </div>
           <button onClick={props.onClose} className="rounded-full p-2 text-slate-300 hover:bg-white/10"><HiX size={24} /></button>
@@ -1017,7 +1029,7 @@ function CheckoutModal(props: {
               <div className="mt-4 space-y-2">
                 {props.rows.map((row) => (
                   <div key={row.id} className="flex flex-col justify-between gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-700 md:flex-row md:items-center">
-                    <span>Phòng {row.room?.roomNumber || row.roomId}</span>
+                    <span>{roomNameLabel(row.room, row.roomId)}</span>
                     <span>Check-in: {formatDateTime(row.actualCheckInAt)}</span>
                     <span>Dự kiến checkout: {formatDate(row.checkOut)} 12:00</span>
                   </div>
@@ -1118,7 +1130,7 @@ function CheckoutModal(props: {
                     {props.preview.roomSummaries.map((room) => (
                       <div key={`${room.bookingRoomId || room.roomId}`} className="rounded-2xl bg-white p-4 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="font-black text-slate-900">Phòng {room.roomNumber || room.roomId || '-'}</div>
+                          <div className="font-black text-slate-900">{room.roomName || (room.roomNumber ? `Phòng ${room.roomNumber}` : `Phòng ${room.roomId || '-'}`)}</div>
                           <div className="font-black text-sky-700">{formatCurrency(Number(room.totalAmount ?? room.actualRoomRevenue ?? room.roomCharge ?? 0))}</div>
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-slate-600 md:grid-cols-3 xl:grid-cols-4">
@@ -1251,7 +1263,7 @@ function RoomDetailModal({ row, onClose, onCheckIn, onCheckout }: { row: Booking
         <div className="flex items-start justify-between border-b border-slate-100 p-6">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.25em] text-sky-500">Chi tiết BookingRoom</p>
-            <h2 className="mt-1 text-2xl font-black text-slate-950">{row.booking?.bookingCode || row.bookingCode || `#${row.booking?.id || row.bookingId || '-'}`} - Phòng {row.room?.roomNumber || row.roomId}</h2>
+            <h2 className="mt-1 text-2xl font-black text-slate-950">{row.booking?.bookingCode || row.bookingCode || `#${row.booking?.id || row.bookingId || '-'}`} - {roomNameLabel(row.room, row.roomId)}</h2>
             <div className="mt-2 text-sm font-bold text-slate-500">{row.room?.roomType?.type || 'Loại phòng'} - {roomStatusLabel(row.status)}</div>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100"><HiX size={22} /></button>
@@ -1306,14 +1318,14 @@ function BookingDetailModal({ booking, onClose, onCheckIn, onCheckout }: { booki
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {(booking.items || []).map((item) => {
-              const row = item as BookingRoomRow;
+              const row = { ...(item as BookingRoomRow), room: (item as BookingRoomRow).room || roomForBookingItem(booking, item) };
               const rep = representativeOf(row);
               return (
                 <div key={item.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-lg font-black text-slate-950">Phòng {item.roomId}</div>
-                      <div className="mt-1 text-xs font-bold text-slate-500">{roomStatusLabel(item.status)}</div>
+                      <div className="text-lg font-black text-slate-950">{roomNameLabel(row.room, item.roomId)}</div>
+                      <div className="mt-1 text-xs font-bold text-slate-500">{row.room?.roomType?.type || '-'} · {roomStatusLabel(item.status)}</div>
                     </div>
                     {(item.status === 'BOOKED' || item.status === 'ACTIVE') && <button onClick={() => onCheckIn(row)} className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-black text-white">Check-in</button>}
                     {item.status === 'CHECKED_IN' && <button onClick={() => onCheckout(row)} className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-black text-white">Checkout</button>}

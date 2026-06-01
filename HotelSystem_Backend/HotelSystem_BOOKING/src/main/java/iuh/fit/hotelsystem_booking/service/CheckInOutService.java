@@ -22,14 +22,19 @@ public class CheckInOutService {
             return 0.0;
         }
         
-        LocalTime time = item.getActualCheckInAt().toLocalTime();
-        // 3. Check-in từ 14:00 trở đi: miễn phí.
-        if (!time.isBefore(LocalTime.of(14, 0))) {
+        LocalDateTime officialCheckInAt = item.getCheckIn().atTime(14, 0);
+        if (!item.getActualCheckInAt().isBefore(officialCheckInAt)) {
             return 0.0;
         }
 
         BigDecimal oneNightPrice = getFirstNightPrice(item);
+        if (item.getActualCheckInAt().toLocalDate().isBefore(item.getCheckIn())) {
+            return oneNightPrice.multiply(BigDecimal.valueOf(BookingConstants.EARLY_BEFORE_7_FEE_PERCENT))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
 
+        LocalTime time = item.getActualCheckInAt().toLocalTime();
         // If check-in at or after 12:00 but before 14:00 -> free
         if (!time.isBefore(LocalTime.of(12, 0))) {
             return 0.0;

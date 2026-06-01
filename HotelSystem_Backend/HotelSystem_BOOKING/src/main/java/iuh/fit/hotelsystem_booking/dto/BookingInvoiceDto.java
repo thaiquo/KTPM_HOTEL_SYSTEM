@@ -7,6 +7,7 @@ public class BookingInvoiceDto {
     private Long id;
     private Long bookingId;
     private String bookingCode;
+    private String invoiceStatus;
     private String bookingStatus;
     private String customerUserId;
     private String customerName;
@@ -17,7 +18,9 @@ public class BookingInvoiceDto {
     private String checkOutDate;
     private Integer totalRooms;
     private String checkoutStaffId;
+    private String checkoutStaffName;
     private String checkinStaffId;
+    private String checkinStaffName;
     private LocalDateTime checkedInAt;
     private LocalDateTime checkedOutAt;
     private Long refundTransactionId;
@@ -38,6 +41,9 @@ public class BookingInvoiceDto {
 
     public String getBookingCode() { return bookingCode; }
     public void setBookingCode(String bookingCode) { this.bookingCode = bookingCode; }
+
+    public String getInvoiceStatus() { return invoiceStatus; }
+    public void setInvoiceStatus(String invoiceStatus) { this.invoiceStatus = invoiceStatus; }
 
     public String getBookingStatus() { return bookingStatus; }
     public void setBookingStatus(String bookingStatus) { this.bookingStatus = bookingStatus; }
@@ -69,8 +75,14 @@ public class BookingInvoiceDto {
     public String getCheckoutStaffId() { return checkoutStaffId; }
     public void setCheckoutStaffId(String checkoutStaffId) { this.checkoutStaffId = checkoutStaffId; }
 
+    public String getCheckoutStaffName() { return checkoutStaffName; }
+    public void setCheckoutStaffName(String checkoutStaffName) { this.checkoutStaffName = checkoutStaffName; }
+
     public String getCheckinStaffId() { return checkinStaffId; }
     public void setCheckinStaffId(String checkinStaffId) { this.checkinStaffId = checkinStaffId; }
+
+    public String getCheckinStaffName() { return checkinStaffName; }
+    public void setCheckinStaffName(String checkinStaffName) { this.checkinStaffName = checkinStaffName; }
 
     public LocalDateTime getCheckedInAt() { return checkedInAt; }
     public void setCheckedInAt(LocalDateTime checkedInAt) { this.checkedInAt = checkedInAt; }

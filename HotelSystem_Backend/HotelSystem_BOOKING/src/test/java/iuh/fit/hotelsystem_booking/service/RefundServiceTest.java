@@ -12,7 +12,10 @@ import iuh.fit.hotelsystem_booking.repository.RefundAuditLogRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundPaymentTransactionRepository;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -26,6 +29,46 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 class RefundServiceTest {
+
+    @Test
+    void createAssignedEarlyCheckoutRefundIsIdempotentByBookingRoomBatch() {
+        RefundTransactionRepository refundRepository = mock(RefundTransactionRepository.class);
+        BookingRepository bookingRepository = mock(BookingRepository.class);
+        RefundQueueProducer refundQueueProducer = mock(RefundQueueProducer.class);
+        RefundAuditService auditService = mock(RefundAuditService.class);
+        RefundNotificationService notificationService = mock(RefundNotificationService.class);
+        RefundService refundService = new RefundService(
+                refundRepository,
+                bookingRepository,
+                mock(CancellationPolicyService.class),
+                mock(PaymentGateway.class),
+                refundQueueProducer,
+                mock(RefundPaymentTransactionRepository.class),
+                auditService,
+                notificationService,
+                mock(PaymentServiceClient.class));
+
+        Booking booking = new Booking();
+        booking.setId(10L);
+        booking.setUserId(20L);
+        booking.setPaidAmount(2_000_000.0);
+
+        when(refundRepository.findByIdempotencyKey("refund_early_checkout_10_rooms_1-2"))
+                .thenReturn(Optional.empty());
+        when(refundRepository.save(any(RefundTransaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        refundService.createAssignedEarlyCheckoutRefundTransaction(
+                booking,
+                BigDecimal.valueOf(640_000),
+                2L,
+                List.of(2L, 1L, 1L));
+
+        ArgumentCaptor<RefundTransaction> captor = ArgumentCaptor.forClass(RefundTransaction.class);
+        verify(refundRepository).save(captor.capture());
+        assertEquals("refund_early_checkout_10_rooms_1-2", captor.getValue().getIdempotencyKey());
+        assertEquals(640_000.0, captor.getValue().getRefundAmount());
+    }
 
     @Test
     void createRefundRequestIsIdempotentByBookingId() {

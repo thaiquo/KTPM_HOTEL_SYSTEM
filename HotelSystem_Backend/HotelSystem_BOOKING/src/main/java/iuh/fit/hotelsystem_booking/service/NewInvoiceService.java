@@ -50,6 +50,7 @@ public class NewInvoiceService {
     private final PaymentServiceClient paymentServiceClient;
     private final UserServiceClient userServiceClient;
     private final RoomServiceClient roomServiceClient;
+    private final InvoiceStatusResolver invoiceStatusResolver;
     private final ObjectMapper objectMapper;
     private final jakarta.persistence.EntityManager entityManager;
 
@@ -383,7 +384,7 @@ public class NewInvoiceService {
             RefundAmounts refunds = readRefundAmounts(inv.getBookingId());
             summary.setTotalRefundedAmount(summary.getTotalRefundedAmount().add(refunds.completed));
             summary.setTotalPendingRefundAmount(summary.getTotalPendingRefundAmount().add(refunds.pending));
-            if (refunds.completed.compareTo(BigDecimal.ZERO) > 0 || f.refundToCustomer.compareTo(BigDecimal.ZERO) > 0) {
+            if (refunds.completed.compareTo(BigDecimal.ZERO) > 0) {
                 summary.setRefundedInvoiceCount(summary.getRefundedInvoiceCount() + 1);
             }
             Booking booking = pageBookingMap != null ? pageBookingMap.get(inv.getBookingId()) : null;
@@ -488,44 +489,36 @@ public class NewInvoiceService {
     }
 
     private String resolveInvoiceStatus(BookingInvoice inv, Booking booking) {
-        if (inv != null && inv.getInvoiceStatus() != null && !inv.getInvoiceStatus().isBlank()) {
-            return normalizeStatusFilters(List.of(inv.getInvoiceStatus())).stream().findFirst().orElse("DRAFT");
-        }
         Booking effectiveBooking = booking;
         if (effectiveBooking == null && inv != null && inv.getBookingId() != null) {
             effectiveBooking = bookingRepository.findByIdWithItems(inv.getBookingId()).orElse(null);
         }
-        if (effectiveBooking != null && effectiveBooking.getStatus() != null && effectiveBooking.getStatus().name().contains("CANCEL")) {
-            return "CANCELLED";
+        if (effectiveBooking != null) {
+            return invoiceStatusResolver.resolve(effectiveBooking);
         }
-        if (effectiveBooking == null || effectiveBooking.getItems() == null || effectiveBooking.getItems().isEmpty()) {
-            return "DRAFT";
-        }
-        List<BookingItem> activeRooms = effectiveBooking.getItems().stream()
-                .filter(room -> room != null && room.getStatus() != BookingItemStatus.CANCELLED)
-                .toList();
-        if (activeRooms.isEmpty()) {
-            return "CANCELLED";
-        }
-        if (activeRooms.stream().allMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
-            return "COMPLETED";
-        }
-        if (activeRooms.stream().anyMatch(room -> room.getStatus() == BookingItemStatus.CHECKED_OUT)) {
-            return "PARTIAL";
+        if (inv != null && inv.getInvoiceStatus() != null && !inv.getInvoiceStatus().isBlank()) {
+            return invoiceStatusResolver.normalize(inv.getInvoiceStatus());
         }
         return "DRAFT";
     }
 
     private String resolvePaymentStatus(BookingInvoice inv, InvoiceFinancials financials) {
-        if (inv != null && inv.getPaymentStatus() != null && !inv.getPaymentStatus().isBlank()) {
-            return inv.getPaymentStatus();
+        String invoiceStatus = resolveInvoiceStatus(inv, null);
+        if ("PENDING_REFUND".equals(invoiceStatus) || "REFUNDED".equals(invoiceStatus)) {
+            return invoiceStatus;
         }
         RefundAmounts refunds = readRefundAmounts(inv != null ? inv.getBookingId() : null);
-        if (refunds.pending.compareTo(BigDecimal.ZERO) > 0 || financials.refundToCustomer.compareTo(BigDecimal.ZERO) > 0) {
+        if (refunds.pending.compareTo(BigDecimal.ZERO) > 0) {
             return "PENDING_REFUND";
         }
         if (refunds.completed.compareTo(BigDecimal.ZERO) > 0) {
             return "REFUNDED";
+        }
+        if (financials.refundToCustomer.compareTo(BigDecimal.ZERO) > 0) {
+            return "PENDING_REFUND";
+        }
+        if (inv != null && inv.getPaymentStatus() != null && !inv.getPaymentStatus().isBlank()) {
+            return inv.getPaymentStatus();
         }
         if (financials.paid.compareTo(BigDecimal.ZERO) == 0) {
             return "UNPAID";
@@ -988,55 +981,46 @@ public class NewInvoiceService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> getInvoiceSummary() {
-        var cb = entityManager.getCriteriaBuilder();
-        var cq = cb.createQuery(Object[].class);
-        var root = cq.from(BookingInvoice.class);
-        cq.multiselect(
-            cb.coalesce(cb.sum(root.<BigDecimal>get("totalOriginalAmount")), BigDecimal.ZERO),
-            cb.coalesce(cb.sum(root.<BigDecimal>get("totalActualRevenue")), BigDecimal.ZERO),
-            cb.coalesce(cb.sum(root.<BigDecimal>get("totalRefundToCustomer")), BigDecimal.ZERO),
-            cb.coalesce(cb.sum(root.<BigDecimal>get("totalAdditionalCharge")), BigDecimal.ZERO),
-            cb.coalesce(cb.sum(root.<BigDecimal>get("remainingBalance")), BigDecimal.ZERO),
-            cb.count(root),
-            cb.sum(cb.<Long>selectCase()
-                .when(cb.and(
-                    cb.greaterThan(cb.coalesce(root.<BigDecimal>get("totalAllocatedPaidAmount"), BigDecimal.ZERO), BigDecimal.ZERO),
-                    cb.equal(cb.coalesce(root.<BigDecimal>get("remainingBalance"), BigDecimal.ZERO), BigDecimal.ZERO),
-                    cb.equal(cb.coalesce(root.<BigDecimal>get("totalRefundToCustomer"), BigDecimal.ZERO), BigDecimal.ZERO)
-                ), 1L)
-                .otherwise(0L)),
-            cb.sum(cb.<Long>selectCase()
-                .when(cb.or(
-                    cb.isNull(root.get("totalAllocatedPaidAmount")),
-                    cb.equal(root.<BigDecimal>get("totalAllocatedPaidAmount"), BigDecimal.ZERO)
-                ), 1L)
-                .otherwise(0L)),
-            cb.sum(cb.<Long>selectCase()
-                .when(cb.and(
-                    cb.greaterThan(cb.coalesce(root.<BigDecimal>get("totalAllocatedPaidAmount"), BigDecimal.ZERO), BigDecimal.ZERO),
-                    cb.greaterThan(cb.coalesce(root.<BigDecimal>get("remainingBalance"), BigDecimal.ZERO), BigDecimal.ZERO)
-                ), 1L)
-                .otherwise(0L)),
-            cb.sum(cb.<Long>selectCase()
-                .when(cb.greaterThan(cb.coalesce(root.<BigDecimal>get("totalRefundToCustomer"), BigDecimal.ZERO), BigDecimal.ZERO), 1L)
-                .otherwise(0L))
-        );
-        Object[] res = entityManager.createQuery(cq).getSingleResult();
-        BigDecimal grossInvoiceAmount = (BigDecimal) res[0];
-        BigDecimal totalActualRevenue = (BigDecimal) res[1];
-        BigDecimal totalRefundedAmount = (BigDecimal) res[2];
-        BigDecimal totalAdditionalCharge = (BigDecimal) res[3];
-        BigDecimal totalRemainingToPay = (BigDecimal) res[4];
-        Long totalInvoices = ((Number) res[5]).longValue();
-        Long paidInvoiceCount = res[6] != null ? ((Number) res[6]).longValue() : 0L;
-        Long unpaidInvoiceCount = res[7] != null ? ((Number) res[7]).longValue() : 0L;
-        Long partiallyPaidInvoiceCount = res[8] != null ? ((Number) res[8]).longValue() : 0L;
-        Long refundedInvoiceCount = res[9] != null ? ((Number) res[9]).longValue() : 0L;
+        List<BookingInvoice> invoices = invoiceRepository.findAll();
+        BigDecimal grossInvoiceAmount = BigDecimal.ZERO;
+        BigDecimal totalActualRevenue = BigDecimal.ZERO;
+        BigDecimal totalRefundedAmount = BigDecimal.ZERO;
+        BigDecimal totalAdditionalCharge = BigDecimal.ZERO;
+        BigDecimal totalRemainingToPay = BigDecimal.ZERO;
+        long paidInvoiceCount = 0L;
+        long unpaidInvoiceCount = 0L;
+        long partiallyPaidInvoiceCount = 0L;
+        long refundedInvoiceCount = 0L;
+        long pendingRefundCountByInvoice = 0L;
+
+        for (BookingInvoice invoice : invoices) {
+            InvoiceFinancials financials = readFinancials(invoice);
+            grossInvoiceAmount = grossInvoiceAmount.add(financials.grossOriginal);
+            totalActualRevenue = totalActualRevenue.add(financials.netRevenue);
+            totalAdditionalCharge = totalAdditionalCharge.add(financials.additionalCharge.add(financials.damageTotal));
+            totalRemainingToPay = totalRemainingToPay.add(financials.remainingToPay);
+
+            RefundAmounts refundAmounts = readRefundAmounts(invoice.getBookingId());
+            totalRefundedAmount = totalRefundedAmount.add(refundAmounts.completed);
+            String status = resolveInvoiceStatus(invoice, null);
+            if ("REFUNDED".equals(status)) {
+                refundedInvoiceCount++;
+            } else if ("PENDING_REFUND".equals(status)) {
+                pendingRefundCountByInvoice++;
+            } else if ("PARTIAL".equals(status)) {
+                partiallyPaidInvoiceCount++;
+            } else if ("COMPLETED".equals(status)) {
+                paidInvoiceCount++;
+            } else if ("DRAFT".equals(status)) {
+                unpaidInvoiceCount++;
+            }
+        }
 
         var now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
         var todayStart = now.atStartOfDay();
         var tomorrowStart = now.plusDays(1).atStartOfDay();
 
+        var cb = entityManager.getCriteriaBuilder();
         var cqToday = cb.createQuery(Long.class);
         var rootToday = cqToday.from(BookingInvoice.class);
         cqToday.select(cb.count(rootToday));
@@ -1055,7 +1039,7 @@ public class NewInvoiceService {
         Long pendingCount = ((Number) pendingRes[1]).longValue();
 
         Map<String, Object> out = new HashMap<>();
-        out.put("totalInvoices", totalInvoices);
+        out.put("totalInvoices", invoices.size());
         out.put("grossInvoiceAmount", grossInvoiceAmount);
         out.put("totalActualRevenue", totalActualRevenue);
         out.put("totalRefundedAmount", totalRefundedAmount);
@@ -1067,7 +1051,7 @@ public class NewInvoiceService {
         out.put("partiallyPaidInvoiceCount", partiallyPaidInvoiceCount);
         out.put("refundedInvoiceCount", refundedInvoiceCount);
         out.put("todayInvoiceCount", todayInvoiceCount);
-        out.put("pendingRefundCount", pendingCount);
+        out.put("pendingRefundCount", Math.max(pendingCount, pendingRefundCountByInvoice));
         return out;
     }
 }

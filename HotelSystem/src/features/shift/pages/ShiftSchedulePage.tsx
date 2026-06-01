@@ -5,7 +5,7 @@ import {
     HiOutlineFilter, HiOutlineRefresh, HiOutlineCheckCircle, HiOutlineXCircle,
     HiOutlineClock
 } from 'react-icons/hi';
-import { toast } from 'react-toastify';
+import toast from 'react-hot-toast';
 import { shiftApi, employeeApi, type EmployeeBackend } from '../../../services/api';
 
 interface Employee extends EmployeeBackend { }

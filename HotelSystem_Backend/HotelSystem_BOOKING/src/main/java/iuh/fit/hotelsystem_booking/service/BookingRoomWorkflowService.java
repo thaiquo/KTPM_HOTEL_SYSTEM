@@ -257,7 +257,11 @@ public class BookingRoomWorkflowService {
         BigDecimal refundSettlementAmount = decimal(lines.get("refundSettlementAmount"), lines.get("additionalRefundAmount"));
         if (refundService != null && refundSettlementAmount.compareTo(BigDecimal.ZERO) > 0) {
             try {
-                refundService.createAssignedEarlyCheckoutRefundTransaction(booking, refundSettlementAmount, staffId);
+                refundService.createAssignedEarlyCheckoutRefundTransaction(
+                        booking,
+                        refundSettlementAmount,
+                        staffId,
+                        request != null ? request.getBookingRoomIds() : List.of());
                 log.info("CHECKOUT_MULTIPLE_CHECKPOINT created early checkout refund bookingId={}, amount={}, staffId={}",
                         booking.getId(), refundSettlementAmount, staffId);
             } catch (RuntimeException ex) {

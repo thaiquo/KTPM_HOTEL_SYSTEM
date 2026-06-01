@@ -248,10 +248,12 @@ export const getGuestsForRoom = (booking: BookingWithRoom, roomId?: string) => {
 export const getRoomPricing = (booking: BookingWithRoom, room?: Room | null) => {
   const bookingItem = booking.items?.find((item) => item.roomId === room?.id)
     || booking.items?.find((item) => String(item.roomId) === String(room?.id));
-  const nights = Math.max(1, getNights(booking.checkIn, booking.checkOut));
-  const nightlyPrice = Number(bookingItem?.priceSnapshot || room?.roomType?.basePrice || 0);
-  const total = Number(bookingItem?.finalPrice || nightlyPrice * nights);
-  return { nightlyPrice, total, nights };
+  const nights = Math.max(1, Number(bookingItem?.nights || 0) || getNights(booking.checkIn, booking.checkOut));
+  const nightlyPrice = Number(bookingItem?.priceSnapshot || room?.roomType?.basePrice || room?.price || 0);
+  const roomTotal = nightlyPrice * nights;
+  const savedTotal = Number(bookingItem?.roomCharge || bookingItem?.finalPrice || bookingItem?.finalAmount || 0);
+  const total = savedTotal >= roomTotal ? savedTotal : roomTotal;
+  return { nightlyPrice, roomTotal, total, nights };
 };
 
 export const getRoomAmenityLabels = (room?: Room | null) => {
