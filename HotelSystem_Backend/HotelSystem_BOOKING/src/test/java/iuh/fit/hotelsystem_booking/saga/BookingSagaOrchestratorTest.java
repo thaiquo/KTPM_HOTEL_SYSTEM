@@ -1,5 +1,6 @@
 package iuh.fit.hotelsystem_booking.saga;
 
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingItem;
@@ -29,8 +30,9 @@ class BookingSagaOrchestratorTest {
     private final BookingRepository bookingRepository = mock(BookingRepository.class);
     private final OutboxEventRepository outboxEventRepository = mock(OutboxEventRepository.class);
     private final BookingSagaRepository sagaRepository = mock(BookingSagaRepository.class);
+    private final CqrsOutboxEventService cqrsOutboxEventService = mock(CqrsOutboxEventService.class);
     private final BookingSagaOrchestrator orchestrator =
-            new BookingSagaOrchestrator(bookingRepository, outboxEventRepository, sagaRepository);
+            new BookingSagaOrchestrator(bookingRepository, outboxEventRepository, sagaRepository, cqrsOutboxEventService);
 
     @Test
     void fullPaymentConfirmsBookingAndMarksRoomsBooked() {
@@ -52,6 +54,7 @@ class BookingSagaOrchestratorTest {
         verify(outboxEventRepository, times(1)).save(argThat(event ->
                 event != null && "booking.confirmed".equals(event.getType())));
         verify(bookingRepository).save(booking);
+        verify(cqrsOutboxEventService).enqueueBookingChanged(1L);
     }
 
     @Test
@@ -66,6 +69,7 @@ class BookingSagaOrchestratorTest {
 
         verify(bookingRepository, never()).findByIdWithItemsForUpdate(any());
         verify(outboxEventRepository, never()).save(any());
+        verify(cqrsOutboxEventService, never()).enqueueBookingChanged(any());
     }
 
     @Test

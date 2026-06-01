@@ -3,6 +3,7 @@ package iuh.fit.hotelsystem_booking.service;
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.config.TimeConfig;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.*;
 import iuh.fit.hotelsystem_booking.entity.*;
 import iuh.fit.hotelsystem_booking.repository.BookingRepository;
@@ -59,6 +60,7 @@ public class BookingService {
     private final StringRedisTemplate redisTemplate;
     private final OutboxEventRepository outboxEventRepository;
     private RefundService refundService;
+    private CqrsOutboxEventService cqrsOutboxEventService;
 
     @Value("${booking.lock.wait-ms:1500}")
     private long lockWaitMs;
@@ -103,6 +105,11 @@ public class BookingService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setRefundService(RefundService refundService) {
         this.refundService = refundService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
     }
 
     public BookingService(BookingRepository bookingRepository,
@@ -294,6 +301,7 @@ public class BookingService {
             }
         }
 
+        projectStaffBooking(saved);
         return saved;
     }
 
@@ -528,7 +536,9 @@ public class BookingService {
         booking.setDepositAmount(roundCurrency(discountedTotal * finalPricing.getDepositPercent() / 100.0));
         booking.setDiscountPercent(finalPricing.getDiscountPercent()
             + (memberDiscountEligible ? MEMBER_DISCOUNT_PERCENT : 0));
-        return bookingRepository.save(booking);
+        Booking saved = bookingRepository.save(booking);
+        projectStaffBooking(saved);
+        return saved;
     }
 
     public List<Long> getBookedRoomIds(LocalDate checkIn, LocalDate checkOut) {
@@ -616,6 +626,7 @@ public class BookingService {
         booking.setStatus(BookingStatus.CHECKED_IN);
         booking.setActualCheckInAt(now);
         Booking saved = bookingRepository.save(booking);
+        projectStaffBooking(saved);
 
         // Update all rooms to OCCUPIED
         for (BookingItem item : saved.getItems()) {
@@ -637,6 +648,7 @@ public class BookingService {
         BookingGuest representative = resolveCheckInRepresentative(booking, request, LocalDate.now());
         applyRepresentativeToStay(stay, representative, request);
         bookingStayRepository.save(stay);
+        projectStaffBooking(booking);
         return withStayTimes(booking);
     }
 
@@ -776,6 +788,7 @@ public class BookingService {
         currentItem.setPriceSnapshot(newNightly.doubleValue());
 
         Booking saved = bookingRepository.save(booking);
+        projectStaffBooking(saved);
         setRoomStatus(oldRoomId, oldRoomNextStatus);
         setRoomStatus(request.getToRoomId(), "OCCUPIED");
         persistRoomChangeAdjustment(bookingId, oldRoomId, request.getToRoomId(), totalDiff, staffId);
@@ -853,19 +866,6 @@ public class BookingService {
             return booking;
         }
 
-        // ── Only reconcile PENDING_PAYMENT / PENDING that are still in hold window ─
-        // If the hold has expired, the booking is likely stale — skip to avoid
-        // unnecessary REST calls on timed-out sessions.
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT
-                || booking.getStatus() == BookingStatus.PENDING) {
-            if (booking.getHoldExpiresAt() != null
-                    && booking.getHoldExpiresAt().isBefore(
-                            java.time.ZonedDateTime.now(iuh.fit.hotelsystem_booking.config.TimeConfig.VIETNAM_ZONE).toLocalDateTime())) {
-                // Hold window expired — trust local state, do not call remote
-                return booking;
-            }
-        }
-
         try {
             PaymentStatusResponse paymentStatus = getPaymentStatus(booking.getId());
             if (paymentStatus == null || paymentStatus.getStatus() == null) {
@@ -907,7 +907,8 @@ public class BookingService {
                     markPendingRoomsBooked(booking);
                     applyAggregatedBookingStatus(booking);
                 }
-                bookingRepository.save(booking);
+                Booking saved = bookingRepository.save(booking);
+                projectStaffBooking(saved);
             }
         } catch (Exception ex) {
             log.debug("Payment status reconciliation skipped for booking {}: {}", booking.getId(), ex.getMessage());
@@ -1096,6 +1097,7 @@ public class BookingService {
         return paymentStatus == null
                 || paymentStatus.isBlank()
                 || "PENDING".equalsIgnoreCase(paymentStatus)
+                || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)
                 || "UNPAID".equalsIgnoreCase(paymentStatus);
     }
 
@@ -1321,5 +1323,18 @@ public class BookingService {
         line.setAddedByStaffId(staffId);
         line.setCreatedAt(LocalDateTime.now());
         serviceLineRepository.save(line);
+    }
+
+    private void projectStaffBooking(Booking booking) {
+        if (cqrsOutboxEventService == null) {
+            return;
+        }
+        try {
+            cqrsOutboxEventService.enqueueBookingChanged(booking != null ? booking.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue staff booking dashboard projection event. bookingId={}",
+                    booking != null ? booking.getId() : null,
+                    ex);
+        }
     }
 }

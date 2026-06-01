@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
 import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
@@ -27,11 +28,17 @@ public class RefundSLAWatcher {
 
     private final RefundTransactionRepository refundRepository;
     private final RefundQueueProducer refundQueueProducer;
+    private CqrsOutboxEventService cqrsOutboxEventService;
 
     public RefundSLAWatcher(RefundTransactionRepository refundRepository,
                             RefundQueueProducer refundQueueProducer) {
         this.refundRepository = refundRepository;
         this.refundQueueProducer = refundQueueProducer;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
     }
 
     @Scheduled(fixedDelay = OVERDUE_CHECK_DELAY_MS)
@@ -46,9 +53,26 @@ public class RefundSLAWatcher {
             refund.setPriority(BookingConstants.REFUND_PRIORITY_HIGH);
             refund.setUpdatedAt(LocalDateTime.now());
             RefundTransaction saved = refundRepository.save(refund);
+            projectRefund(saved);
             refundQueueProducer.publishOverdue(saved);
             log.warn("Refund request is overdue. refundId={}, bookingId={}, dueAt={}",
                     saved.getId(), saved.getBookingId(), saved.getDueAt());
+        }
+    }
+
+    private void projectRefund(RefundTransaction refund) {
+        if (cqrsOutboxEventService == null) {
+            return;
+        }
+        try {
+            cqrsOutboxEventService.enqueueRefundChanged(
+                    refund != null ? refund.getBookingId() : null,
+                    refund != null ? refund.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue overdue refund projection event. refundId={}, bookingId={}",
+                    refund != null ? refund.getId() : null,
+                    refund != null ? refund.getBookingId() : null,
+                    ex);
         }
     }
 }

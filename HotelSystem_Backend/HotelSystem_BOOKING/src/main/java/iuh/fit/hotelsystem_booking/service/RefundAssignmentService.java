@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.dto.RefundTaskEvent;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.entity.RefundStaff;
 import iuh.fit.hotelsystem_booking.entity.RefundStatus;
 import iuh.fit.hotelsystem_booking.entity.RefundTransaction;
@@ -24,6 +25,7 @@ public class RefundAssignmentService {
     private final RefundQueueProducer refundQueueProducer;
     private final RefundAuditService refundAuditService;
     private final UserServiceClient userServiceClient;
+    private CqrsOutboxEventService cqrsOutboxEventService;
 
     public RefundAssignmentService(RefundTransactionRepository refundRepository,
                                    StaffWorkloadService staffWorkloadService,
@@ -35,6 +37,11 @@ public class RefundAssignmentService {
         this.refundQueueProducer = refundQueueProducer;
         this.refundAuditService = refundAuditService;
         this.userServiceClient = userServiceClient;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
     }
 
     @Transactional
@@ -63,6 +70,7 @@ public class RefundAssignmentService {
         refund.setStatus(RefundStatus.ASSIGNED);
         refund.setUpdatedAt(LocalDateTime.now());
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(), "ASSIGNED", RefundStatus.PENDING, RefundStatus.ASSIGNED,
                 String.valueOf(staffId), "REFUND_STAFF", "Refund request claimed by staff");
         refundQueueProducer.publishAssigned(saved);
@@ -101,6 +109,7 @@ public class RefundAssignmentService {
         refund.setStatus(RefundStatus.ASSIGNED);
         refund.setUpdatedAt(LocalDateTime.now());
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(), "ASSIGNED", RefundStatus.PENDING, RefundStatus.ASSIGNED,
                 String.valueOf(staff.get().getId()), "SYSTEM", "Refund request assigned to staff");
         refundQueueProducer.publishAssigned(saved);
@@ -122,6 +131,7 @@ public class RefundAssignmentService {
             refund.setStatus(RefundStatus.PENDING);
             refund.setUpdatedAt(LocalDateTime.now());
             RefundTransaction saved = refundRepository.save(refund);
+            projectRefund(saved);
             return assignRefund(saved.getId()).refund();
         }
 
@@ -130,6 +140,7 @@ public class RefundAssignmentService {
         refund.setStatus(RefundStatus.ASSIGNED);
         refund.setUpdatedAt(LocalDateTime.now());
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(), "ASSIGNED", null, RefundStatus.ASSIGNED,
                 String.valueOf(staffId), "ADMIN", "Refund request reassigned");
         refundQueueProducer.publishAssigned(saved);
@@ -138,6 +149,22 @@ public class RefundAssignmentService {
 
     public void retryLater(RefundTaskEvent event) {
         refundQueueProducer.publishRetry(event);
+    }
+
+    private void projectRefund(RefundTransaction refund) {
+        if (cqrsOutboxEventService == null) {
+            return;
+        }
+        try {
+            cqrsOutboxEventService.enqueueRefundChanged(
+                    refund != null ? refund.getBookingId() : null,
+                    refund != null ? refund.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue assigned refund projection event. refundId={}, bookingId={}",
+                    refund != null ? refund.getId() : null,
+                    refund != null ? refund.getBookingId() : null,
+                    ex);
+        }
     }
 
     public record AssignmentResult(boolean assigned, boolean retry, RefundTransaction refund) {

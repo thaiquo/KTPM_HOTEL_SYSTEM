@@ -1,6 +1,6 @@
 import type { Booking } from '../../../types';
 
-const PAID_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed', 'checked_in', 'completed', 'cancel_requested'];
+const PAID_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed', 'booked', 'checked_in', 'completed', 'cancel_requested'];
 const CANCELABLE_STATUSES: Booking['status'][] = ['deposit_paid', 'confirmed'];
 const PAID_PAYMENT_STATUSES = [
   'PAID',
@@ -60,6 +60,8 @@ export const getBookingStatusText = (status: Booking['status']) => {
     case 'deposit_paid':
       return 'Đã đặt cọc';
     case 'confirmed':
+      return 'Đã thanh toán';
+    case 'booked':
       return 'Đã thanh toán';
     case 'checked_in':
       return 'Đã nhận phòng';

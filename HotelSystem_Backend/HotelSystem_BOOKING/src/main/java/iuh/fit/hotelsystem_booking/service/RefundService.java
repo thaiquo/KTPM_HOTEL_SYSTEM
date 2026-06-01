@@ -2,6 +2,7 @@ package iuh.fit.hotelsystem_booking.service;
 
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
 import iuh.fit.hotelsystem_booking.config.RabbitConfig;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.entity.BookingLockStatus;
 import iuh.fit.hotelsystem_booking.dto.CancellationPolicyResult;
@@ -46,6 +47,7 @@ public class RefundService {
     private final RefundNotificationService refundNotificationService;
     private final PaymentServiceClient paymentServiceClient;
     private RabbitTemplate rabbitTemplate;
+    private CqrsOutboxEventService cqrsOutboxEventService;
 
     public RefundService(RefundTransactionRepository refundRepository,
                          BookingRepository bookingRepository,
@@ -72,6 +74,11 @@ public class RefundService {
         this.rabbitTemplate = rabbitTemplate;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
+    }
+
     @Transactional
     public RefundTransaction createRefundTransaction(Booking booking, CancellationPolicyResult policyResult) {
         String idempotencyKey = buildIdempotencyKey(booking);
@@ -93,6 +100,7 @@ public class RefundService {
                     log.info("Create refund request. bookingId={}, refundAmount={}, idempotencyKey={}",
                             booking.getId(), policyResult.getRefundAmount(), idempotencyKey);
                     RefundTransaction saved = refundRepository.save(refund);
+                    projectRefund(saved);
                     refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                             String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
                     refundNotificationService.notifyCreated(saved, booking);
@@ -148,6 +156,7 @@ public class RefundService {
         bookingRepository.save(booking);
 
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                 String.valueOf(booking.getUserId()), "CUSTOMER", "Cancellation request created");
         refundNotificationService.notifyCreated(saved, booking);
@@ -182,6 +191,7 @@ public class RefundService {
             refund.setUserId(booking.getUserId());
             refund.setReason(reason != null && !reason.isBlank() ? reason : "ROOM_CHANGE_REFUND");
             RefundTransaction saved = refundRepository.save(refund);
+            projectRefund(saved);
             refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                     String.valueOf(booking.getUserId()), "SYSTEM", "Room change refund request created");
             refundNotificationService.notifyCreated(saved, booking);
@@ -220,6 +230,7 @@ public class RefundService {
                             now
                     );
                     RefundTransaction saved = refundRepository.save(refund);
+                    projectRefund(saved);
                     refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                             String.valueOf(booking.getUserId()), "CUSTOMER", "Early checkout refund request created");
                     refundNotificationService.notifyCreated(saved, booking);
@@ -273,6 +284,7 @@ public class RefundService {
         bookingRepository.save(booking);
 
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(),
                 staffId != null ? "CREATED_AND_ASSIGNED" : "CREATED",
                 null,
@@ -351,6 +363,7 @@ public class RefundService {
         bookingRepository.save(booking);
 
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         refundAuditService.log(saved.getId(), "CREATED", null, RefundStatus.PENDING,
                 String.valueOf(booking.getUserId()), "CUSTOMER", "Refund request created");
         refundNotificationService.notifyCreated(saved, booking);
@@ -381,6 +394,7 @@ public class RefundService {
         refund.setProcessedAt(now);
         refund.setUpdatedAt(now);
         refundRepository.save(refund);
+        projectRefund(refund);
         refundAuditService.log(refund.getId(), "APPROVED", oldStatus, RefundStatus.PROCESSING,
                 processedBy, "REFUND_STAFF", "Refund request approved for processing");
         refundNotificationService.notifyApproved(refund);
@@ -429,7 +443,9 @@ public class RefundService {
             refundNotificationService.notifyRefunded(refund, "PAYMENT_SERVICE");
             log.info("Staff refund approved. refundId={}, bookingId={}, amount={}",
                     refund.getId(), refund.getBookingId(), refund.getRefundAmount());
-            return refundRepository.save(refund);
+            RefundTransaction saved = refundRepository.save(refund);
+            projectRefund(saved);
+            return saved;
         } catch (Exception ex) {
             refund.setStatus(RefundStatus.FAILED);
             refund.setUpdatedAt(nowVi());
@@ -438,7 +454,9 @@ public class RefundService {
             refundNotificationService.notifyFailed(refund, ex.getMessage());
             refundQueueProducer.publishFailed(refund);
             log.warn("Staff refund failed. refundId={}, reason={}", refund.getId(), ex.getMessage());
-            return refundRepository.save(refund);
+            RefundTransaction saved = refundRepository.save(refund);
+            projectRefund(saved);
+            return saved;
         }
     }
 
@@ -461,7 +479,9 @@ public class RefundService {
         });
         refundAuditService.log(refund.getId(), "REJECTED", oldStatus, RefundStatus.REJECTED,
                 String.valueOf(staffId), "REFUND_STAFF", reason);
-        return refundRepository.save(refund);
+        RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
+        return saved;
     }
 
     private RefundTransaction completeApprovedRefundWithoutPayment(RefundTransaction refund, String processedBy) {
@@ -479,7 +499,9 @@ public class RefundService {
         refundAuditService.log(refund.getId(), "APPROVED_NO_REFUND", RefundStatus.PROCESSING, RefundStatus.REFUNDED,
                 processedBy, "SYSTEM", "Request approved without refund payment");
         refundNotificationService.notifyRefunded(refund, "NO_REFUND");
-        return refundRepository.save(refund);
+        RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
+        return saved;
     }
 
     @Transactional
@@ -506,6 +528,7 @@ public class RefundService {
         LocalDateTime now = nowVi();
         refund.setUpdatedAt(now);
         refundRepository.save(refund);
+        projectRefund(refund);
         paymentTransaction.setStatus(RefundPaymentTransactionStatus.PROCESSING);
         paymentTransaction.setUpdatedAt(now);
         paymentTransactionRepository.save(paymentTransaction);
@@ -549,7 +572,9 @@ public class RefundService {
         refund.setUpdatedAt(nowVi());
         bookingRepository.save(booking);
         paymentTransactionRepository.save(paymentTransaction);
-        return refundRepository.save(refund);
+        RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
+        return saved;
     }
 
     @Transactional
@@ -575,7 +600,9 @@ public class RefundService {
                 processedBy, "REFUND_STAFF", refund.getReason());
         refundNotificationService.notifyRejected(refund, refund.getReason());
         log.info("Refund rejected. refundId={}, bookingId={}", refund.getId(), refund.getBookingId());
-        return refundRepository.save(refund);
+        RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
+        return saved;
     }
 
     private RefundPaymentTransaction createPaymentTransactionIfAbsent(RefundTransaction refund, String processedBy) {
@@ -587,6 +614,22 @@ public class RefundService {
                     RefundPaymentTransaction transaction = RefundPaymentTransaction.create(refund, userId, processedBy);
                     return paymentTransactionRepository.save(transaction);
                 });
+    }
+
+    private void projectRefund(RefundTransaction refund) {
+        if (cqrsOutboxEventService == null) {
+            return;
+        }
+        try {
+            cqrsOutboxEventService.enqueueRefundChanged(
+                    refund != null ? refund.getBookingId() : null,
+                    refund != null ? refund.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue refund projection event. refundId={}, bookingId={}",
+                    refund != null ? refund.getId() : null,
+                    refund != null ? refund.getBookingId() : null,
+                    ex);
+        }
     }
 
     private String buildIdempotencyKey(Booking booking) {

@@ -2,6 +2,7 @@ package iuh.fit.hotelsystem_booking.saga;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.hotelsystem_booking.config.TimeConfig;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.BookingEvent;
 import iuh.fit.hotelsystem_booking.dto.PaymentResultMessage;
 import iuh.fit.hotelsystem_booking.dto.RoomMessage;
@@ -33,14 +34,17 @@ public class BookingSagaOrchestrator {
     private final BookingRepository bookingRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final BookingSagaRepository bookingSagaRepository;
+    private final CqrsOutboxEventService cqrsOutboxEventService;
     private final ObjectMapper objectMapper;
 
     public BookingSagaOrchestrator(BookingRepository bookingRepository,
                                    OutboxEventRepository outboxEventRepository,
-                                   BookingSagaRepository bookingSagaRepository) {
+                                   BookingSagaRepository bookingSagaRepository,
+                                   CqrsOutboxEventService cqrsOutboxEventService) {
         this.bookingRepository = bookingRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.bookingSagaRepository = bookingSagaRepository;
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -115,6 +119,7 @@ public class BookingSagaOrchestrator {
         booking.setConfirmedAt(nowVi());
         markActiveItemsBooked(booking);
         bookingRepository.save(booking);
+        cqrsOutboxEventService.enqueueBookingChanged(booking.getId());
         enqueueRoomEvents(booking, "room.confirm");
     }
 
@@ -130,6 +135,7 @@ public class BookingSagaOrchestrator {
         booking.setConfirmedAt(nowVi());
         markActiveItemsBooked(booking);
         bookingRepository.save(booking);
+        cqrsOutboxEventService.enqueueBookingChanged(booking.getId());
         enqueueRoomEvents(booking, "room.confirm");
     }
 
@@ -150,6 +156,7 @@ public class BookingSagaOrchestrator {
         }
         markActiveItemsBooked(booking);
         bookingRepository.save(booking);
+        cqrsOutboxEventService.enqueueBookingChanged(booking.getId());
         enqueueRoomEvents(booking, "room.confirm");
     }
 
@@ -173,6 +180,7 @@ public class BookingSagaOrchestrator {
             }
         }
         bookingRepository.save(booking);
+        cqrsOutboxEventService.enqueueBookingChanged(booking.getId());
         enqueueRoomEvents(booking, "room.release");
         enqueueBookingEvent(booking, "booking.cancelled", BookingStatus.CANCELLED.name());
         completeSaga(saga, "COMPENSATED", null);

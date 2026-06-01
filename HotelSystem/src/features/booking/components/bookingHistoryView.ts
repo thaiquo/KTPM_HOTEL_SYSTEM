@@ -184,6 +184,14 @@ export const getBookingRepresentative = (booking: BookingWithRoom) => {
 
 export const getDisplayBookingStatus = (booking: BookingWithRoom) => {
   const paymentStatus = booking.paymentStatus?.toUpperCase();
+  if ((booking.status === 'booked' || booking.status === 'pending_payment' || booking.status === 'pending')
+      && (paymentStatus === 'PAID' || paymentStatus === 'SUCCESS')) {
+    return 'confirmed';
+  }
+  if ((booking.status === 'booked' || booking.status === 'pending_payment' || booking.status === 'pending')
+      && (paymentStatus === 'DEPOSITED' || paymentStatus === 'PARTIAL')) {
+    return 'deposit_paid';
+  }
   if (booking.status && booking.status !== 'pending_payment' && booking.status !== 'pending') {
     return booking.status;
   }

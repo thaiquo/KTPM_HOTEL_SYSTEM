@@ -13,6 +13,8 @@ import iuh.fit.hotelsystem_booking.dto.RoomChangeRequest;
 import iuh.fit.hotelsystem_booking.dto.RoomChangeResponse;
 import iuh.fit.hotelsystem_booking.dto.StaffCheckInRequest;
 import iuh.fit.hotelsystem_booking.dto.StaffTokenInfo;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
+import iuh.fit.hotelsystem_booking.cqrs.service.StaffBookingDashboardQueryService;
 import iuh.fit.hotelsystem_booking.entity.Booking;
 import iuh.fit.hotelsystem_booking.entity.BookingGuest;
 import iuh.fit.hotelsystem_booking.entity.BookingItem;
@@ -64,6 +66,8 @@ public class StaffBookingController {
     private final BookingCheckoutBillingService bookingCheckoutBillingService;
     private final iuh.fit.hotelsystem_booking.service.BookingInvoiceService bookingInvoiceService;
     private final iuh.fit.hotelsystem_booking.service.NewInvoiceService newInvoiceService;
+    private final StaffBookingDashboardQueryService staffBookingDashboardQueryService;
+    private final CqrsOutboxEventService cqrsOutboxEventService;
 
     public StaffBookingController(BookingService bookingService,
                                   BookingRepository bookingRepository,
@@ -78,7 +82,9 @@ public class StaffBookingController {
                                   BookingRoomWorkflowService bookingRoomWorkflowService,
                                   BookingCheckoutBillingService bookingCheckoutBillingService,
                                   iuh.fit.hotelsystem_booking.service.BookingInvoiceService bookingInvoiceService,
-                                  iuh.fit.hotelsystem_booking.service.NewInvoiceService newInvoiceService) {
+                                  iuh.fit.hotelsystem_booking.service.NewInvoiceService newInvoiceService,
+                                  StaffBookingDashboardQueryService staffBookingDashboardQueryService,
+                                  CqrsOutboxEventService cqrsOutboxEventService) {
         this.bookingService = bookingService;
         this.bookingRepository = bookingRepository;
         this.refundRepository = refundRepository;
@@ -93,6 +99,8 @@ public class StaffBookingController {
         this.bookingCheckoutBillingService = bookingCheckoutBillingService;
         this.bookingInvoiceService = bookingInvoiceService;
         this.newInvoiceService = newInvoiceService;
+        this.staffBookingDashboardQueryService = staffBookingDashboardQueryService;
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
     }
 
     private StaffTokenInfo staff(HttpServletRequest request) {
@@ -174,8 +182,7 @@ public class StaffBookingController {
 
         // ── Backward compatible: no pagination params → return flat list ──────────
         if (page == null && size == null) {
-            return ResponseEntity.ok(
-                    bookingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")));
+            return ResponseEntity.ok(staffBookingDashboardQueryService.listLatest());
         }
 
         // ── Paginated mode ────────────────────────────────────────────────────────
@@ -191,8 +198,8 @@ public class StaffBookingController {
             }
         }
 
-        org.springframework.data.domain.Page<iuh.fit.hotelsystem_booking.entity.Booking> resultPage =
-                bookingService.getStaffBookings(pageNum, pageSize, bookingCode, bookingStatus);
+        org.springframework.data.domain.Page<?> resultPage =
+                staffBookingDashboardQueryService.search(pageNum, pageSize, bookingCode, bookingStatus);
         return ResponseEntity.ok(resultPage);
     }
 
@@ -494,6 +501,7 @@ public class StaffBookingController {
                 refund.setCancellationFee(Math.max(0, actualPaid - refundAmount));
                 refund.setUpdatedAt(now);
                 RefundTransaction saved = refundRepository.save(refund);
+                projectRefund(saved);
                 try {
                     refundAuditService.log(saved.getId(), "REASSIGNED", oldStatus, RefundStatus.ASSIGNED,
                             String.valueOf(staff.getStaffId()), "STAFF", "Early checkout refund assigned to checkout staff");
@@ -537,6 +545,7 @@ public class StaffBookingController {
         refund.setUpdatedAt(now);
         
         RefundTransaction saved = refundRepository.save(refund);
+        projectRefund(saved);
         
         // Log audit
         try {
@@ -554,6 +563,19 @@ public class StaffBookingController {
         }
         
         return saved;
+    }
+
+    private void projectRefund(RefundTransaction refund) {
+        try {
+            cqrsOutboxEventService.enqueueRefundChanged(
+                    refund != null ? refund.getBookingId() : null,
+                    refund != null ? refund.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue staff refund projection event. refundId={}, bookingId={}",
+                    refund != null ? refund.getId() : null,
+                    refund != null ? refund.getBookingId() : null,
+                    ex);
+        }
     }
 
     @GetMapping("/rooms/today-highlight")

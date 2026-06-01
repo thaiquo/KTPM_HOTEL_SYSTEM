@@ -1,6 +1,7 @@
 package iuh.fit.hotelsystem_booking.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.BookingInvoiceDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceDetailResponseDto;
 import iuh.fit.hotelsystem_booking.dto.invoice.InvoiceListDto;
@@ -48,6 +49,7 @@ public class BookingInvoiceService {
     private final RefundTransactionRepository refundTransactionRepository;
     private final ObjectMapper objectMapper;
     private final jakarta.persistence.EntityManager entityManager;
+    private final CqrsOutboxEventService cqrsOutboxEventService;
 
     public BookingInvoiceService(BookingInvoiceRepository invoiceRepository,
             BookingRepository bookingRepository,
@@ -55,7 +57,8 @@ public class BookingInvoiceService {
             BookingGuestService bookingGuestService,
             RefundTransactionRepository refundTransactionRepository,
             ObjectMapper objectMapper,
-            jakarta.persistence.EntityManager entityManager) {
+            jakarta.persistence.EntityManager entityManager,
+            CqrsOutboxEventService cqrsOutboxEventService) {
         this.invoiceRepository = invoiceRepository;
         this.bookingRepository = bookingRepository;
         this.bookingStayRepository = bookingStayRepository;
@@ -63,6 +66,7 @@ public class BookingInvoiceService {
         this.refundTransactionRepository = refundTransactionRepository;
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
     }
 
     @Transactional
@@ -94,6 +98,7 @@ public class BookingInvoiceService {
             }
             applyInvoiceMetadata(invoice, lines);
             BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
+            projectInvoice(saved);
             log.info("SAVE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}", bookingId, saved.getId());
             return saved;
         } catch (Exception ex) {
@@ -341,6 +346,7 @@ public class BookingInvoiceService {
             invoice.setLinesJson(objectMapper.writeValueAsString(merged));
             applyInvoiceMetadata(invoice, merged);
             BookingInvoice saved = invoiceRepository.saveAndFlush(invoice);
+            projectInvoice(saved);
             log.info("MERGE CHECKOUT INVOICE DONE bookingId={}, invoiceId={}, grandTotal={}", bookingId, saved.getId(), grandTotal);
             return saved;
         } catch (Exception ex) {
@@ -773,5 +779,18 @@ public class BookingInvoiceService {
             }
         }
         return primary != null ? primary : first;
+    }
+
+    private void projectInvoice(BookingInvoice invoice) {
+        try {
+            cqrsOutboxEventService.enqueueInvoiceChanged(
+                    invoice != null ? invoice.getBookingId() : null,
+                    invoice != null ? invoice.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue invoice projection event. invoiceId={}, bookingId={}",
+                    invoice != null ? invoice.getId() : null,
+                    invoice != null ? invoice.getBookingId() : null,
+                    ex);
+        }
     }
 }

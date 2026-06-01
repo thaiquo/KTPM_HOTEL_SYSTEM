@@ -4,6 +4,7 @@ import iuh.fit.hotelsystem_booking.config.RabbitConfig;
 import iuh.fit.hotelsystem_booking.config.TimeConfig;
 import iuh.fit.hotelsystem_booking.client.RoomServiceClient;
 import iuh.fit.hotelsystem_booking.constants.BookingConstants;
+import iuh.fit.hotelsystem_booking.cqrs.event.CqrsOutboxEventService;
 import iuh.fit.hotelsystem_booking.dto.BookingRoomActionResult;
 import iuh.fit.hotelsystem_booking.dto.BookingRoomBatchRequest;
 import iuh.fit.hotelsystem_booking.dto.BookingRoomCheckInRequest;
@@ -27,6 +28,7 @@ import iuh.fit.hotelsystem_booking.repository.RefundTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,7 +60,9 @@ public class BookingRoomWorkflowService {
     private final RefundService refundService;
     private final RabbitTemplate rabbitTemplate;
     private final RoomServiceClient roomServiceClient;
+    private CqrsOutboxEventService cqrsOutboxEventService;
 
+    @Autowired
     public BookingRoomWorkflowService(BookingItemRepository bookingItemRepository,
                                       BookingRepository bookingRepository,
                                       BookingGuestRepository bookingGuestRepository,
@@ -81,6 +85,34 @@ public class BookingRoomWorkflowService {
         this.refundService = refundService;
         this.rabbitTemplate = rabbitTemplate;
         this.roomServiceClient = roomServiceClient;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCqrsOutboxEventService(CqrsOutboxEventService cqrsOutboxEventService) {
+        this.cqrsOutboxEventService = cqrsOutboxEventService;
+    }
+
+    public BookingRoomWorkflowService(BookingItemRepository bookingItemRepository,
+                                      BookingRepository bookingRepository,
+                                      BookingGuestRepository bookingGuestRepository,
+                                      BookingInvoiceService bookingInvoiceService,
+                                      BookingCheckoutBillingService bookingCheckoutBillingService,
+                                      BookingServiceLineRepository bookingServiceLineRepository,
+                                      RefundCalculationService refundCalculationService,
+                                      RefundTransactionRepository refundTransactionRepository,
+                                      RabbitTemplate rabbitTemplate,
+                                      RoomServiceClient roomServiceClient) {
+        this(bookingItemRepository,
+                bookingRepository,
+                bookingGuestRepository,
+                bookingInvoiceService,
+                bookingCheckoutBillingService,
+                bookingServiceLineRepository,
+                refundCalculationService,
+                refundTransactionRepository,
+                null,
+                rabbitTemplate,
+                roomServiceClient);
     }
 
     public List<BookingItem> getCheckInRooms(LocalDate date) {
@@ -114,6 +146,7 @@ public class BookingRoomWorkflowService {
         room.setStatus(BookingItemStatus.CHECKED_IN);
         BookingItem savedRoom = bookingItemRepository.save(room);
         updateBookingStatus(room.getBooking());
+        projectStaffBooking(room.getBooking());
         setRoomStatus(room.getRoomId(), "OCCUPIED");
         return attachGuests(savedRoom);
     }
@@ -151,6 +184,7 @@ public class BookingRoomWorkflowService {
 
         BookingItem savedRoom = bookingItemRepository.saveAndFlush(room);
         updateBookingStatus(room.getBooking());
+        projectStaffBooking(room.getBooking());
         log.info("CHECKOUT_MULTIPLE_CHECKPOINT before update room status bookingRoomId={}, roomId={}, targetStatus=CLEANING", room.getId(), room.getRoomId());
         setRoomStatus(room.getRoomId(), "CLEANING");
         log.info("CHECKOUT_MULTIPLE_CHECKPOINT after update room status bookingRoomId={}, roomId={}, targetStatus=CLEANING", room.getId(), room.getRoomId());
@@ -221,7 +255,7 @@ public class BookingRoomWorkflowService {
         log.info("CHECKOUT_MULTIPLE_CHECKPOINT after merge invoice bookingId={}, invoiceId={}, invoiceCode={}", booking.getId(), invoice.getId(), result.getInvoiceCode());
 
         BigDecimal refundSettlementAmount = decimal(lines.get("refundSettlementAmount"), lines.get("additionalRefundAmount"));
-        if (refundSettlementAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (refundService != null && refundSettlementAmount.compareTo(BigDecimal.ZERO) > 0) {
             try {
                 refundService.createAssignedEarlyCheckoutRefundTransaction(booking, refundSettlementAmount, staffId);
                 log.info("CHECKOUT_MULTIPLE_CHECKPOINT created early checkout refund bookingId={}, amount={}, staffId={}",
@@ -559,6 +593,7 @@ public class BookingRoomWorkflowService {
             fresh.setStatus(BookingStatus.BOOKED);
         }
         bookingRepository.saveAndFlush(fresh);
+        projectStaffBooking(fresh);
     }
 
     private BookingItem requireRoom(Long bookingRoomId) {
@@ -642,6 +677,19 @@ public class BookingRoomWorkflowService {
         } catch (RuntimeException ex) {
             // Room status publish failure should not break checkout commit.
             log.error("CHECKOUT_MULTIPLE_ROOM_STATUS_PUBLISH_FAILED roomId={}, status={}", roomId, status, ex);
+        }
+    }
+
+    private void projectStaffBooking(Booking booking) {
+        if (cqrsOutboxEventService == null) {
+            return;
+        }
+        try {
+            cqrsOutboxEventService.enqueueBookingChanged(booking != null ? booking.getId() : null);
+        } catch (Exception ex) {
+            log.warn("Unable to enqueue staff booking dashboard projection event. bookingId={}",
+                    booking != null ? booking.getId() : null,
+                    ex);
         }
     }
 

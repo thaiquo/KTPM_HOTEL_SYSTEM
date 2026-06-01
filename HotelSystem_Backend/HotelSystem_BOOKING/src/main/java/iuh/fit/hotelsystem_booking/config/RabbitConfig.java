@@ -24,6 +24,8 @@ public class RabbitConfig {
     public static final String REFUND_OVERDUE_QUEUE = "refund.overdue.queue";
     public static final String REFUND_FAILED_QUEUE = "refund.failed.queue";
     public static final String REFUND_RETRY_QUEUE = "refund.retry.queue";
+    public static final String CQRS_PROJECTION_QUEUE = "booking.cqrs.projection.queue";
+    public static final String CQRS_PROJECTION_DLQ = "booking.cqrs.projection.dlq";
 
     // ROUTING KEYS
     public static final String ROOM_HELD_ROUTING_KEY = "room.held";
@@ -35,6 +37,8 @@ public class RabbitConfig {
     public static final String REFUND_OVERDUE_ROUTING_KEY = "refund.overdue";
     public static final String REFUND_FAILED_ROUTING_KEY = "refund.failed";
     public static final String REFUND_RETRY_ROUTING_KEY = "refund.retry";
+    public static final String CQRS_ROUTING_PATTERN = "cqrs.#";
+    public static final String DLQ_ROUTING_KEY_CQRS = "dlq.cqrs.projection";
 
     @Bean
     public TopicExchange exchange() {
@@ -175,6 +179,33 @@ public class RabbitConfig {
         return BindingBuilder.bind(refundRetryQueue())
                 .to(refundExchange())
                 .with(REFUND_RETRY_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue cqrsProjectionQueue() {
+        return QueueBuilder.durable(CQRS_PROJECTION_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", DLQ_ROUTING_KEY_CQRS)
+                .build();
+    }
+
+    @Bean
+    public Binding cqrsProjectionBinding() {
+        return BindingBuilder.bind(cqrsProjectionQueue())
+                .to(exchange())
+                .with(CQRS_ROUTING_PATTERN);
+    }
+
+    @Bean
+    public Queue cqrsProjectionDlq() {
+        return new Queue(CQRS_PROJECTION_DLQ);
+    }
+
+    @Bean
+    public Binding cqrsProjectionDlqBinding() {
+        return BindingBuilder.bind(cqrsProjectionDlq())
+                .to(deadLetterExchange())
+                .with(DLQ_ROUTING_KEY_CQRS);
     }
 
     // -------------------------
