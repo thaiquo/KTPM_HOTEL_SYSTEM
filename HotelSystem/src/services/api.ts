@@ -1565,11 +1565,11 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     id: String(data?.id ?? ''),
     bookingId: String(data?.bookingId ?? ''),
     bookingCode: data?.bookingCode != null ? String(data.bookingCode) : undefined,
-    bookingStatus: data?.bookingStatus != null ? String(data.bookingStatus) : undefined,
+    bookingStatus: data?.bookingStatus != null ? String(data.bookingStatus) : data?.status != null ? String(data.status) : undefined,
     customerUserId: data?.customerUserId != null ? String(data.customerUserId) : undefined,
     customerName: data?.customerName != null ? String(data.customerName) : undefined,
     representativeName: data?.representativeName != null ? String(data.representativeName) : undefined,
-    representativePhone: data?.representativePhone != null ? String(data.representativePhone) : undefined,
+    representativePhone: data?.representativePhone != null ? String(data.representativePhone) : data?.customerPhone != null ? String(data.customerPhone) : undefined,
     representativeCccd: data?.representativeCccd != null ? String(data.representativeCccd) : undefined,
     checkInDate: data?.checkInDate != null ? String(data.checkInDate) : undefined,
     checkOutDate: data?.checkOutDate != null ? String(data.checkOutDate) : undefined,
@@ -1581,13 +1581,13 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     refundTransactionId: data?.refundTransactionId != null ? String(data.refundTransactionId) : undefined,
     refundStatus: data?.refundStatus != null ? String(data.refundStatus) : undefined,
     refundSettlementAmount: data?.refundSettlementAmount != null ? Number(data.refundSettlementAmount) : undefined,
-    totalOriginalAmount: data?.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : undefined,
+    totalOriginalAmount: data?.totalOriginalAmount != null ? Number(data.totalOriginalAmount) : data?.grossInvoiceAmount != null ? Number(data.grossInvoiceAmount) : undefined,
     totalUsedRoomAmount: data?.totalUsedRoomAmount != null ? Number(data.totalUsedRoomAmount) : undefined,
     totalUnusedRoomAmount: data?.totalUnusedRoomAmount != null ? Number(data.totalUnusedRoomAmount) : undefined,
     totalHotelKeepAmount: data?.totalHotelKeepAmount != null ? Number(data.totalHotelKeepAmount) : undefined,
     totalAllocatedPaidAmount: data?.totalAllocatedPaidAmount != null ? Number(data.totalAllocatedPaidAmount) : undefined,
     totalActualRevenue: data?.totalActualRevenue != null ? Number(data.totalActualRevenue) : undefined,
-    totalRefundToCustomer: data?.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : undefined,
+    totalRefundToCustomer: data?.totalRefundToCustomer != null ? Number(data.totalRefundToCustomer) : data?.totalRefundAmount != null ? Number(data.totalRefundAmount) : undefined,
     totalAdditionalCharge: data?.totalAdditionalCharge != null ? Number(data.totalAdditionalCharge) : undefined,
     roomServiceFeeTotal: data?.roomServiceFeeTotal != null ? Number(data.roomServiceFeeTotal) : undefined,
     bookingServiceTotal: data?.bookingServiceTotal != null ? Number(data.bookingServiceTotal) : undefined,
@@ -1596,9 +1596,9 @@ function mapBookingInvoiceRecord(data: any): BookingInvoiceRecord {
     manualSurchargeTotal: data?.manualSurchargeTotal != null ? Number(data.manualSurchargeTotal) : undefined,
     lateCheckoutFeeTotal: data?.lateCheckoutFeeTotal != null ? Number(data.lateCheckoutFeeTotal) : undefined,
     earlyCheckinFeeTotal: data?.earlyCheckinFeeTotal != null ? Number(data.earlyCheckinFeeTotal) : undefined,
-    totalAmount: data?.totalAmount != null ? Number(data.totalAmount) : undefined,
+    totalAmount: data?.totalAmount != null ? Number(data.totalAmount) : data?.grossInvoiceAmount != null ? Number(data.grossInvoiceAmount) : undefined,
     paidAmount: data?.paidAmount != null ? Number(data.paidAmount) : undefined,
-    amount: Number(data?.amount || 0),
+    amount: Number(data?.amount ?? data?.grossInvoiceAmount ?? data?.netRevenue ?? 0),
     currency: data?.currency != null ? String(data.currency) : undefined,
     lines: data?.lines,
     createdAt: data?.createdAt != null ? String(data.createdAt) : undefined,
@@ -2200,6 +2200,7 @@ export interface InvoiceDetailResponse {
   bookingStatus?: string;
   status?: string;
   paymentStatus?: string;
+  refundStatus?: string;
   customer: { fullName: string; phone: string; cccd: string } | null;
   rooms: Array<{
     roomName: string;
@@ -2219,6 +2220,7 @@ export interface InvoiceDetailResponse {
   }>;
   serviceCharges: Array<{ category: string; itemName: string; amount: number; quantity: number }>;
   damageCharges: Array<{ itemName: string; amount: number; note: string }>;
+  invoiceLines?: Array<Record<string, any>>;
   paymentHistory: {
     records: Array<{
       id?: number;

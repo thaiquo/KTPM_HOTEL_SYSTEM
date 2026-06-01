@@ -253,9 +253,9 @@ public class RefundService {
         refund.setRefundMethod(BookingConstants.REFUND_METHOD_VNPAY);
         refund.setAmount(amount.doubleValue());
         refund.setReason("EARLY_CHECKOUT_REFUND");
-        refund.setStatus(RefundStatus.ASSIGNED);
+        refund.setStatus(staffId != null ? RefundStatus.ASSIGNED : RefundStatus.PENDING);
         refund.setAssignedTo(staffId);
-        refund.setAssignedAt(now);
+        refund.setAssignedAt(staffId != null ? now : null);
         refund.setProcessedBy(null);
         refund.setProcessedByStaffId(null);
         refund.setProcessedAt(null);
@@ -273,10 +273,21 @@ public class RefundService {
         bookingRepository.save(booking);
 
         RefundTransaction saved = refundRepository.save(refund);
-        refundAuditService.log(saved.getId(), "CREATED_AND_ASSIGNED", null, RefundStatus.ASSIGNED,
-                String.valueOf(staffId), "STAFF", "Early checkout refund created automatically at checkout");
+        refundAuditService.log(saved.getId(),
+                staffId != null ? "CREATED_AND_ASSIGNED" : "CREATED",
+                null,
+                saved.getStatus(),
+                staffId != null ? String.valueOf(staffId) : String.valueOf(booking.getUserId()),
+                staffId != null ? "STAFF" : "SYSTEM",
+                staffId != null
+                        ? "Early checkout refund created automatically at checkout"
+                        : "Early checkout refund backfilled from checkout invoice");
         refundNotificationService.notifyCreated(saved, booking);
-        refundQueueProducer.publishAssigned(saved);
+        if (staffId != null) {
+            refundQueueProducer.publishAssigned(saved);
+        } else {
+            refundQueueProducer.publishRequested(saved);
+        }
         return saved;
     }
 
@@ -354,6 +365,10 @@ public class RefundService {
 
         if (refund.getStatus() == RefundStatus.REFUNDED || refund.getStatus() == RefundStatus.SUCCESS) {
             return refund;
+        }
+        if (refund.getStatus() == RefundStatus.ASSIGNED && refund.getAssignedTo() == null && staffId != null) {
+            refund.setAssignedTo(staffId);
+            refund.setAssignedAt(nowVi());
         }
         ensureAssignedToStaff(refund, staffId);
 

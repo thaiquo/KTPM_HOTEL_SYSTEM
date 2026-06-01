@@ -10,7 +10,7 @@ import {
 } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 
-import { bookingApi, staffBookingApi, userApi, type BookingInvoiceRecord } from '../../../services/api';
+import { bookingApi, newInvoiceApi, staffBookingApi, userApi, type BookingInvoiceRecord, type InvoiceDetailResponse } from '../../../services/api';
 import { roomApi } from '../../../services/roomApi';
 import type { Booking, BookingGuest, Room } from '../../../types';
 
@@ -215,6 +215,7 @@ const StaffInvoicesPage: React.FC = () => {
   const [customTo, setCustomTo] = useState('');
 
   const [selectedInvoice, setSelectedInvoice] = useState<BookingInvoiceRecord | null>(null);
+  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<Booking | null>(null);
   const [guestList, setGuestList] = useState<BookingGuest[]>([]);
@@ -337,13 +338,18 @@ const StaffInvoicesPage: React.FC = () => {
 
   const openInvoiceDetails = async (invoice: BookingInvoiceRecord) => {
     setSelectedInvoice(invoice);
+    setInvoiceDetail(null);
     setDetailLoading(true);
     setBookingDetails(null);
     setGuestList([]);
     setRoomList([]);
     try {
-      const booking = await bookingApi.getById(invoice.bookingId).catch(() => null);
-      const guests = await bookingApi.getGuests(invoice.bookingId).catch(() => []);
+      const [detail, booking, guests] = await Promise.all([
+        newInvoiceApi.getDetail(Number(invoice.id)).catch(() => null),
+        bookingApi.getById(invoice.bookingId).catch(() => null),
+        bookingApi.getGuests(invoice.bookingId).catch(() => []),
+      ]);
+      setInvoiceDetail(detail);
       setBookingDetails(booking);
       setGuestList(guests);
       const roomIds = getBookingRoomIds(booking);
@@ -365,6 +371,34 @@ const StaffInvoicesPage: React.FC = () => {
   );
 
   const refundPendingCount = filteredInvoices.filter((inv) => getInvoiceStatus(inv) === 'REFUND_PENDING').length;
+  const detailSummary = invoiceDetail?.revenueSummary;
+  const detailCustomer = invoiceDetail?.customer;
+  const detailRooms = invoiceDetail?.rooms || [];
+  const detailLines = invoiceDetail ? {
+    invoiceItems: invoiceDetail.invoiceLines,
+    totalOriginalAmount: detailSummary?.grossInvoiceAmount,
+    totalActualRevenue: detailSummary?.totalActualRevenue ?? detailSummary?.netRevenue,
+    totalEarlyCheckoutRefund: detailSummary?.totalEarlyCheckoutRefundAmount,
+    amountPaid: detailSummary?.totalPaidAmount,
+    serviceTotal: Number(detailSummary?.totalServiceAmount || 0) + Number(detailSummary?.totalDamageAmount || 0),
+    additionalRefundAmount: detailSummary?.additionalRefundAmount ?? detailSummary?.refundToCustomer,
+    refundSettlementAmount: detailSummary?.refundToCustomer,
+    additionalChargeAmount: detailSummary?.additionalChargeAmount,
+    remainingBalance: detailSummary?.remainingToPay ?? detailSummary?.remainingAmount,
+  } : selectedInvoice?.lines;
+  const detailStatus = invoiceDetail?.refundStatus === 'PENDING'
+    ? 'REFUND_PENDING'
+    : invoiceDetail?.refundStatus === 'COMPLETED'
+      ? 'REFUNDED'
+      : selectedInvoice
+        ? getInvoiceStatus(selectedInvoice)
+        : 'COMPLETED';
+  const detailCheckinStaff = invoiceDetail?.checkinStaffName
+    || invoiceDetail?.checkinStaff
+    || staffName(invoiceDetail?.checkinStaffId || selectedInvoice?.checkinStaffId, userNames);
+  const detailCheckoutStaff = invoiceDetail?.checkoutStaffName
+    || invoiceDetail?.checkoutStaff
+    || staffName(invoiceDetail?.checkoutStaffId || selectedInvoice?.checkoutStaffId, userNames);
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -620,9 +654,9 @@ const StaffInvoicesPage: React.FC = () => {
             <div className="flex items-start justify-between border-b border-gray-100 px-6 py-5 bg-gradient-to-r from-indigo-50/50 via-white to-sky-50/30">
               <div>
                 <div className="text-[11px] font-black uppercase tracking-[0.24em] text-indigo-600">Chi tiết hóa đơn</div>
-                <h2 className="mt-2 text-3xl font-black text-slate-950">INV-{selectedInvoice.id}</h2>
+                <h2 className="mt-2 text-3xl font-black text-slate-950">{invoiceDetail?.invoiceCode || `INV-${selectedInvoice.id}`}</h2>
                 <div className="mt-2 text-sm font-medium text-slate-500">
-                  Booking #{selectedInvoice.bookingId} · {formatDateTime(selectedInvoice.createdAt)}
+                  Booking #{invoiceDetail?.bookingId || selectedInvoice.bookingId} · {formatDateTime(invoiceDetail?.createdAt || selectedInvoice.createdAt)}
                 </div>
               </div>
               <button
@@ -648,23 +682,23 @@ const StaffInvoicesPage: React.FC = () => {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <div className="text-xs font-bold text-slate-400">Mã booking</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.bookingCode || `#${selectedInvoice.bookingId}`}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{invoiceDetail?.bookingCode || selectedInvoice.bookingCode || `#${selectedInvoice.bookingId}`}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Trạng thái booking</div>
                           <div className="mt-1">
-                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getStatusBadgeClass(getInvoiceStatus(selectedInvoice))}`}>
-                              {getStatusLabel(getInvoiceStatus(selectedInvoice))}
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getStatusBadgeClass(detailStatus)}`}>
+                              {getStatusLabel(detailStatus)}
                             </span>
                           </div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Ngày nhận phòng</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkInDate || bookingDetails?.checkIn || '-'}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkInDate || detailRooms[0]?.checkInDate || bookingDetails?.checkIn || '-'}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Ngày trả phòng</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkOutDate || bookingDetails?.checkOut || '-'}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{selectedInvoice.checkOutDate || detailRooms[0]?.plannedCheckoutDate || bookingDetails?.checkOut || '-'}</div>
                         </div>
                       </div>
                     </div>
@@ -673,9 +707,9 @@ const StaffInvoicesPage: React.FC = () => {
                     <div className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
                       <div className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-4">Khách hàng</div>
                       <div className="space-y-2">
-                        <div className="text-xl font-black text-slate-950">{selectedInvoice.customerName || selectedInvoice.representativeName || '-'}</div>
-                        <div className="text-sm font-medium text-slate-600">Số điện thoại: {selectedInvoice.representativePhone || '-'}</div>
-                        <div className="text-sm font-medium text-slate-600">CCCD: {selectedInvoice.representativeCccd || '-'}</div>
+                        <div className="text-xl font-black text-slate-950">{detailCustomer?.fullName || selectedInvoice.customerName || selectedInvoice.representativeName || '-'}</div>
+                        <div className="text-sm font-medium text-slate-600">Số điện thoại: {detailCustomer?.phone || selectedInvoice.representativePhone || '-'}</div>
+                        <div className="text-sm font-medium text-slate-600">CCCD: {detailCustomer?.cccd || selectedInvoice.representativeCccd || '-'}</div>
                         <div className="text-sm font-medium text-slate-600">Tài khoản: {userNames[selectedInvoice.customerUserId || ''] || selectedInvoice.customerUserId || '-'}</div>
                       </div>
                       {guestList.length > 0 && (
@@ -693,7 +727,14 @@ const StaffInvoicesPage: React.FC = () => {
                     <div className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
                       <div className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-4">Danh sách phòng</div>
                       <div className="grid gap-3">
-                        {roomList.length > 0 ? roomList.map((room) => (
+                        {detailRooms.length > 0 ? detailRooms.map((room) => (
+                          <div key={room.roomCode || room.roomName} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <div className="font-black text-slate-950">{room.roomName || `Phòng ${room.roomCode || '-'}`}</div>
+                            <div className="mt-1 text-xs font-medium text-slate-600">
+                              {room.roomType || 'Loại phòng'} · {room.roomStatus || 'CHECKED_OUT'} · {formatCurrency(room.netRevenue || 0)}
+                            </div>
+                          </div>
+                        )) : roomList.length > 0 ? roomList.map((room) => (
                           <div key={room.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                             <div className="font-black text-slate-950">Phòng {room.roomNumber}</div>
                             <div className="mt-1 text-xs font-medium text-slate-600">
@@ -714,15 +755,15 @@ const StaffInvoicesPage: React.FC = () => {
                       <div className="space-y-3">
                         <div>
                           <div className="text-xs font-bold text-slate-400">Nhân viên check-in</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{staffName(selectedInvoice.checkinStaffId, userNames)}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{detailCheckinStaff}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Nhân viên check-out</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{staffName(selectedInvoice.checkoutStaffId, userNames)}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{detailCheckoutStaff}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-400">Thời gian check-out</div>
-                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(selectedInvoice.checkedOutAt)}</div>
+                          <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(invoiceDetail?.checkoutTime || selectedInvoice.checkedOutAt)}</div>
                         </div>
                       </div>
                     </div>
@@ -731,7 +772,7 @@ const StaffInvoicesPage: React.FC = () => {
                     <div className="rounded-[1.5rem] border border-gray-100 bg-white p-5">
                       <div className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-4">Chi tiết hóa đơn</div>
                       <div className="space-y-3">
-                        {groupInvoiceLinesByRoom(normalizeInvoiceLines(selectedInvoice.lines)).map((group) => (
+                        {groupInvoiceLinesByRoom(normalizeInvoiceLines(detailLines)).map((group) => (
                           <div key={group.roomName} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                             <div className="mb-3 text-sm font-black text-slate-950">{group.roomName}</div>
                             <div className="space-y-2">
@@ -748,7 +789,7 @@ const StaffInvoicesPage: React.FC = () => {
                         ))}
 
                         {(() => {
-                          const lines = selectedInvoice.lines as any;
+                          const lines = detailLines as any;
                           const originalRoom = Number(lines?.roomCharge ?? lines?.totalOriginalAmount ?? lines?.roomTotal ?? 0);
                           const earlyRefund = Number(lines?.totalEarlyCheckoutRefund ?? lines?.earlyCheckoutAdjustment ?? 0);
                           const serviceFeeTotal = Number(lines?.serviceTotal ?? 0);
@@ -810,12 +851,23 @@ const StaffInvoicesPage: React.FC = () => {
                         })()}
 
                         {/* Refund transaction */}
-                        {selectedInvoice.refundTransactionId && (
+                        {(invoiceDetail?.refundHistory.records.length || selectedInvoice.refundTransactionId) ? (
                           <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
-                            Hoàn tiền #{selectedInvoice.refundTransactionId} · {selectedInvoice.refundStatus || 'PENDING'}
-                            {selectedInvoice.refundSettlementAmount ? ` · ${formatCurrency(selectedInvoice.refundSettlementAmount)}` : ''}
+                            {invoiceDetail?.refundHistory.records.length
+                              ? invoiceDetail.refundHistory.records.map((refund, index) => (
+                                <div key={`${refund.time || 'refund'}-${index}`} className="flex items-center justify-between gap-3">
+                                  <span>{refund.reason || 'Hoàn tiền checkout sớm'} · {formatDateTime(refund.time)}</span>
+                                  <span>{formatCurrency(refund.amount)}</span>
+                                </div>
+                              ))
+                              : (
+                                <>
+                                  Hoàn tiền #{selectedInvoice.refundTransactionId} · {selectedInvoice.refundStatus || 'PENDING'}
+                                  {selectedInvoice.refundSettlementAmount ? ` · ${formatCurrency(selectedInvoice.refundSettlementAmount)}` : ''}
+                                </>
+                              )}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </div>

@@ -55,6 +55,7 @@ public class BookingRoomWorkflowService {
     private final BookingServiceLineRepository bookingServiceLineRepository;
     private final RefundCalculationService refundCalculationService;
     private final RefundTransactionRepository refundTransactionRepository;
+    private final RefundService refundService;
     private final RabbitTemplate rabbitTemplate;
     private final RoomServiceClient roomServiceClient;
 
@@ -66,6 +67,7 @@ public class BookingRoomWorkflowService {
                                       BookingServiceLineRepository bookingServiceLineRepository,
                                       RefundCalculationService refundCalculationService,
                                       RefundTransactionRepository refundTransactionRepository,
+                                      RefundService refundService,
                                       RabbitTemplate rabbitTemplate,
                                       RoomServiceClient roomServiceClient) {
         this.bookingItemRepository = bookingItemRepository;
@@ -76,6 +78,7 @@ public class BookingRoomWorkflowService {
         this.bookingServiceLineRepository = bookingServiceLineRepository;
         this.refundCalculationService = refundCalculationService;
         this.refundTransactionRepository = refundTransactionRepository;
+        this.refundService = refundService;
         this.rabbitTemplate = rabbitTemplate;
         this.roomServiceClient = roomServiceClient;
     }
@@ -183,10 +186,9 @@ public class BookingRoomWorkflowService {
             log.info("CHECKOUT_MULTIPLE_CHECKPOINT rooms checked out bookingId={}, checkedOutRooms={}, errors={}",
                 bookingId, result.getRooms().size(), result.getErrors().size());
 
-            attachInvoice(result, booking, request);
+            attachInvoice(result, booking, request, staffId);
 
-            log.info("CHECKOUT_MULTIPLE_CHECKPOINT before save refund/payment transaction bookingId={}, action=SKIPPED_IN_WORKFLOW", bookingId);
-            log.info("CHECKOUT_MULTIPLE_CHECKPOINT after save refund/payment transaction bookingId={}, action=SKIPPED_IN_WORKFLOW", bookingId);
+            log.info("CHECKOUT_MULTIPLE_CHECKPOINT refund/payment transaction handled bookingId={}", bookingId);
 
             result.setSuccess(true);
             log.info("CHECKOUT_MULTIPLE_CHECKPOINT END checkout success bookingId={}, invoiceId={}, invoiceCode={}, success={}",
@@ -198,7 +200,7 @@ public class BookingRoomWorkflowService {
         }
     }
 
-        private void attachInvoice(BookingRoomActionResult result, Booking booking, BookingRoomBatchRequest request) {
+        private void attachInvoice(BookingRoomActionResult result, Booking booking, BookingRoomBatchRequest request, Long staffId) {
         if (booking == null) {
             throw new NoSuchElementException("Booking not found: " + (request != null ? request.getBookingRoomIds() : null));
         }
@@ -217,6 +219,19 @@ public class BookingRoomWorkflowService {
         result.setInvoiceId(invoice.getId());
         result.setInvoiceCode("INV-" + invoice.getId());
         log.info("CHECKOUT_MULTIPLE_CHECKPOINT after merge invoice bookingId={}, invoiceId={}, invoiceCode={}", booking.getId(), invoice.getId(), result.getInvoiceCode());
+
+        BigDecimal refundSettlementAmount = decimal(lines.get("refundSettlementAmount"), lines.get("additionalRefundAmount"));
+        if (refundSettlementAmount.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                refundService.createAssignedEarlyCheckoutRefundTransaction(booking, refundSettlementAmount, staffId);
+                log.info("CHECKOUT_MULTIPLE_CHECKPOINT created early checkout refund bookingId={}, amount={}, staffId={}",
+                        booking.getId(), refundSettlementAmount, staffId);
+            } catch (RuntimeException ex) {
+                log.error("CHECKOUT_MULTIPLE_CHECKPOINT failed to create early checkout refund bookingId={}, amount={}",
+                        booking.getId(), refundSettlementAmount, ex);
+                throw ex;
+            }
+        }
     }
 
     private void validateSelectedRooms(Long bookingId, List<BookingItem> selectedRooms) {
