@@ -1,0 +1,25 @@
+# Use this override only when demonstrating horizontal scalability.
+# Backend service host ports are removed so Docker Compose can run multiple
+# replicas of the same service. External traffic still enters through the
+# frontend/API Gateway, and the Gateway discovers replicas via Eureka.
+services:
+  auth-service:
+    ports: !reset []
+
+  user-service:
+    ports: !reset []
+
+  room-service:
+    ports: !reset []
+
+  booking-service:
+    ports: !reset []
+
+  payment-service:
+    ports: !reset []
+
+  notification-service:
+    ports: !reset []
+
+  ai-service:
+    ports: !reset []
