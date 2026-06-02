@@ -57,6 +57,14 @@ public class ShiftService {
                 .collect(Collectors.toList());
     }
 
+    public List<ShiftScheduleResponse> getMySchedule(Long employeeId, LocalDate weekStart) {
+        return scheduleRepository.findByEmployeeIdAndWeekStart(employeeId, weekStart)
+                .stream()
+                .sorted(Comparator.comparing(ShiftSchedule::getWorkDate))
+                .map(ShiftScheduleResponse::new)
+                .collect(Collectors.toList());
+    }
+
     public void saveSchedule(SaveScheduleRequest request) {
         LocalDate weekStart = LocalDate.parse(request.getWeekStart(), DATE_FORMATTER);
 
@@ -139,15 +147,44 @@ public class ShiftService {
 
         // Cập nhật lịch gốc
         originalSchedule.setStatus(ScheduleStatus.REPLACED);
+        originalSchedule.setShift(null);
         originalSchedule.setNote("Được thay bởi: " + replacementEmployee.getName());
         scheduleRepository.save(originalSchedule);
     }
 
-    public void checkin(CheckinRequest request) {
+    public void resetSchedule(Long scheduleId) {
+        ShiftSchedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Khong tim thay lich truc"));
+
+        if (schedule.getShift() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Khong the mo lai ngay nghi");
+        }
+
+        checkinRepository.findByScheduleId(scheduleId).ifPresent(checkinRepository::delete);
+        schedule.setStatus(ScheduleStatus.ASSIGNED);
+        schedule.setNote(null);
+        scheduleRepository.save(schedule);
+    }
+
+    public void checkin(CheckinRequest request, Long employeeId) {
         ShiftSchedule schedule = scheduleRepository.findById(request.getScheduleId())
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Không tìm thấy lịch trực"));
 
-        LocalDateTime checkinTime = LocalDateTime.parse(request.getCheckinTime(), DATETIME_FORMATTER);
+        if (!schedule.getEmployee().getId().equals(employeeId)) {
+            throw new ResponseStatusException(FORBIDDEN, "Bạn chưa được phân công ca hiện tại");
+        }
+
+        LocalDateTime checkinTime = request.getCheckinTime() != null && !request.getCheckinTime().isBlank()
+                ? LocalDateTime.parse(request.getCheckinTime(), DATETIME_FORMATTER)
+                : LocalDateTime.now();
+
+        if (schedule.getShift() == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Ban chua duoc phan cong ca hien tai");
+        }
+
+        if (!schedule.getWorkDate().equals(checkinTime.toLocalDate())) {
+            throw new ResponseStatusException(BAD_REQUEST, "Ban chua duoc phan cong ca hien tai");
+        }
 
         if (schedule.getShift() == null) {
             throw new ResponseStatusException(BAD_REQUEST, "Không thể check-in khi không có ca trực");
@@ -189,11 +226,17 @@ public class ShiftService {
         scheduleRepository.save(schedule);
     }
 
-    public void checkout(CheckinRequest request) {
+    public void checkout(CheckinRequest request, Long employeeId) {
         ShiftCheckin checkin = checkinRepository.findByScheduleId(request.getScheduleId())
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Không tìm thấy check-in"));
 
-        LocalDateTime checkoutTime = LocalDateTime.parse(request.getCheckoutTime(), DATETIME_FORMATTER);
+        if (!checkin.getEmployee().getId().equals(employeeId)) {
+            throw new ResponseStatusException(FORBIDDEN, "Ban chua duoc phan cong ca hien tai");
+        }
+
+        LocalDateTime checkoutTime = request.getCheckoutTime() != null && !request.getCheckoutTime().isBlank()
+                ? LocalDateTime.parse(request.getCheckoutTime(), DATETIME_FORMATTER)
+                : LocalDateTime.now();
         checkin.setCheckoutTime(checkoutTime);
         checkinRepository.save(checkin);
 

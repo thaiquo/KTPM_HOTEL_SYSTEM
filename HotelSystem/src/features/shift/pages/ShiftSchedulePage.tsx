@@ -31,7 +31,10 @@ interface ShiftScheduleResponse {
     shiftId: number | null;
     shiftName: string;
     workDate: string;
+    status?: string;
 }
+
+const MAX_ASSIGNED_SHIFTS_PER_DAY = 3;
 
 const ShiftSchedulePage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'schedule' | 'dashboard' | 'history'>('schedule');
@@ -39,6 +42,7 @@ const ShiftSchedulePage: React.FC = () => {
     const [shifts, setShifts] = useState<Shift[]>([]);
     const [weekStart, setWeekStart] = useState<string>(getMonday(new Date()).toISOString().split('T')[0]);
     const [schedules, setSchedules] = useState<Record<number, Record<string, number | null>>>({});
+    const [scheduleDetails, setScheduleDetails] = useState<Record<number, Record<string, ShiftScheduleResponse>>>({});
     const [loading, setLoading] = useState(false);
     const [dashboardData, setDashboardData] = useState<any>(null);
     const [checkinHistory, setCheckinHistory] = useState<any[]>([]);
@@ -102,9 +106,11 @@ const ShiftSchedulePage: React.FC = () => {
             const response = await shiftApi.getScheduleByWeek(weekStart);
             const data: ShiftScheduleResponse[] = response.data || [];
             const scheduleMap: Record<number, Record<string, number | null>> = {};
+            const detailMap: Record<number, Record<string, ShiftScheduleResponse>> = {};
 
             employees.forEach(emp => {
                 scheduleMap[emp.id] = {};
+                detailMap[emp.id] = {};
                 for (let i = 0; i < 7; i++) {
                     const date = new Date(weekStart);
                     date.setDate(date.getDate() + i);
@@ -118,10 +124,15 @@ const ShiftSchedulePage: React.FC = () => {
                 if (!scheduleMap[schedule.employeeId]) {
                     scheduleMap[schedule.employeeId] = {};
                 }
+                if (!detailMap[schedule.employeeId]) {
+                    detailMap[schedule.employeeId] = {};
+                }
                 scheduleMap[schedule.employeeId][schedule.workDate] = schedule.shiftId;
+                detailMap[schedule.employeeId][schedule.workDate] = schedule;
             });
 
             setSchedules(scheduleMap);
+            setScheduleDetails(detailMap);
         } catch (error) {
             toast.error('Lỗi khi tải lịch');
             console.error(error);
@@ -168,10 +179,25 @@ const ShiftSchedulePage: React.FC = () => {
                 weekStart,
                 schedules: scheduleItems,
             });
+            await fetchSchedules();
 
             toast.success('Lưu lịch thành công');
         } catch (error) {
             toast.error('Lỗi khi lưu lịch');
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const resetSchedule = async (scheduleId: number) => {
+        try {
+            setLoading(true);
+            await shiftApi.resetSchedule(scheduleId);
+            toast.success('Đã mở lại ca');
+            await fetchSchedules();
+        } catch (error: any) {
+            toast.error(error?.userMessage || 'Không thể mở lại ca');
             console.error(error);
         } finally {
             setLoading(false);
@@ -210,6 +236,14 @@ const ShiftSchedulePage: React.FC = () => {
         }
         return dates;
     };
+
+    const getAssignedShiftCountForDate = (dateStr: string) =>
+        Object.values(schedules).filter(employeeSchedule => employeeSchedule?.[dateStr]).length;
+
+    const isShiftTakenOnDate = (dateStr: string, shiftId: number, currentEmployeeId: number) =>
+        Object.entries(schedules).some(([employeeId, employeeSchedule]) =>
+            Number(employeeId) !== currentEmployeeId && employeeSchedule?.[dateStr] === shiftId
+        );
 
     if (loading && employees.length === 0) {
         return (
@@ -308,12 +342,21 @@ const ShiftSchedulePage: React.FC = () => {
                                 <thead className="bg-gray-50/50 border-b border-gray-50">
                                     <tr>
                                         <th className="px-8 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-left">Nhân viên</th>
-                                        {getDatesForWeek().map((date, idx) => (
-                                            <th key={idx} className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-center">
-                                                <div className="text-sm">{date.toLocaleDateString('vi-VN', { weekday: 'short' })}</div>
-                                                <div className="text-xs">{date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</div>
-                                            </th>
-                                        ))}
+                                        {getDatesForWeek().map((date, idx) => {
+                                            const dateStr = date.toISOString().split('T')[0];
+                                            const assignedCount = getAssignedShiftCountForDate(dateStr);
+                                            const isFull = assignedCount >= MAX_ASSIGNED_SHIFTS_PER_DAY;
+
+                                            return (
+                                                <th key={idx} className="px-6 py-4 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-center">
+                                                    <div className="text-sm">{date.toLocaleDateString('vi-VN', { weekday: 'short' })}</div>
+                                                    <div className="text-xs">{date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</div>
+                                                    <div className={`mt-1 text-[10px] font-bold ${isFull ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                                        {assignedCount}/{MAX_ASSIGNED_SHIFTS_PER_DAY} ca
+                                                    </div>
+                                                </th>
+                                            );
+                                        })}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -323,28 +366,64 @@ const ShiftSchedulePage: React.FC = () => {
                                             {getDatesForWeek().map((date, idx) => {
                                                 const dateStr = date.toISOString().split('T')[0];
                                                 const shiftId = schedules[emp.id]?.[dateStr];
+                                                const schedule = scheduleDetails[emp.id]?.[dateStr];
+                                                const canReset = !!schedule?.id && ['CHECKED_IN', 'COMPLETED'].includes(schedule.status || '');
+                                                const assignedCount = getAssignedShiftCountForDate(dateStr);
+                                                const isFullForNewAssignment = !shiftId && assignedCount >= MAX_ASSIGNED_SHIFTS_PER_DAY;
+
                                                 return (
                                                     <td key={idx} className="px-6 py-5 text-center">
                                                         <select
                                                             value={shiftId || ''}
                                                             onChange={(e) => {
+                                                                const nextShiftId = e.target.value ? parseInt(e.target.value) : null;
+
+                                                                if (!shiftId && nextShiftId && assignedCount >= MAX_ASSIGNED_SHIFTS_PER_DAY) {
+                                                                    toast.error('Ngày này đã xếp đủ 3 ca');
+                                                                    return;
+                                                                }
+
+                                                                if (nextShiftId && isShiftTakenOnDate(dateStr, nextShiftId, emp.id)) {
+                                                                    toast.error('Ca này đã có nhân viên trực');
+                                                                    return;
+                                                                }
+
                                                                 setSchedules(prev => ({
                                                                     ...prev,
                                                                     [emp.id]: {
                                                                         ...prev[emp.id],
-                                                                        [dateStr]: e.target.value ? parseInt(e.target.value) : null,
+                                                                        [dateStr]: nextShiftId,
                                                                     },
                                                                 }));
                                                             }}
-                                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                                                            disabled={isFullForNewAssignment}
+                                                            title={isFullForNewAssignment ? 'Ngày này đã xếp đủ 3 ca' : undefined}
+                                                            className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all ${isFullForNewAssignment
+                                                                ? 'bg-gray-100 border-gray-100 text-gray-400 cursor-not-allowed'
+                                                                : 'bg-gray-50 border-gray-100'
+                                                                }`}
                                                         >
-                                                            <option value="">OFF</option>
+                                                            <option value="">{isFullForNewAssignment ? 'Đủ ca' : 'OFF'}</option>
                                                             {shifts.map(shift => (
-                                                                <option key={shift.id} value={shift.id}>
+                                                                <option
+                                                                    key={shift.id}
+                                                                    value={shift.id}
+                                                                    disabled={!shiftId && (isFullForNewAssignment || isShiftTakenOnDate(dateStr, shift.id, emp.id))}
+                                                                >
                                                                     {shift.name}
                                                                 </option>
                                                             ))}
                                                         </select>
+                                                        {canReset && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => resetSchedule(schedule.id)}
+                                                                disabled={loading}
+                                                                className="mt-2 w-full rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-700 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                                            >
+                                                                Mở lại ca
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 );
                                             })}

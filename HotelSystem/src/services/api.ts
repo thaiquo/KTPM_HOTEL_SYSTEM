@@ -2445,6 +2445,9 @@ export const shiftApi = {
   getScheduleByWeek: (weekStart: string) =>
     userHttp.get<any[]>('/api/shifts/schedule', { params: { weekStart } }),
 
+  getMySchedule: (weekStart: string) =>
+    userHttp.get<any[]>('/api/shifts/my-schedule', { params: { weekStart } }),
+
   saveSchedule: (data: any) =>
     userHttp.post<any>('/api/shifts/schedule/save', data),
 
@@ -2453,6 +2456,9 @@ export const shiftApi = {
 
   replaceShift: (scheduleId: number, data: any) =>
     userHttp.patch<any>(`/api/shifts/schedule/${scheduleId}/replace`, data),
+
+  resetSchedule: (scheduleId: number) =>
+    userHttp.patch<any>(`/api/shifts/schedule/${scheduleId}/reset`),
 
   checkin: (data: any) =>
     userHttp.post<any>('/api/shifts/checkin', data),

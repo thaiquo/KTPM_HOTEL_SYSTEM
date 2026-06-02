@@ -6,6 +6,7 @@ import iuh.fit.hotelsystem_user.service.ShiftService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -33,6 +34,15 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getScheduleByWeek(weekStartDate));
     }
 
+    @GetMapping("/my-schedule")
+    public ResponseEntity<List<ShiftScheduleResponse>> getMySchedule(
+            Principal principal,
+            @RequestParam(name = "weekStart") String weekStart) {
+        Long employeeId = Long.parseLong(principal.getName());
+        LocalDate weekStartDate = LocalDate.parse(weekStart, DATE_FORMATTER);
+        return ResponseEntity.ok(shiftService.getMySchedule(employeeId, weekStartDate));
+    }
+
     @PostMapping("/schedule/save")
     public ResponseEntity<String> saveSchedule(@RequestBody SaveScheduleRequest request) {
         shiftService.saveSchedule(request);
@@ -53,15 +63,23 @@ public class ShiftController {
         return ResponseEntity.ok("Thay ca thành công");
     }
 
+    @PatchMapping("/schedule/{id}/reset")
+    public ResponseEntity<String> resetSchedule(@PathVariable Long id) {
+        shiftService.resetSchedule(id);
+        return ResponseEntity.ok("Mo lai ca thanh cong");
+    }
+
     @PostMapping("/checkin")
-    public ResponseEntity<String> checkin(@RequestBody CheckinRequest request) {
-        shiftService.checkin(request);
+    public ResponseEntity<String> checkin(Principal principal, @RequestBody CheckinRequest request) {
+        Long employeeId = Long.parseLong(principal.getName());
+        shiftService.checkin(request, employeeId);
         return ResponseEntity.ok("Check-in thành công");
     }
 
     @PostMapping("/checkout")
-    public ResponseEntity<String> checkout(@RequestBody CheckinRequest request) {
-        shiftService.checkout(request);
+    public ResponseEntity<String> checkout(Principal principal, @RequestBody CheckinRequest request) {
+        Long employeeId = Long.parseLong(principal.getName());
+        shiftService.checkout(request, employeeId);
         return ResponseEntity.ok("Check-out thành công");
     }
 

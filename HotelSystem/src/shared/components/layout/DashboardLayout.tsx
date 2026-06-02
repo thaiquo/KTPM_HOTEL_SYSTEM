@@ -14,6 +14,8 @@ interface DashboardMenuItem {
   title: string;
   path: string;
   icon: React.ReactNode;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 interface DashboardLayoutProps {
@@ -129,19 +131,46 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         <nav className="flex-1 px-4 py-4 space-y-2">
           {menuItems.map((item) => {
             const isActive = location.pathname === item.path;
+            const isDisabled = !!item.disabled;
+            const itemClassName = `flex items-center ${
+              isSidebarOpen ? 'px-4' : 'justify-center'
+            } py-3 rounded-xl transition-all duration-200 group ${
+              isDisabled
+                ? 'text-gray-600 cursor-not-allowed opacity-55'
+                : isActive
+                  ? `${accentColorClass} text-white shadow-lg`
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+            }`;
+            const iconClassName = isDisabled
+              ? 'text-gray-600'
+              : isActive
+                ? 'text-white'
+                : 'text-gray-400 group-hover:text-white';
+
+            if (isDisabled) {
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  disabled
+                  title={item.disabledReason}
+                  className={`${itemClassName} w-full text-left`}
+                >
+                  <div className={iconClassName}>
+                    {item.icon}
+                  </div>
+                  {isSidebarOpen && <span className="ml-3 font-medium text-sm">{item.title}</span>}
+                </button>
+              );
+            }
+
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center ${
-                  isSidebarOpen ? 'px-4' : 'justify-center'
-                } py-3 rounded-xl transition-all duration-200 group ${
-                  isActive
-                    ? `${accentColorClass} text-white shadow-lg`
-                    : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                }`}
+                className={itemClassName}
               >
-                <div className={`${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}>
+                <div className={iconClassName}>
                   {item.icon}
                 </div>
                 {isSidebarOpen && <span className="ml-3 font-medium text-sm">{item.title}</span>}

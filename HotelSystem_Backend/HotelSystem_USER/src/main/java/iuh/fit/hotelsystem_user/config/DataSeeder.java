@@ -63,6 +63,32 @@ public class DataSeeder {
                 userRepo.save(staff2);
             }
 
+            List<EmployeeSeed> demoEmployees = List.of(
+                    new EmployeeSeed("minhthu.reception@gmail.com", "Minh Thu", "0904567890", "12/04/2000", false, "Quan 1, TP. Ho Chi Minh"),
+                    new EmployeeSeed("hoangnam.reception@gmail.com", "Hoang Nam", "0905678901", "21/08/1999", true, "Quan 3, TP. Ho Chi Minh"),
+                    new EmployeeSeed("lananh.reception@gmail.com", "Lan Anh", "0906789012", "05/01/2001", false, "Thu Duc, TP. Ho Chi Minh"),
+                    new EmployeeSeed("ducminh.reception@gmail.com", "Duc Minh", "0907890123", "17/11/1998", true, "Binh Thanh, TP. Ho Chi Minh"),
+                    new EmployeeSeed("thanhvy.reception@gmail.com", "Thanh Vy", "0908901234", "29/06/2002", false, "Go Vap, TP. Ho Chi Minh"),
+                    new EmployeeSeed("quangvinh.reception@gmail.com", "Quang Vinh", "0909012345", "03/09/2000", true, "Phu Nhuan, TP. Ho Chi Minh")
+            );
+
+            for (EmployeeSeed employee : demoEmployees) {
+                if (userRepo.countByEmailIgnoreCase(employee.email()) == 0
+                        && userRepo.countByPhoneNumber(employee.phoneNumber()) == 0) {
+                    User user = new User();
+                    user.setEmail(employee.email());
+                    user.setPassword(passwordUtil.encode("123456"));
+                    user.setName(employee.name());
+                    user.setPhoneNumber(employee.phoneNumber());
+                    user.setDateOfBirth(employee.dateOfBirth());
+                    user.setGender(employee.gender());
+                    user.setAddress(employee.address());
+                    user.setActive(true);
+                    user.setRole(staffRole);
+                    userRepo.save(user);
+                }
+            }
+
             List<CustomerSeed> customers = List.of(
                     new CustomerSeed("nguyentanthinh@gmail.com", "Nguyễn Tấn Thịnh", "0397994524", "06/11/2004", true, "Quận 1, TP. Hồ Chí Minh"),
                     new CustomerSeed("minhchau@gmail.com", "Trần Minh Châu", "0397994525", "18/02/2001", false, "Quận 3, TP. Hồ Chí Minh"),
@@ -94,6 +120,8 @@ public class DataSeeder {
             }
         };
     }
+
+    private record EmployeeSeed(String email, String name, String phoneNumber, String dateOfBirth, Boolean gender, String address) {}
 
     private record CustomerSeed(String email, String name, String phoneNumber, String dateOfBirth, Boolean gender, String address) {}
 }

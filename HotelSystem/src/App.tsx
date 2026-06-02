@@ -22,6 +22,7 @@ import HotelPolicyPage from './features/hotel-policy/pages/HotelPolicyPage';
 // import các page khác khi cần...
 
 import ProtectedRoute from './shared/components/auth/ProtectedRoute';
+import StaffShiftGuard from './shared/components/auth/StaffShiftGuard';
 import RoomManagementPage from './features/dashboard/pages/RoomManagementPage';
 import EmployeeManagementPage from './features/dashboard/pages/EmployeeManagementPage';
 import CustomerManagementPage from './features/dashboard/pages/CustomerManagementPage';
@@ -30,6 +31,7 @@ import StaffCheckInPage from './features/dashboard/pages/StaffCheckInPage';
 import StaffCheckoutPage from './features/dashboard/pages/StaffCheckoutPage';
 import StaffRefundPage from './features/dashboard/pages/StaffRefundPage';
 import ShiftSchedulePage from './features/shift/pages/ShiftSchedulePage';
+import StaffShiftPage from './features/shift/pages/StaffShiftPage';
 import StaffInvoicesPage from './features/dashboard/pages/StaffInvoicesPage';
 import StaffRoomChangePage from './features/dashboard/pages/StaffRoomChangePage';
 
@@ -102,14 +104,17 @@ function App() {
             {/* Staff Dashboard Routes */}
             <Route element={<ProtectedRoute allowedRoles={['STAFF', 'ADMIN']} />}>
               <Route element={<StaffLayout />}>
-                <Route path="/staff/rooms" element={<RoomManagementPage />} />
-                <Route path="/staff/check-in" element={<StaffCheckInPage />} />
-                <Route path="/staff/checkout" element={<StaffCheckoutPage />} />
-                <Route path="/staff/room-change" element={<StaffRoomChangePage />} />
-                <Route path="/staff/refunds" element={<StaffRefundPage />} />
-                <Route path="/staff/invoices" element={<StaffInvoicesPage />} />
-                <Route path="/staff/invoices/:invoiceId" element={<StaffInvoicesPage />} />
-                <Route path="/staff" element={<Navigate to="/staff/rooms" replace />} />
+                <Route path="/staff/ca-truc" element={<StaffShiftPage />} />
+                <Route element={<StaffShiftGuard />}>
+                  <Route path="/staff/rooms" element={<RoomManagementPage />} />
+                  <Route path="/staff/check-in" element={<StaffCheckInPage />} />
+                  <Route path="/staff/checkout" element={<StaffCheckoutPage />} />
+                  <Route path="/staff/room-change" element={<StaffRoomChangePage />} />
+                  <Route path="/staff/refunds" element={<StaffRefundPage />} />
+                  <Route path="/staff/invoices" element={<StaffInvoicesPage />} />
+                  <Route path="/staff/invoices/:invoiceId" element={<StaffInvoicesPage />} />
+                </Route>
+                <Route path="/staff" element={<Navigate to="/staff/ca-truc" replace />} />
               </Route>
             </Route>
             </Routes>
