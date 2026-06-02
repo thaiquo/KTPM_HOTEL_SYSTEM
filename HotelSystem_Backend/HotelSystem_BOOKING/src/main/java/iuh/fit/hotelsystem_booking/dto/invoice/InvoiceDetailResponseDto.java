@@ -48,6 +48,7 @@ public class InvoiceDetailResponseDto {
 
     @Data
     public static class RoomBreakdownDto {
+        private Long bookingRoomId;
         private String roomName;
         private String roomCode;
         private String roomType;

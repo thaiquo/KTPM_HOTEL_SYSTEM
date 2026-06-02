@@ -34,6 +34,13 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
             """)
     java.util.Optional<Booking> findByIdWithItems(@Param("id") Long id);
 
+    @Query("""
+            SELECT DISTINCT b FROM Booking b
+            LEFT JOIN FETCH b.items
+            WHERE b.id IN :ids
+            """)
+    List<Booking> findAllByIdWithItems(@Param("ids") List<Long> ids);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             SELECT DISTINCT b FROM Booking b
